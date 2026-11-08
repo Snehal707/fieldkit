@@ -19,6 +19,8 @@ export interface SyncState {
   awaiting: number;
   /** Of those, records that need the user (conflict or rejected by the server). */
   attention: number;
+  /** Inspections started but NOT submitted (still drafts) — never "confirmed", never uploaded. */
+  drafts: number;
   /** Last proven reachability of the Hermes FieldKit API — independent of navigator.onLine. */
   reachable: boolean | null;
   last_contact?: string;
@@ -29,7 +31,7 @@ export interface SyncState {
 
 let running = false;
 const listeners = new Set<(s: SyncState) => void>();
-let state: SyncState = { running: false, auth_required: false, offline: false, pending: 0, awaiting: 0, attention: 0,
+let state: SyncState = { running: false, auth_required: false, offline: false, pending: 0, awaiting: 0, attention: 0, drafts: 0,
   reachable: null, uploaded: 0 };
 
 export function onSyncState(fn: (s: SyncState) => void): () => void {
@@ -65,10 +67,10 @@ export async function enqueueRecord(recordId: string): Promise<void> {
 /** Recompute counters from durable state. Returns the number of records awaiting server confirmation. */
 export async function refreshPending(): Promise<number> {
   const d = await db();
-  const [ops, recs] = await Promise.all([d.count("outbox"), d.getAll("records")]);
+  const [ops, recs, drafts] = await Promise.all([d.count("outbox"), d.getAll("records"), d.count("drafts")]);
   const awaiting = recs.filter((r) => r.sync_status !== "synced").length;
   const attention = recs.filter((r) => r.sync_status === "conflict" || r.sync_status === "error").length;
-  emit({ pending: ops, awaiting, attention });
+  emit({ pending: ops, awaiting, attention, drafts });
   return awaiting;
 }
 
@@ -323,8 +325,10 @@ export function startAutoSync(): void {
   if (typeof window === "undefined" || timer) return;
   const kick = () => { void runSync(); };
   window.addEventListener("online", kick);
+  window.addEventListener("offline", () => contact(false));  // never keep showing a cached "reachable"
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") kick(); });
-  timer = setInterval(() => { if (navigator.onLine) kick(); }, 60_000);
+  // Re-prove reachability well within the 60 s display window (a cheap /me when nothing is queued).
+  timer = setInterval(() => { if (navigator.onLine) kick(); }, 30_000);
   navigator.serviceWorker?.addEventListener("message", (ev) => { if (ev.data?.type === "fieldkit-sync") kick(); });
   kick();
 }

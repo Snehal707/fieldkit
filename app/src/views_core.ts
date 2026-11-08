@@ -8,7 +8,7 @@ import { KnowledgeIndex } from "./knowledge";
 import { captureGps, compressPhoto, getAttachment, saveAttachment, signaturePad, VoiceRecorder } from "./media";
 import { installedPacks, installedWorkflows, installWorkflow, shellCached, storageInfo } from "./packs";
 import { completeDraft } from "./results";
-import { getSyncState, refreshReports, requestAnalysis, resolveConflict, runSync } from "./sync";
+import { getSyncState, refreshPending, refreshReports, requestAnalysis, resolveConflict, runSync } from "./sync";
 import { clear, fmtBytes, fmtTime, h, isOnline, nowIso, toast, uuid } from "./util";
 
 export type View = (main: HTMLElement, params: Record<string, string>) => Promise<void> | void;
@@ -192,6 +192,7 @@ async function startWorkflow(id: string) {
   const wf = (await (await db()).get("workflows", id))!.definition;
   for (const f of wf.fields) if (f.default !== undefined) draft.answers[f.id] = f.default;
   await (await db()).put("drafts", draft);
+  await refreshPending();  // header immediately shows "1 not submitted"
   go(`#/run/${draft.id}`);
 }
 
@@ -222,9 +223,11 @@ export const runView: View = async (main, p) => {
     if (rerender) render();
   };
 
+  const notice = h("div");
   const render = () => {
     const st = computeState(wf, draft.answers, l);
     clear(form);
+    form.append(notice);
     const vis = new Set(st.visible);
     for (const f of wf.fields) {
       if (!vis.has(f.id)) continue;
@@ -430,13 +433,26 @@ export const runView: View = async (main, p) => {
     showErrors = true;
     const st = computeState(wf, draft.answers, l);
     if (!st.complete) {
+      // Stays on screen (not a 4-second toast): the inspection is NOT saved as a record and will NOT sync.
+      clear(notice);
+      const bad = wf.fields.filter((f) => st.errors[f.id]).map((f) => text(f.label, l));
+      notice.append(h("div", { class: "banner bad", role: "alert" }, h("strong", null, "Not submitted yet"),
+        h("div", null, `This inspection is still a draft and has not been saved for upload. Fix ${bad.length} answer(s): ${bad.join(", ")}.`)));
       render();
       const first = Object.keys(st.errors)[0];
       document.getElementById(`f-${first}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-      toast("Some answers need attention.", "error");
       return;
     }
-    const rec = await completeDraft(draft, wf);
+    clear(notice);
+    let rec;
+    try {
+      rec = await completeDraft(draft, wf);
+    } catch (e) {
+      notice.append(h("div", { class: "banner bad", role: "alert" }, h("strong", null, "Could not save this inspection"),
+        h("div", null, `${(e as Error).message}. Your answers are still in the draft — nothing was lost.`)));
+      render();
+      return;
+    }
     toast("Saved locally. Pending synchronisation.", "ok");
     void runSync();
     go(`#/results/${rec.id}`);

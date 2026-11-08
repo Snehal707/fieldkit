@@ -3,7 +3,7 @@
  * navigation working when the Hermes session has expired (401 → cached shell), never caches API
  * calls, and caches pinned upstream runtime files (tesseract core / language data on jsDelivr).
  * Transformers.js keeps its own model cache ("transformers-cache"), so model weights are not duplicated here. */
-const VERSION = "8efb51311d583234";
+const VERSION = "9297d47389a413d2";
 const SHELL = `fieldkit-shell-${VERSION}`;
 const UPSTREAM = "fieldkit-upstream-v1";
 const UPSTREAM_HOSTS = new Set(["cdn.jsdelivr.net"]);
@@ -39,9 +39,14 @@ self.addEventListener("message", (event) => {
   if (event.data?.type === "skip-waiting") self.skipWaiting();
 });
 
+// Hermes adds "Vary: Origin" to every response, and the app's module scripts/styles are CORS requests that carry
+// an Origin header the install-time fetch did not — so a Vary-respecting lookup MISSES and the browser silently
+// falls back to its evictable HTTP cache. FieldKit's own app files never vary by origin: ignore Vary for them.
+const MATCH = { ignoreSearch: true, ignoreVary: true };
+
 async function shellResponse() {
   const cache = await caches.open(SHELL);
-  return (await cache.match(INDEX)) || (await cache.match(new URL("index.html", SCOPE).toString())) ||
+  return (await cache.match(INDEX, MATCH)) || (await cache.match(new URL("index.html", SCOPE).toString(), MATCH)) ||
     new Response("<h1>FieldKit is not installed yet</h1><p>Open it once while online.</p>", { status: 503, headers: { "content-type": "text/html" } });
 }
 
@@ -68,7 +73,7 @@ self.addEventListener("fetch", (event) => {
     if (req.mode === "navigate") { event.respondWith(navigate(req)); return; }
     event.respondWith((async () => {
       const cache = await caches.open(SHELL);
-      const hit = await cache.match(req, { ignoreSearch: true });
+      const hit = await cache.match(req, MATCH);
       if (hit) return hit;
       try { return await fetch(req); } catch (_) { return new Response("", { status: 504 }); }
     })());

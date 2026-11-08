@@ -84,6 +84,17 @@ FIELDKIT_E2E_MODELS=1 FIELDKIT_E2E_PASS=<password> npm run test:e2e -- models.sp
   - The header shows "no Hermes connection" and "1 awaiting confirmation". The Pending Sync screen says "Hermes: Not reachable", and the server has no such record (404).
 - **When the outage lifts:** the record is confirmed **once** (revision 1), and the header shows "all confirmed" and "Hermes reachable".
 
+`strict-offline.spec.ts` (**passed**, 0.1.4). Network cut for the page **and** the service worker; the server is checked by an independent online client:
+- **A (browser offline):**
+  - An inspection blocked by validation is shown as **"1 not submitted"** with a banner that stays on screen. The header never shows "all confirmed".
+  - A valid offline record is saved and queued in IndexedDB before any request (inspected directly).
+  - The header never shows "all confirmed" while offline, and the server has no record (404).
+  - **Zero** requests reached the network, including app assets.
+  - The record survives a full browser restart.
+  - After reconnecting it **syncs automatically with no user action**, and `received_at` is after `completed_at`.
+- **B (`navigator.onLine` = true, every request blocked):** no "all confirmed", no stale "Hermes reachable", server 404; it syncs automatically once unblocked.
+- **Defect found by A:** Hermes sends `Vary: Origin`. The app's CORS module/style requests carry `Origin`, so the service worker's precache lookups missed, and offline launch silently depended on the evictable HTTP cache. Fixed with `ignoreVary` for FieldKit's own app files.
+
 `lifecycle.test.ts` (vitest, 0.1.3):
 - True offline submission: the record and its queue entry commit in one IndexedDB transaction.
 - Reconnect.

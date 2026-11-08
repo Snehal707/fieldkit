@@ -53,18 +53,24 @@ onSyncState((s) => {
 function paintNet() {
   const s = getSyncState();
   if (!isOnline()) net.textContent = "○ device offline";
-  else if (s.reachable === true) net.textContent = "● Hermes reachable";
+  // Reachability is evidence with a shelf life: only a contact in the last 60 s counts as "reachable".
+  else if (s.reachable === true && s.last_contact && Date.now() - Date.parse(s.last_contact) < 60_000) net.textContent = "● Hermes reachable";
+  else if (s.reachable === true) net.textContent = "◌ checking Hermes…";
   else if (s.reachable === false) net.textContent = "◐ no Hermes connection";
   else net.textContent = "◌ checking…";
   net.title = s.last_contact ? `Last contact with Hermes: ${new Date(s.last_contact).toLocaleString()}` : "No contact with Hermes yet";
 }
 window.addEventListener("online", paintNet);
 window.addEventListener("offline", () => { paintNet(); });
+setInterval(paintNet, 10_000);  // let stale reachability visibly expire
 paintNet();
 let wasRunning = false;
 onSyncState((s) => {
-  queue.textContent = s.running ? "syncing…" : s.auth_required ? "sign-in needed"
-    : s.awaiting ? `${s.awaiting} awaiting confirmation` : "all confirmed";
+  // "all confirmed" only when every SAVED record is confirmed AND nothing is left unsubmitted.
+  const parts: string[] = [];
+  if (s.awaiting) parts.push(`${s.awaiting} awaiting confirmation`);
+  if (s.drafts) parts.push(`${s.drafts} not submitted`);
+  queue.textContent = s.running ? "syncing…" : s.auth_required ? "sign-in needed" : parts.length ? parts.join(" · ") : "all confirmed";
   queue.title = s.last_confirmed ? `Last server confirmation: ${new Date(s.last_confirmed).toLocaleString()}` : "";
   paintNet();
   // When a sync pass ends, refresh status screens so they never contradict the header. Never re-render forms.

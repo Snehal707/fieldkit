@@ -39,9 +39,14 @@ self.addEventListener("message", (event) => {
   if (event.data?.type === "skip-waiting") self.skipWaiting();
 });
 
+// Hermes adds "Vary: Origin" to every response, and the app's module scripts/styles are CORS requests that carry
+// an Origin header the install-time fetch did not — so a Vary-respecting lookup MISSES and the browser silently
+// falls back to its evictable HTTP cache. FieldKit's own app files never vary by origin: ignore Vary for them.
+const MATCH = { ignoreSearch: true, ignoreVary: true };
+
 async function shellResponse() {
   const cache = await caches.open(SHELL);
-  return (await cache.match(INDEX)) || (await cache.match(new URL("index.html", SCOPE).toString())) ||
+  return (await cache.match(INDEX, MATCH)) || (await cache.match(new URL("index.html", SCOPE).toString(), MATCH)) ||
     new Response("<h1>FieldKit is not installed yet</h1><p>Open it once while online.</p>", { status: 503, headers: { "content-type": "text/html" } });
 }
 
@@ -68,7 +73,7 @@ self.addEventListener("fetch", (event) => {
     if (req.mode === "navigate") { event.respondWith(navigate(req)); return; }
     event.respondWith((async () => {
       const cache = await caches.open(SHELL);
-      const hit = await cache.match(req, { ignoreSearch: true });
+      const hit = await cache.match(req, MATCH);
       if (hit) return hit;
       try { return await fetch(req); } catch (_) { return new Response("", { status: 504 }); }
     })());

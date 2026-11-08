@@ -124,4 +124,13 @@ describe("record lifecycle", () => {
     await submit("rec_life_000005");
     expect(await refreshPending()).toBe(2);
   });
+
+  it("an unsubmitted draft is never reported as confirmed", async () => {
+    const d = await db();
+    await d.put("drafts", { id: "rec_draft_00001", workflow_id: wf.id, workflow_version: 1, answers: { asset_id: "bad" },
+      started_at: "", updated_at: "", lang: "en" });
+    await refreshPending();
+    expect(getSyncState().awaiting).toBe(0);
+    expect(getSyncState().drafts).toBe(1);   // header shows "1 not submitted", not "all confirmed"
+  });
 });
