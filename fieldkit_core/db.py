@@ -481,7 +481,7 @@ class Store:
             d["answers"] = _uj(d["answers"])
             d["local_results"] = _uj(d["local_results"])
             d["attachments"] = [dict(a) for a in self._q(
-                "SELECT id, field_id, mime, size, sha256, status FROM attachments WHERE record_id=?", (d["id"],))]
+                "SELECT id, field_id, mime, size, sha256, status, created_at, stored_at FROM attachments WHERE record_id=?", (d["id"],))]
         else:
             d.pop("answers", None)
             d.pop("local_results", None)

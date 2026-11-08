@@ -3,8 +3,8 @@ import { db, deviceId, type Draft, type LocalRecord, type LocalResults, type Ref
 import { cleanAnswers, summarize, text, type Workflow } from "./engine";
 import { KnowledgeIndex } from "./knowledge";
 import { installedPacks } from "./packs";
-import { enqueueRecord } from "./sync";
-import { nowIso } from "./util";
+import { refreshPending } from "./sync";
+import { nowIso, uuid } from "./util";
 
 export async function buildLocalResults(wf: Workflow, answers: Record<string, unknown>, lang: string): Promise<LocalResults> {
   const s = summarize(wf, answers, lang);
@@ -40,13 +40,17 @@ export async function completeDraft(draft: Draft, wf: Workflow): Promise<LocalRe
   const rec: LocalRecord = {
     id: draft.id, workflow_id: wf.id, workflow_version: wf.version ?? 1, workflow_title: text(wf.title, draft.lang),
     device_id: await deviceId(), answers, local_results: local, created_local_at: draft.started_at, completed_at: nowIso(),
-    lang: draft.lang, sync_status: "local", server_revision: 0, analysis_status: "not_requested",
+    lang: draft.lang, sync_status: "pending", server_revision: 0, analysis_status: "not_requested",
   };
+  // ONE transaction: the record, its sync-queue entry and the draft removal commit together or not at all,
+  // so a record can never exist without being queued (e.g. if iOS kills the app mid-save).
   const d = await db();
-  const tx = d.transaction(["records", "drafts"], "readwrite");
+  const tx = d.transaction(["records", "drafts", "outbox"], "readwrite");
   await tx.objectStore("records").put(rec);
+  await tx.objectStore("outbox").add({ kind: "record", record_id: rec.id, idempotency_key: uuid("idk"),
+    created_at: nowIso(), attempts: 0, next_attempt_at: 0 });
   await tx.objectStore("drafts").delete(draft.id);
   await tx.done;
-  await enqueueRecord(rec.id);
+  await refreshPending();
   return rec;
 }

@@ -118,7 +118,7 @@ describe("sync queue", () => {
     await enqueueRecord("rec_test_000001");
     await runSync();
     let r = await (await db()).get("records", "rec_test_000001");
-    expect(r!.sync_status).toBe("pending");  // interrupted upload
+    expect(r!.sync_status).toBe("received");  // server has the record; media upload interrupted
     expect((await (await db()).get("attachments", "att_test_0001"))!.uploaded).toBe(false);
     await runSync({ force: true });
     r = await (await db()).get("records", "rec_test_000001");

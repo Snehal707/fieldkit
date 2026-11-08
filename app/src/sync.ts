@@ -13,12 +13,24 @@ import { nowIso, uuid } from "./util";
 
 export interface SyncState {
   running: boolean; last_run?: string; last_ok?: string; auth_required: boolean; offline: boolean;
-  pending: number; last_error?: string; uploaded: number;
+  /** Internal outbox entries (records + individual media uploads). Not shown to users. */
+  pending: number;
+  /** Records on this device the server has NOT yet fully confirmed (record + every file). */
+  awaiting: number;
+  /** Of those, records that need the user (conflict or rejected by the server). */
+  attention: number;
+  /** Last proven reachability of the Hermes FieldKit API — independent of navigator.onLine. */
+  reachable: boolean | null;
+  last_contact?: string;
+  /** When the server last confirmed a record or file. */
+  last_confirmed?: string;
+  last_error?: string; uploaded: number;
 }
 
 let running = false;
 const listeners = new Set<(s: SyncState) => void>();
-let state: SyncState = { running: false, auth_required: false, offline: false, pending: 0, uploaded: 0 };
+let state: SyncState = { running: false, auth_required: false, offline: false, pending: 0, awaiting: 0, attention: 0,
+  reachable: null, uploaded: 0 };
 
 export function onSyncState(fn: (s: SyncState) => void): () => void {
   listeners.add(fn);
@@ -50,11 +62,32 @@ export async function enqueueRecord(recordId: string): Promise<void> {
   await refreshPending();
 }
 
+/** Recompute counters from durable state. Returns the number of records awaiting server confirmation. */
 export async function refreshPending(): Promise<number> {
-  const n = await (await db()).count("outbox");
-  emit({ pending: n });
-  return n;
+  const d = await db();
+  const [ops, recs] = await Promise.all([d.count("outbox"), d.getAll("records")]);
+  const awaiting = recs.filter((r) => r.sync_status !== "synced").length;
+  const attention = recs.filter((r) => r.sync_status === "conflict" || r.sync_status === "error").length;
+  emit({ pending: ops, awaiting, attention });
+  return awaiting;
 }
+
+function contact(ok: boolean) {
+  emit(ok ? { reachable: true, last_contact: nowIso(), offline: false } : { reachable: false, offline: true });
+}
+
+/** A genuine FieldKit acknowledgement names this record and a positive revision. Anything else — a captive
+ * portal page, a proxy's "200 OK", an ack for another record — is not proof the server stored it. */
+function isRecordAck(res: any, recordId: string): boolean {
+  return !!res && typeof res === "object" && res.record_id === recordId && Number.isInteger(res.revision) && res.revision >= 1
+    && (res.sync_status === "complete" || res.sync_status === "received");
+}
+
+function isAttachmentAck(body: any, attachmentId: string): boolean {
+  return !!body && typeof body === "object" && body.attachment_id === attachmentId && body.status === "stored";
+}
+
+class NotAnAck extends Error { constructor(what: string) { super(`Unconfirmed response for ${what} (not a FieldKit acknowledgement)`); } }
 
 async function updateRecord(id: string, patch: Partial<LocalRecord>): Promise<LocalRecord | undefined> {
   const d = await db();
@@ -85,6 +118,9 @@ async function sendRecord(op: OutboxOp, dev: string): Promise<"done" | "stop" | 
   await updateRecord(rec.id, { sync_status: "syncing", last_sync_attempt: nowIso() });
   try {
     const res = await api<any>("sync/records", { method: "POST", json: payload });
+    if (!isRecordAck(res, rec.id)) throw new NotAnAck(`record ${rec.id}`);
+    contact(true);
+    emit({ last_confirmed: nowIso() });
     const tx = d.transaction(["outbox", "records"], "readwrite");
     await tx.objectStore("outbox").delete(op.seq!);
     for (const aid of res.attachments_needed ?? []) {
@@ -126,6 +162,9 @@ async function sendAttachment(op: OutboxOp): Promise<"done" | "stop" | "retry"> 
     if (res.status === 401 || res.type === "opaqueredirect") throw new AuthRequired();
     const body = await res.json().catch(() => null);
     if (!res.ok) throw new HttpError(res.status, body);
+    if (!isAttachmentAck(body, att.id)) throw new NotAnAck(`file ${att.id}`);
+    contact(true);
+    emit({ last_confirmed: nowIso() });
     const tx = d.transaction(["outbox", "attachments", "records"], "readwrite");
     await tx.objectStore("outbox").delete(op.seq!);
     const a = await tx.objectStore("attachments").get(att.id);
@@ -147,15 +186,19 @@ async function sendAttachment(op: OutboxOp): Promise<"done" | "stop" | "retry"> 
 
 async function handleError(e: unknown, op: OutboxOp, recordId: string): Promise<"stop" | "retry" | "done"> {
   const d = await db();
+  // A media upload failing never "un-receives" a record the server already acknowledged.
+  const waiting: LocalRecord["sync_status"] = op.kind === "attachment" ? "received" : "pending";
+  // Reachability is proven by what actually came back, not by navigator.onLine.
+  if (e instanceof Offline || e instanceof NotAnAck) contact(false);
+  else if (e instanceof AuthRequired || e instanceof HttpError) contact(true);
   if (e instanceof AuthRequired) {
-    await updateRecord(recordId, { sync_status: "pending" });
+    await updateRecord(recordId, { sync_status: waiting });
     emit({ auth_required: true });
     await setSetting("auth_required", true);
     return "stop";
   }
   if (e instanceof Offline) {
-    await updateRecord(recordId, { sync_status: "pending" });
-    emit({ offline: true });
+    await updateRecord(recordId, { sync_status: waiting });
     return "stop";
   }
   if (e instanceof HttpError && e.status === 409 && e.body?.conflict) {
@@ -175,9 +218,9 @@ async function handleError(e: unknown, op: OutboxOp, recordId: string): Promise<
   op.attempts += 1;
   op.next_attempt_at = backoff(op.attempts);
   await d.put("outbox", op);
-  await updateRecord(recordId, { sync_status: "pending", sync_error: e instanceof Error ? e.message : String(e) });
+  await updateRecord(recordId, { sync_status: waiting, sync_error: e instanceof Error ? e.message : String(e) });
   emit({ last_error: e instanceof Error ? e.message : String(e) });
-  return "retry";
+  return e instanceof NotAnAck ? "stop" : "retry";
 }
 
 /** Process the outbox once. Safe to call often; concurrent calls coalesce. */
@@ -187,6 +230,7 @@ export async function runSync(opts: { force?: boolean } = {}): Promise<SyncState
   emit({ running: true, last_run: nowIso(), offline: false, last_error: undefined });
   try {
     const dev = await deviceId();
+    let attempted = false;
     for (let guard = 0; guard < 500; guard++) {
       const d = await db();
       const ops = await d.getAll("outbox");
@@ -194,11 +238,13 @@ export async function runSync(opts: { force?: boolean } = {}): Promise<SyncState
         .sort((a, b) => (a.kind === b.kind ? a.seq! - b.seq! : a.kind === "record" ? -1 : 1));
       if (!ready.length) break;
       const op = ready[0];
+      attempted = true;
       const outcome = op.kind === "record" ? await sendRecord(op, dev) : await sendAttachment(op);
       if (outcome === "stop") break;
       if (outcome === "retry" && !opts.force) continue;
       if (outcome === "retry" && opts.force) break;
     }
+    if (!attempted) await probe();
     if (!state.auth_required && !state.offline) {
       emit({ last_ok: nowIso() });
       await setSetting("auth_required", false);
@@ -210,6 +256,16 @@ export async function runSync(opts: { force?: boolean } = {}): Promise<SyncState
     emit({ running: false });
   }
   return state;
+}
+
+/** Nothing to upload: one cheap authenticated call proves (or disproves) that Hermes is reachable. */
+async function probe(): Promise<void> {
+  try {
+    const me = await api<any>("me");
+    contact(!!me && typeof me === "object" && typeof me.user_id === "string");
+  } catch (e) {
+    contact(e instanceof AuthRequired || e instanceof HttpError);
+  }
 }
 
 /** Called after the user signs in again. */

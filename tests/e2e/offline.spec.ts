@@ -82,6 +82,8 @@ test("install online, then work fully offline after a cold restart, then sync", 
 
   // offline Results page
   await expect(page.locator("text=Saved locally. Pending synchronization.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("header .pill", { hasText: "1 awaiting confirmation" })).toBeVisible();  // never "0 queued" offline
+  await expect(page.locator("header .pill", { hasText: "device offline" })).toBeVisible();
   await expect(page.locator("text=Safety guard problem")).toBeVisible();
   await expect(page.locator("text=Vibration above alarm level")).toBeVisible();
   await expect(page.locator(".tag-local")).toBeVisible();
@@ -112,6 +114,8 @@ test("install online, then work fully offline after a cold restart, then sync", 
   await expect.poll(async () => (await ctx.request.get(`${API}/records/${recordId}`)).status(), { timeout: 30_000 }).toBe(200);
   await page.goto(recordUrl);
   await expect(page.locator("text=Synchronised — durably received by Hermes")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("header .pill", { hasText: "all confirmed" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("header .pill", { hasText: "Hermes reachable" })).toBeVisible({ timeout: 15_000 });
   await expect(page.locator("text=Hermes analysis:")).toBeVisible();
   // re-run sync: still exactly one server record (idempotent)
   await page.goto(`${APP}#/sync`);
@@ -124,5 +128,7 @@ test("install online, then work fully offline after a cold restart, then sync", 
   expect(full.answers.vibration_level).toBe(9.2);
   expect(full.local_results.findings.map((f: any) => f.id)).toContain("guard_missing");
   expect(full.answers.location.lat).toBeCloseTo(18.5204, 3);
+  // Evidence trail: the server receipt time is after the offline completion time.
+  expect(full.received_at * 1000).toBeGreaterThan(Date.parse(full.completed_at));
   await ctx.close();
 });

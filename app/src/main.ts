@@ -46,25 +46,51 @@ onSyncState((s) => {
   }
 });
 
+// Three different facts, never conflated:
+//  1. device network (navigator.onLine — on iOS this is only "an interface is up", not "internet works");
+//  2. Hermes reachability (proven by the last real request to the FieldKit API);
+//  3. server-confirmed sync (records the server has fully acknowledged).
 function paintNet() {
-  net.textContent = isOnline() ? "● online" : "○ offline";
+  const s = getSyncState();
+  if (!isOnline()) net.textContent = "○ device offline";
+  else if (s.reachable === true) net.textContent = "● Hermes reachable";
+  else if (s.reachable === false) net.textContent = "◐ no Hermes connection";
+  else net.textContent = "◌ checking…";
+  net.title = s.last_contact ? `Last contact with Hermes: ${new Date(s.last_contact).toLocaleString()}` : "No contact with Hermes yet";
 }
 window.addEventListener("online", paintNet);
-window.addEventListener("offline", paintNet);
+window.addEventListener("offline", () => { paintNet(); });
 paintNet();
-onSyncState((s) => { queue.textContent = s.running ? "syncing…" : s.auth_required ? "sign-in needed" : `${s.pending} queued`; });
+let wasRunning = false;
+onSyncState((s) => {
+  queue.textContent = s.running ? "syncing…" : s.auth_required ? "sign-in needed"
+    : s.awaiting ? `${s.awaiting} awaiting confirmation` : "all confirmed";
+  queue.title = s.last_confirmed ? `Last server confirmation: ${new Date(s.last_confirmed).toLocaleString()}` : "";
+  paintNet();
+  // When a sync pass ends, refresh status screens so they never contradict the header. Never re-render forms.
+  if (wasRunning && !s.running && /^#\/(?:$|\?|results\/|records|sync|reports)/.test(location.hash || "#/")) void route();
+  wasRunning = s.running;
+});
 
+let renderSeq = 0;
+let lastHash = "";
 async function route() {
   const hash = location.hash || "#/";
+  const seq = ++renderSeq;  // renders can overlap (navigation + post-sync refresh): only the latest one is shown
   for (const [re, view, name] of routes) {
     const m = hash.match(re);
     if (m) {
       title.textContent = name === "Home" ? "FieldKit" : name;
       for (const a of nav.querySelectorAll("a")) a.classList.toggle("on", a.getAttribute("href") === (hash.split("?")[0] || "#/"));
+      const target = h("div");
+      try { await view(target, (m.groups ?? {}) as Record<string, string>); }
+      catch (e) { target.append(h("div", { class: "banner bad" }, `Something went wrong: ${(e as Error).message}`)); console.error(e); }
+      if (seq !== renderSeq) return;  // a newer render superseded this one
+      const keepScroll = window.scrollY;
       clear(main);
-      try { await view(main, (m.groups ?? {}) as Record<string, string>); }
-      catch (e) { main.append(h("div", { class: "banner bad" }, `Something went wrong: ${(e as Error).message}`)); console.error(e); }
-      window.scrollTo(0, 0);
+      main.append(...Array.from(target.childNodes));
+      window.scrollTo(0, hash === lastHash ? keepScroll : 0);
+      lastHash = hash;
       return;
     }
   }

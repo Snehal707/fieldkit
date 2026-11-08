@@ -470,7 +470,13 @@ export const resultsView: View = async (main, p) => {
   if (!synced) {
     main.append(h("div", { class: `banner ${rec.sync_status === "conflict" || rec.sync_status === "error" ? "bad" : "local"}` },
       h("strong", null, rec.sync_status === "conflict" ? "Conflict — needs your decision" : rec.sync_status === "error" ? "Sync problem" : "Saved locally. Pending synchronization."),
-      h("div", { class: "muted" }, rec.sync_status === "error" ? rec.sync_error ?? "" : "Hermes has not seen this record yet. The findings below were generated on this device."),
+      h("div", { class: "muted" }, rec.sync_status === "error" ? rec.sync_error ?? "" : "Hermes has not confirmed this record yet. The findings below were generated on this device."),
+      rec.sync_status === "pending" || rec.sync_status === "syncing" ? h("div", { class: "muted" }, (() => {
+        const st = getSyncState();
+        return !isOnline() ? "Device is offline — it will upload automatically when FieldKit is open and connected."
+          : st.reachable === false ? "Network is up but Hermes is not reachable yet — will retry automatically."
+            : "Uploading when Hermes confirms…";
+      })()) : null,
       rec.sync_status === "conflict" ? h("a", { class: "btn", href: "#/sync" }, "Resolve") : null));
   } else {
     main.append(h("div", { class: "banner hermes" },
@@ -579,8 +585,13 @@ export const syncView: View = async (main) => {
   const st = getSyncState();
   const waiting = recs.filter((r) => !["synced", "received"].includes(r.sync_status));
   main.append(h("div", { class: "card" }, h("h2", null, "Pending Sync"),
-    h("dl", { class: "kv" }, h("dt", null, "Connection"), h("dd", null, isOnline() ? "Browser reports online" : "Offline"),
-      h("dt", null, "Queued uploads"), h("dd", null, String(ops.length)),
+    h("dl", { class: "kv" },
+      h("dt", null, "Device network"), h("dd", null, isOnline() ? "Connected (as reported by the browser)" : "Offline"),
+      h("dt", null, "Hermes"), h("dd", null, st.reachable === true ? `Reachable — last contact ${fmtTime(st.last_contact)}`
+        : st.reachable === false ? "Not reachable (no internet, captive Wi-Fi, or server down)" : "Not checked yet"),
+      h("dt", null, "Awaiting confirmation"), h("dd", null, `${st.awaiting} record(s)${st.attention ? ` · ${st.attention} need attention` : ""}`),
+      h("dt", null, "Upload steps queued"), h("dd", null, String(ops.length)),
+      h("dt", null, "Last server confirmation"), h("dd", null, fmtTime(st.last_confirmed)),
       h("dt", null, "Last attempt"), h("dd", null, fmtTime(st.last_run)), h("dt", null, "Last success"), h("dd", null, fmtTime(st.last_ok)),
       st.last_error ? h("dt", null, "Last error") : null, st.last_error ? h("dd", null, st.last_error) : null),
     h("div", { class: "row", style: "margin-top:.6rem" },

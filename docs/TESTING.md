@@ -78,6 +78,21 @@ FIELDKIT_E2E_MODELS=1 FIELDKIT_E2E_PASS=<password> npm run test:e2e -- models.sp
 - Signed out, Home offers **Sign in** → Hermes' own login page with `next=/dashboard-plugins/fieldkit/return.html` → username and password entered → the browser lands back in **FieldKit** (not the dashboard) and shows "Signed in as …".
 - Home then offers **Download all 3 workflow(s)**; one tap leads to "Ready to work offline" with 3 workflows downloaded.
 
+`unreachable.spec.ts` (**passed**, 0.1.3):
+- **Network "up" (`navigator.onLine` true) but Hermes not reachable:**
+  - A captive portal answers every API call with `200 text/html`, then connections are refused.
+  - The header shows "no Hermes connection" and "1 awaiting confirmation". The Pending Sync screen says "Hermes: Not reachable", and the server has no such record (404).
+- **When the outage lifts:** the record is confirmed **once** (revision 1), and the header shows "all confirmed" and "Hermes reachable".
+
+`lifecycle.test.ts` (vitest, 0.1.3):
+- True offline submission: the record and its queue entry commit in one IndexedDB transaction.
+- Reconnect.
+- A captive-portal 200, or an ack for a different record, is rejected.
+- A failed photo upload keeps the record "received" and counted.
+- A non-FieldKit attachment response is rejected.
+- A 422 counts as needing attention.
+- The counter counts records, not queue entries.
+
 `models.spec.ts` (translation and OCR):
 - **Online:** installing *English → Hindi translation* downloads the pinned ONNX weights (~110 MB), runs a self-test, and **verifies size and SHA-256 of the cached weights** ("pinned files verified"). *OCR — English* also installs and runs.
 - **Offline result:** see "Model results" below.
