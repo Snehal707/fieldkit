@@ -74,6 +74,10 @@ FIELDKIT_E2E_MODELS=1 FIELDKIT_E2E_PASS=<password> npm run test:e2e -- models.sp
 - **Signed in again:** sync resumes and the server holds **exactly one** record (also after a forced re-sync), `sync_status: complete`.
   - Answers, local findings and GPS round-trip intact. The Results page shows "Synchronised — durably received by Hermes" and the Hermes analysis status separately.
 
+`login.spec.ts` (**passed**, 0.1.1):
+- Signed out, Home offers **Sign in** → Hermes' own login page with `next=/dashboard-plugins/fieldkit/return.html` → username and password entered → the browser lands back in **FieldKit** (not the dashboard) and shows "Signed in as …".
+- Home then offers **Download all 3 workflow(s)**; one tap leads to "Ready to work offline" with 3 workflows downloaded.
+
 `models.spec.ts` (translation and OCR):
 - **Online:** installing *English → Hindi translation* downloads the pinned ONNX weights (~110 MB), runs a self-test, and **verifies size and SHA-256 of the cached weights** ("pinned files verified"). *OCR — English* also installs and runs.
 - **Offline result:** see "Model results" below.
@@ -98,7 +102,7 @@ Bugs found by these runs and fixed:
 - A real model-generated report (needs a provider; it would run on the hosted instance).
 - Hermes Mobile conversations invoking FieldKit tools against the hosted instance.
 - Android Chrome and iOS Safari: installation, offline reopen, camera, microphone, GPS, OCR/translation memory use.
-- OAuth (Nous) 15-minute expiry with real redirects inside an installed PWA. Only the basic provider was tested.
+- OAuth (Nous) 15-minute expiry with real redirects inside an installed PWA. Locally only the basic provider was tested; the return page works the same for any provider because the target is a plain `next` path.
 
 ## Device checklist
 Run on each phone over HTTPS:

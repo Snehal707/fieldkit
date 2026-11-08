@@ -1,6 +1,6 @@
 // Core screens: Home, My Workflows, workflow runner, Results, Saved Records, Pending Sync, Reports.
 import { api, AuthRequired } from "./api";
-import { loginUrl } from "./config";
+import { signIn } from "./config";
 import { db, deleteRecord, getSetting, type Attachment, type Draft, type LocalRecord, type StoredReport } from "./db";
 import { computeState, ERROR_TEXT, text, type Field, type Workflow } from "./engine";
 import { installedModels, ocr, ocrLanguages, speak, transcribe, voicesReady } from "./intel";
@@ -63,6 +63,7 @@ export const homeView: View = async (main) => {
   const ready = essential.every((c) => c.ok !== false);
   const pending = records.filter((r) => !["synced", "received"].includes(r.sync_status)).length;
   const sync = getSyncState();
+  if (!(await installedWorkflows()).length) main.append(getStartedCard(sync.auth_required));
   main.append(
     h("div", { class: `banner ${ready ? "hermes" : "warn"}` },
       h("strong", null, ready ? "Ready to work offline" : "Not ready for offline use yet"),
@@ -86,6 +87,57 @@ export const homeView: View = async (main) => {
   }
 };
 
+/** First run: nothing downloaded yet. Workflows are never pulled silently (they can carry large packs), so
+ * Home explains the next step and offers a one-tap download of everything Hermes has published. */
+function getStartedCard(authRequired: boolean): HTMLElement {
+  const card = h("div", { class: "card" }, h("h2", null, "Get started"));
+  if (!isOnline()) {
+    card.append(h("p", { class: "muted" }, "Connect to the internet once to download workflows from your Hermes."));
+    return card;
+  }
+  if (authRequired) {
+    card.append(h("p", null, "Sign in to Hermes to see your workflows."),
+      h("button", { class: "primary", onclick: () => signIn("#/") }, "Sign in"));
+    return card;
+  }
+  const body = h("div", null, h("p", { class: "muted" }, "Checking your Hermes for published workflows…"));
+  card.append(body);
+  void (async () => {
+    try {
+      const { workflows } = await api<{ workflows: any[] }>("workflows");
+      clear(body);
+      if (!workflows.length) {
+        body.append(h("p", null, "Your Hermes has no published FieldKit workflows yet."),
+          h("p", { class: "muted" }, "In Hermes Mobile, say “Install the FieldKit examples”, or ask Hermes to create and publish a workflow. Then come back here."),
+          h("button", { onclick: () => go(`#/?r=${Date.now()}`) }, "Check again"));
+        return;
+      }
+      const btn = h("button", { class: "primary" }, `Download all ${workflows.length} workflow(s) for offline use`) as HTMLButtonElement;
+      btn.onclick = async () => {
+        btn.disabled = true;
+        const failed: string[] = [];
+        for (const [i, w] of workflows.entries()) {
+          btn.textContent = `Downloading ${i + 1} of ${workflows.length}…`;
+          try { await installWorkflow(w.id); } catch { failed.push(w.title || w.id); }
+        }
+        toast(failed.length ? `Some downloads failed: ${failed.join(", ")}` : "Workflows and packs saved on this device.", failed.length ? "error" : "ok");
+        go(`#/?r=${Date.now()}`);
+      };
+      body.append(h("p", null, `${workflows.length} published workflow(s) available: ${workflows.map((w) => w.title || w.id).join(", ")}.`),
+        h("div", { class: "row" }, btn, h("a", { class: "btn", href: "#/packs" }, "Choose individually")),
+        h("p", { class: "muted" }, "Translation, OCR and speech models are optional larger downloads in Offline Packs."));
+    } catch (e) {
+      clear(body);
+      if (e instanceof AuthRequired) {
+        body.append(h("p", null, "Sign in to Hermes to see your workflows."), h("button", { class: "primary", onclick: () => signIn("#/") }, "Sign in"));
+      } else {
+        body.append(h("p", { class: "muted" }, `Could not reach Hermes: ${(e as Error).message}`));
+      }
+    }
+  })();
+  return card;
+}
+
 function tile(href: string, title: string, sub: string) {
   return h("a", { class: "tile", href }, h("strong", null, title), h("span", { class: "muted" }, sub));
 }
@@ -93,7 +145,7 @@ function tile(href: string, title: string, sub: string) {
 export function authBanner() {
   return h("div", { class: "banner warn" }, h("strong", null, "Sign in to Hermes to continue syncing"),
     h("div", { class: "muted" }, "Your session expired. Nothing has been lost: records stay queued on this phone and upload after you sign in."),
-    h("div", { class: "row", style: "margin-top:.5rem" }, h("a", { class: "btn primary", href: loginUrl("#/sync") }, "Sign in")));
+    h("div", { class: "row", style: "margin-top:.5rem" }, h("button", { class: "primary", onclick: () => signIn(location.hash || "#/sync") }, "Sign in")));
 }
 
 // ------------------------------------------------------------------ workflows
@@ -529,7 +581,7 @@ export const syncView: View = async (main) => {
       st.last_error ? h("dt", null, "Last error") : null, st.last_error ? h("dd", null, st.last_error) : null),
     h("div", { class: "row", style: "margin-top:.6rem" },
       h("button", { class: "primary", disabled: st.running, onclick: async () => { await runSync({ force: true }); go(`#/sync?r=${Date.now()}`); } }, st.running ? "Syncing…" : "Sync now"),
-      h("a", { class: "btn", href: loginUrl("#/sync") }, "Sign in again"))));
+      h("button", { onclick: () => signIn("#/sync") }, "Sign in again"))));
   main.append(h("div", { class: "card" }, h("h2", null, `Waiting (${waiting.length})`),
     waiting.length ? h("ul", { class: "clean" }, ...waiting.map((r) => h("li", null, h("a", { href: `#/results/${r.id}` }, r.workflow_title),
       h("div", { class: "muted" }, `${STATUS_TEXT[r.sync_status]}${r.sync_error ? ` — ${r.sync_error}` : ""}`),

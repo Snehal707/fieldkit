@@ -1,6 +1,6 @@
 // Offline Assistant, Knowledge, Dictionary, Translate, OCR, Offline Packs and Settings.
 import { AuthRequired } from "./api";
-import { APP_VERSION, loginUrl } from "./config";
+import { APP_VERSION, signIn } from "./config";
 import { db, deleteRecord, deviceId, getSetting, setSetting } from "./db";
 import { text } from "./engine";
 import {
@@ -269,7 +269,7 @@ export const settingsView: View = async (main) => {
       h("dt", null, "Offline ready"), h("dd", null, checks.slice(0, 3).every((c) => c.ok !== false) ? "yes" : "no")),
     h("div", { class: "row", style: "margin-top:.8rem" },
       h("button", { onclick: async () => { const r = await requestPersistence(); toast(r ? "Persistent storage granted" : "The browser declined; data may be evicted under storage pressure.", r ? "ok" : "error"); go(`#/settings?r=${Date.now()}`); } }, "Request persistent storage"),
-      h("a", { class: "btn", href: loginUrl("#/settings") }, "Sign in to Hermes"))));
+      h("button", { onclick: () => signIn("#/settings") }, "Sign in to Hermes"))));
 
   main.append(h("div", { class: "card" }, h("h2", null, "Backup & recovery"),
     h("p", { class: "muted" }, "Export everything on this device (records, media, reports, drafts) to a file you can keep or move to another device."),

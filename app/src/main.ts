@@ -1,5 +1,6 @@
 import "./style.css";
-import { refreshPending, onSyncState, restoreAuthFlag, startAutoSync, registerBackgroundSync, clearAuthRequired } from "./sync";
+import { takeReturn } from "./config";
+import { refreshPending, onSyncState, restoreAuthFlag, startAutoSync, registerBackgroundSync, clearAuthRequired, getSyncState } from "./sync";
 import { clear, h, isOnline, toast } from "./util";
 import {
   authBanner, homeView, recordsView, reportsView, resultsView, runView, syncView, workflowLinkView, workflowsView, whoAmI, type View,
@@ -99,12 +100,16 @@ async function registerSw() {
 (async () => {
   await restoreAuthFlag();
   await refreshPending();
+  // Back from Hermes sign-in (via dashboard-plugins/fieldkit/return.html): reopen the screen the user left.
+  const back = takeReturn();
+  if (back && (location.hash || "#/") === "#/") history.replaceState(null, "", back);
   await route();
   await registerSw();
   if (isOnline()) {
-    // Returning from the Hermes login page: a successful /me clears the paused-sync flag.
+    // A successful /me clears the paused-sync flag; the screen re-renders with fresh signed-in state.
     const me = await whoAmI();
-    if (me) await clearAuthRequired();
+    if (me && getSyncState().auth_required) { await clearAuthRequired(); await route(); }
+    if (me && back) toast(`Signed in as ${me.display_name || me.user_id}`, "ok");
     try { await navigator.storage?.persist?.(); } catch { /* optional */ }
   }
   startAutoSync();

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Hermes only accepts non-/api paths as a post-login "next" target (is_safe_next_path), and the FieldKit
+       app lives under /api/plugins/fieldkit/app/. Hermes serves this static page at
+       /dashboard-plugins/fieldkit/return.html; it forwards to the app (relative URL keeps any dashboard prefix).
+       No script: works under any CSP. -->
+  <meta http-equiv="refresh" content="0; url=../../api/plugins/fieldkit/app/">
+  <title>Returning to FieldKit…</title>
+</head>
+<body style="font-family:system-ui,sans-serif;padding:2rem">
+  <p>Signed in. Returning to FieldKit…</p>
+  <p><a href="../../api/plugins/fieldkit/app/">Continue to FieldKit</a></p>
+</body>
+</html>

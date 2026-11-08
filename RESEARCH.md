@@ -43,7 +43,11 @@ or exercised by a test in this repository.
 - A non-loopback bind turns on the cookie gate (`hermes_session_at`, HttpOnly, SameSite=Lax). The Nous OAuth provider issues 15-minute tokens with no refresh token in contract v1. The basic provider issues HMAC sessions (default 12 h, `session_ttl_seconds`).
 - Unauthenticated `/api/*` requests get **401 before the plugin runs**. Verified with curl: `/api/plugins/fieldkit/records` and `/app/` both returned 401.
 - Identity inside a plugin route: `request.state.session.user_id` (gated) or loopback `local` (`dashboard_auth/routes.py:541`).
-- Login: `POST /auth/password-login {provider, username, password, next}` or the `/login?next=` page. The JSON endpoint returned `next: "/"` when given the app path, so FieldKit's sign-in link goes through the `/login?next=` page instead.
+- Login: `POST /auth/password-login {provider, username, password, next}` or the `/login?next=` page.
+- **Post-login redirects:** `is_safe_next_path` (`dashboard_auth/request_utils.py`) rejects **every `/api/...` path** as a `next` target, plus `/login`, `/auth/` and `/api/auth/`. A `next` pointing at the app (`/api/plugins/fieldkit/app/`) is therefore silently replaced with `/`, so the user lands on the dashboard (reported on the hosted instance in 0.1.0).
+  - Fix (0.1.1): `next=/dashboard-plugins/fieldkit/return.html`. That's a static page from the plugin's `dashboard/` folder: Hermes serves it unauthenticated, `.html` is an allowed type, and it isn't under `/api`. It forwards to the app with a script-free meta refresh, and the app reopens the remembered screen.
+  - Verified: Hermes now returns `"next":"/dashboard-plugins/fieldkit/return.html"`, and `tests/e2e/login.spec.ts` completes the real Hermes login page round trip back into FieldKit.
+- **Hot-installed plugin without a restart** (hosted, 0.1.0): API routes hot-mount, but `register(ctx)` hasn't run in the plugin host yet ("deferred: tools (next session)"). So `/status` reports `llm_available: false, analysis_mode: deferred`. Jobs stay queued; `fieldkit_process_pending_jobs` (from Hermes) or one approved dashboard restart enables automatic mode.
 - Loopback binds require `X-Hermes-Session-Token` on `/api/*`, so plain browser navigation to the PWA fails on a loopback-only dashboard. Local testing therefore binds `127.0.0.2`: still local-only, but it turns the gate on.
 
 ## Catalog rules that shaped the design
