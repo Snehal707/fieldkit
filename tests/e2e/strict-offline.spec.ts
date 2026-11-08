@@ -106,6 +106,11 @@ test("A: browser offline (page + service worker) → stays pending, survives res
   expect([...seen].every((t) => (t.includes("1 awaiting confirmation") && t.includes("1 not submitted")) || t.includes("syncing")), [...seen].join(" | ")).toBe(true);
   expect([...seen].some((t) => t.includes("all confirmed"))).toBe(false);
   expect([...seen].every((t) => t.includes("device offline")), [...seen].join(" | ")).toBe(true);
+  // Diagnostics tells the truth offline, with evidence
+  await page.goto(`${APP}#/diagnostics`);
+  await page.getByRole("button", { name: "Run live connection test" }).click();
+  await expect(page.locator("text=No connection.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("text=NO NETWORK").first()).toBeVisible();
   // 2. the server never acknowledged it — checked by an independent online client
   expect((await server.get(`${API}/records/${id}`)).status()).toBe(404);
   expect(net, `requests reached the network while offline: ${net.join(", ")}`).toEqual([]);
@@ -134,6 +139,10 @@ test("A: browser offline (page + service worker) → stays pending, survives res
   const rec = await (await server.get(`${API}/records/${id}`)).json();
   expect(rec.revision).toBe(1);
   expect(rec.received_at * 1000).toBeGreaterThan(Date.parse(rec.completed_at));
+  await page.goto(`${APP}#/diagnostics`);
+  await page.getByRole("button", { name: "Run live connection test" }).click();
+  await expect(page.locator("text=Hermes answered just now")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("text=✔ Hermes").first()).toBeVisible();
   await ctx.close();
   await server.dispose();
 });

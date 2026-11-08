@@ -6,7 +6,7 @@
 // * 401 pauses the queue (nothing is dropped) until the user signs in again.
 // * 409 marks a conflict for the user to resolve; the server never overwrites silently.
 // * A browser "online" event only triggers an attempt — reachability is proven by the request itself.
-import { AuthRequired, HttpError, Offline, api } from "./api";
+import { AuthRequired, HttpError, Offline, api, loggedFetch } from "./api";
 import { apiUrl } from "./config";
 import { db, deviceId, getSetting, setSetting, type LocalRecord, type OutboxOp } from "./db";
 import { nowIso, uuid } from "./util";
@@ -155,13 +155,11 @@ async function sendAttachment(op: OutboxOp): Promise<"done" | "stop" | "retry"> 
     return "done";
   }
   try {
-    let res: Response;
-    try {
-      res = await fetch(apiUrl(`attachments/${encodeURIComponent(att.id)}`), {
-        method: "PUT", body: att.blob, headers: { "Content-Type": att.mime }, credentials: "same-origin", redirect: "manual",
-      });
-    } catch { throw new Offline(); }
-    if (res.status === 401 || res.type === "opaqueredirect") throw new AuthRequired();
+    const res = await loggedFetch(apiUrl(`attachments/${encodeURIComponent(att.id)}`), {
+      method: "PUT", body: att.blob, headers: { "Content-Type": att.mime }, credentials: "same-origin", redirect: "manual",
+    });
+    if (res.type === "opaqueredirect") throw new AuthRequired(false);
+    if (res.status === 401) throw new AuthRequired(true);
     const body = await res.json().catch(() => null);
     if (!res.ok) throw new HttpError(res.status, body);
     if (!isAttachmentAck(body, att.id)) throw new NotAnAck(`file ${att.id}`);
@@ -191,8 +189,10 @@ async function handleError(e: unknown, op: OutboxOp, recordId: string): Promise<
   // A media upload failing never "un-receives" a record the server already acknowledged.
   const waiting: LocalRecord["sync_status"] = op.kind === "attachment" ? "received" : "pending";
   // Reachability is proven by what actually came back, not by navigator.onLine.
+  // Only a reply PROVEN to come from Hermes counts; a portal redirect or a proxy error page does not.
   if (e instanceof Offline || e instanceof NotAnAck) contact(false);
-  else if (e instanceof AuthRequired || e instanceof HttpError) contact(true);
+  else if ((e instanceof AuthRequired || e instanceof HttpError) && e.fromHermes) contact(true);
+  else if (e instanceof AuthRequired || e instanceof HttpError) contact(false);
   if (e instanceof AuthRequired) {
     await updateRecord(recordId, { sync_status: waiting });
     emit({ auth_required: true });
@@ -266,7 +266,7 @@ async function probe(): Promise<void> {
     const me = await api<any>("me");
     contact(!!me && typeof me === "object" && typeof me.user_id === "string");
   } catch (e) {
-    contact(e instanceof AuthRequired || e instanceof HttpError);
+    contact((e instanceof AuthRequired || e instanceof HttpError) && e.fromHermes);
   }
 }
 

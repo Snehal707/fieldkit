@@ -5,7 +5,7 @@ import { clear, h, isOnline, toast } from "./util";
 import {
   authBanner, homeView, recordsView, reportsView, resultsView, runView, syncView, workflowLinkView, workflowsView, whoAmI, type View,
 } from "./views_core";
-import { assistantView, dictionaryView, knowledgeView, ocrView, packsView, settingsView, translateView } from "./views_tools";
+import { assistantView, diagnosticsView, dictionaryView, knowledgeView, ocrView, packsView, settingsView, translateView } from "./views_tools";
 
 const routes: [RegExp, View, string][] = [
   [/^#?\/?$/, homeView, "Home"],
@@ -24,11 +24,12 @@ const routes: [RegExp, View, string][] = [
   [/^#\/ocr/, ocrView, "Scan text"],
   [/^#\/packs/, packsView, "Offline Packs"],
   [/^#\/settings/, settingsView, "Settings"],
+  [/^#\/diagnostics/, diagnosticsView, "Connection diagnostics"],
 ];
 
 const app = document.getElementById("app")!;
 const title = h("h1", null, "FieldKit");
-const net = h("span", { class: "pill" });
+const net = h("a", { class: "pill", href: "#/diagnostics", style: "color:inherit;text-decoration:none" });
 const queue = h("span", { class: "pill" });
 const main = h("main");
 const navItems: [string, string, string][] = [["#/", "⌂", "Home"], ["#/workflows", "☑", "Workflows"], ["#/assistant", "?", "Assistant"], ["#/sync", "⇅", "Sync"], ["#/settings", "⚙", "Settings"]];

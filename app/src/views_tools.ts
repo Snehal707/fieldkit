@@ -269,7 +269,8 @@ export const settingsView: View = async (main) => {
       h("dt", null, "Offline ready"), h("dd", null, checks.slice(0, 3).every((c) => c.ok !== false) ? "yes" : "no")),
     h("div", { class: "row", style: "margin-top:.8rem" },
       h("button", { onclick: async () => { const r = await requestPersistence(); toast(r ? "Persistent storage granted" : "The browser declined; data may be evicted under storage pressure.", r ? "ok" : "error"); go(`#/settings?r=${Date.now()}`); } }, "Request persistent storage"),
-      h("button", { onclick: () => signIn("#/settings") }, "Sign in to Hermes"))));
+      h("button", { onclick: () => signIn("#/settings") }, "Sign in to Hermes"),
+      h("a", { class: "btn", href: "#/diagnostics" }, "Connection diagnostics"))));
 
   main.append(h("div", { class: "card" }, h("h2", null, "Backup & recovery"),
     h("p", { class: "muted" }, "Export everything on this device (records, media, reports, drafts) to a file you can keep or move to another device."),
@@ -331,3 +332,77 @@ async function importData(file: File): Promise<{ records: number; attachments: n
 }
 
 export async function storedLang(): Promise<string> { return getSetting("lang", "en"); }
+
+// ------------------------------------------------------------------ connection diagnostics
+export const diagnosticsView: View = async (main) => {
+  const { netEntries, report, onNetlog, clearNetlog } = await import("./netlog");
+  const { loggedFetch } = await import("./api");
+  const { apiUrl } = await import("./config");
+  const { getSyncState } = await import("./sync");
+  const verdict = h("div");
+  const list = h("div");
+  const pre = h("pre", { class: "wrap", style: "font-size:.72rem;max-height:40vh;overflow:auto" });
+
+  const paintList = () => {
+    clear(list);
+    const s = getSyncState();
+    list.append(h("dl", { class: "kv" },
+      h("dt", null, "Device says online"), h("dd", null, String(navigator.onLine)),
+      h("dt", null, "App status"), h("dd", null, s.reachable === true ? `Hermes reachable (last proof ${fmtTime(s.last_contact)})` : s.reachable === false ? "Hermes NOT reachable" : "not checked"),
+      h("dt", null, "App version"), h("dd", null, APP_VERSION),
+      h("dt", null, "Service worker"), h("dd", null, navigator.serviceWorker?.controller ? "active (offline cache in use)" : "not controlling this page")));
+    const rows = netEntries().slice().reverse().slice(0, 25);
+    list.append(h("h3", null, "Recent requests (newest first)"),
+      rows.length ? h("ul", { class: "clean" }, ...rows.map((e) => h("li", null,
+        h("strong", { class: e.outcome === "network-error" ? "no" : e.hermes ? "ok" : "wait" },
+          e.outcome === "network-error" ? "NO NETWORK" : `${e.status}${e.hermes ? " ✔ Hermes" : " ? not Hermes"}`),
+        ` ${e.method} ${e.path}`,
+        h("div", { class: "muted" }, `${fmtTime(e.t)} · ${e.ms} ms · device online=${e.online}`
+          + (e.server_date ? ` · server clock ${e.server_date}` : "") + (e.final_url && e.final_url !== e.path ? ` · answered by ${e.final_url}` : "")
+          + (e.note ? ` · ${e.note}` : ""))))) : h("p", { class: "muted" }, "No requests recorded yet."));
+    pre.textContent = report({ app_version: APP_VERSION, reachable: s.reachable, last_contact: s.last_contact ?? null, awaiting: s.awaiting, drafts: s.drafts });
+  };
+
+  const liveTest = async () => {
+    clear(verdict);
+    verdict.append(h("p", { class: "muted" }, "Testing…"));
+    let msg: HTMLElement;
+    try {
+      const res = await loggedFetch(`${apiUrl("me")}?diag=${Date.now()}`, { credentials: "same-origin", cache: "no-store", redirect: "manual" });
+      const ct = res.headers.get("content-type") || "";
+      const body = ct.includes("json") ? await res.json().catch(() => null) : (await res.text().catch(() => "")).slice(0, 160);
+      const date = res.headers.get("date");
+      if (res.type === "opaqueredirect") {
+        msg = h("div", { class: "banner warn" }, h("strong", null, "Something redirected the request — not Hermes."),
+          h("div", null, "Typical of a Wi-Fi login page (hotel, office, café). The phone has a network but cannot reach Hermes."));
+      } else if (ct.includes("json") && body && typeof body === "object" && ("user_id" in body || "detail" in body)) {
+        msg = h("div", { class: "banner hermes" }, h("strong", null, `Hermes answered just now (HTTP ${res.status}).`),
+          h("div", null, `Server clock: ${date ?? "n/a"}. This phone HAS a working connection to Hermes right now — `
+            + "so the internet is not actually off. Check that both Wi-Fi and Mobile Data are grey in Control Centre "
+            + "(Airplane mode can keep Wi-Fi on)."));
+      } else {
+        msg = h("div", { class: "banner warn" }, h("strong", null, `Something answered (HTTP ${res.status}, ${ct || "no type"}) but it is NOT Hermes.`),
+          h("div", null, `Answered by: ${res.url || "unknown"}. Body starts: ${typeof body === "string" ? body : JSON.stringify(body)?.slice(0, 160)}`));
+      }
+    } catch {
+      msg = h("div", { class: "banner local" }, h("strong", null, "No connection."),
+        h("div", null, "The request could not leave the phone. FieldKit is correctly working offline."));
+    }
+    clear(verdict);
+    verdict.append(msg);
+    paintList();
+  };
+
+  main.append(h("div", { class: "card" }, h("h2", null, "Connection diagnostics"),
+    h("p", { class: "muted" }, "Shows exactly what FieldKit sent and what came back. Stored only on this phone."),
+    h("div", { class: "row" },
+      h("button", { class: "primary", onclick: liveTest }, "Run live connection test"),
+      h("button", { onclick: async () => { try { await navigator.clipboard.writeText(pre.textContent || ""); toast("Report copied", "ok"); } catch { toast("Select the report text below and copy it", "error"); } } }, "Copy report"),
+      h("button", { onclick: () => { clearNetlog(); paintList(); } }, "Clear log")),
+    verdict),
+    h("div", { class: "card" }, list),
+    h("div", { class: "card" }, h("h3", null, "Report (paste this to support)"), pre));
+  paintList();
+  const off = onNetlog(paintList);
+  window.addEventListener("hashchange", () => off(), { once: true });
+};
