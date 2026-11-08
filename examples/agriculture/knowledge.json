@@ -1,0 +1,29 @@
+{
+  "kind": "knowledge",
+  "id": "crop-basics",
+  "version": 1,
+  "title": {"en": "Crop health basics (demo)", "hi": "फसल स्वास्थ्य की मूल बातें (डेमो)"},
+  "domain": "agriculture",
+  "languages": ["en", "hi"],
+  "source": {"title": "FieldKit synthetic demo content", "license": "CC0-1.0", "note": "Illustrative only; confirm diagnoses with a local agronomist."},
+  "entries": [
+    {"id": "leaf-discoloration", "type": "troubleshooting", "title": {"en": "Possible causes of leaf discoloration", "hi": "पत्तियों के रंग बदलने के संभावित कारण"},
+     "text": {"en": "Leaf discoloration has many possible causes, and the pattern matters. Yellowing that starts on older, lower leaves often points to a mobile nutrient shortage such as nitrogen. Yellowing on young upper leaves suggests a less mobile nutrient such as iron or sulphur. Brown or dark spots with yellow halos are often fungal or bacterial disease. Purplish leaves can indicate phosphorus shortage or cold stress. Waterlogging and drought can also cause yellowing. Look at the pattern across the plant and field, and confirm with soil testing or an expert before treatment.",
+              "hi": "पत्तियों के रंग बदलने के कई कारण हो सकते हैं और पैटर्न महत्वपूर्ण है। पुरानी निचली पत्तियों से शुरू होने वाला पीलापन प्रायः नाइट्रोजन जैसे गतिशील पोषक तत्व की कमी दर्शाता है। नई ऊपरी पत्तियों पर पीलापन आयरन या सल्फर की कमी का संकेत देता है। पीले घेरे वाले भूरे धब्बे प्रायः फफूंद या जीवाणु रोग होते हैं। उपचार से पहले मिट्टी परीक्षण या विशेषज्ञ से पुष्टि करें।"},
+     "tags": ["leaf", "yellowing", "chlorosis", "nitrogen", "fungal", "discoloration", "पीलापन"],
+     "followups": ["Did yellowing start on older or younger leaves?", "Is there standing water in the field?"],
+     "related": ["nitrogen", "waterlogging"], "source": "Demo crop guide §1"},
+    {"id": "nitrogen", "type": "explanation", "title": {"en": "Nitrogen deficiency", "hi": "नाइट्रोजन की कमी"},
+     "text": {"en": "Nitrogen is mobile in the plant, so when it is short the plant moves it from old leaves to new growth. Older leaves turn pale yellow first, beginning at the tip, while new leaves stay greener. Growth is slow and stunted. Causes include low soil nitrogen, leaching after heavy rain, and waterlogging that limits root uptake.",
+              "hi": "नाइट्रोजन पौधे में गतिशील है, इसलिए कमी होने पर पौधा इसे पुरानी पत्तियों से नई वृद्धि में ले जाता है। पुरानी पत्तियाँ पहले हल्की पीली होती हैं।"},
+     "tags": ["nitrogen", "deficiency", "nutrient", "yellow"], "source": "Demo crop guide §2"},
+    {"id": "waterlogging", "type": "explanation", "title": {"en": "Waterlogging stress", "hi": "जलभराव तनाव"},
+     "text": {"en": "When soil stays saturated, roots lack oxygen, nutrient uptake falls and leaves yellow and wilt even though water is plentiful. Improve drainage, avoid irrigation until the soil drains, and watch for root rot.",
+              "hi": "जब मिट्टी लगातार भीगी रहती है तो जड़ों को ऑक्सीजन नहीं मिलती और पत्तियाँ पीली पड़ जाती हैं। जल निकासी सुधारें।"},
+     "tags": ["waterlogging", "drainage", "standing water", "roots"], "source": "Demo crop guide §3"},
+    {"id": "sampling", "type": "procedure", "title": {"en": "Taking a plant sample for review", "hi": "समीक्षा के लिए पौधे का नमूना लेना"},
+     "text": {"en": "Choose plants that show early symptoms rather than dead plants. Photograph the whole plant, the affected leaves (top and underside) and the field pattern. Record the plot location, crop stage and recent weather or irrigation. Keep samples cool and dry in a paper bag.",
+              "hi": "शुरुआती लक्षण वाले पौधे चुनें। पूरे पौधे, प्रभावित पत्तियों और खेत के पैटर्न की तस्वीरें लें। स्थान, अवस्था और हाल की सिंचाई दर्ज करें।"},
+     "tags": ["sample", "photo", "procedure"], "source": "Demo crop guide §4"}
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "description": "Pinned upstream on-device model manifests. FieldKit stores and serves NO model or WASM binaries: the PWA downloads these exact files from their official upstream hosts at setup time, verifies SHA-256 where published, and caches them on the device.",
+  "runtimes": [
+    {"id": "onnxruntime-web", "version": "1.31.0-dev.20260914-8d85527a0", "license": "MIT",
+     "source": "https://www.npmjs.com/package/onnxruntime-web", "fetched_from": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0-dev.20260914-8d85527a0/dist/",
+     "used_by": ["translation", "stt"], "note": "Loaded by Transformers.js 4.3.1 (bundled JS) at its pinned version."},
+    {"id": "tesseract.js-core", "version": "7.0.0", "license": "Apache-2.0",
+     "source": "https://www.npmjs.com/package/tesseract.js-core", "fetched_from": "https://cdn.jsdelivr.net/npm/tesseract.js-core@7.0.0/",
+     "used_by": ["ocr"]}
+  ],
+  "packs": [
+    {"kind": "model", "id": "translate-en-hi", "capability": "translation", "title": "English → Hindi translation",
+     "version": 1, "languages": ["en", "hi"], "direction": ["en", "hi"], "task": "translation",
+     "model": "Xenova/opus-mt-en-hi", "revision": "7aad72006a1588a9c3485ed6203aed99eebbc872", "dtype": "q8",
+     "license": "Apache-2.0 (Helsinki-NLP OPUS-MT, ONNX conversion by Xenova)", "upstream": "https://huggingface.co/Helsinki-NLP/opus-mt-en-hi",
+     "download_size": 110500000,
+     "files": [
+       {"url": "https://huggingface.co/Xenova/opus-mt-en-hi/resolve/7aad72006a1588a9c3485ed6203aed99eebbc872/onnx/encoder_model_quantized.onnx", "size": 51337630, "sha256": "3045cd6eaf06db96cff853204d6f0ffeb0c5af238a4f5a87a19fcaa94f7493c4"},
+       {"url": "https://huggingface.co/Xenova/opus-mt-en-hi/resolve/7aad72006a1588a9c3485ed6203aed99eebbc872/onnx/decoder_model_merged_quantized.onnx", "size": 58638488, "sha256": "8baba43a14b15ca4543d30ab36e7d34f2e516fb9af7e0b83b77a5e6a6f66d198"}
+     ]},
+    {"kind": "model", "id": "translate-hi-en", "capability": "translation", "title": "Hindi → English translation",
+     "version": 1, "languages": ["hi", "en"], "direction": ["hi", "en"], "task": "translation",
+     "model": "Xenova/opus-mt-hi-en", "revision": "99853100ed9d932987a6816e8cf7b1b6742a6116", "dtype": "q8",
+     "license": "Apache-2.0 (Helsinki-NLP OPUS-MT, ONNX conversion by Xenova)", "upstream": "https://huggingface.co/Helsinki-NLP/opus-mt-hi-en",
+     "download_size": 109600000,
+     "files": [
+       {"url": "https://huggingface.co/Xenova/opus-mt-hi-en/resolve/99853100ed9d932987a6816e8cf7b1b6742a6116/onnx/encoder_model_quantized.onnx", "size": 50916254, "sha256": "dc5a1b084a83019bbb9798809dea5f2d16cc30a9a257238ec93120b3c2892ebf"},
+       {"url": "https://huggingface.co/Xenova/opus-mt-hi-en/resolve/99853100ed9d932987a6816e8cf7b1b6742a6116/onnx/decoder_model_merged_quantized.onnx", "size": 58213820, "sha256": "52655659006c8ce742cc761282d49b3be4e73bfbf080f1b6a546aa96170d5813"}
+     ]},
+    {"kind": "model", "id": "stt-whisper-tiny", "capability": "stt", "title": "Speech to text (Whisper tiny, multilingual)",
+     "version": 1, "languages": ["en", "hi"], "task": "automatic-speech-recognition",
+     "model": "Xenova/whisper-tiny", "revision": "5332fcc35e32a33b86612b9a57a89be7906102b1", "dtype": "q8",
+     "license": "Apache-2.0 (OpenAI Whisper, ONNX conversion by Xenova)", "upstream": "https://huggingface.co/openai/whisper-tiny",
+     "download_size": 41000000, "quality_note": "Tiny model: usable for English; Hindi accuracy is limited.",
+     "files": [
+       {"url": "https://huggingface.co/Xenova/whisper-tiny/resolve/5332fcc35e32a33b86612b9a57a89be7906102b1/onnx/encoder_model_quantized.onnx", "size": 10124910, "sha256": "fd9d995b9dcb0520f0dbf6cf68651af639fc385f594d9d876e69ca2802dc438e"},
+       {"url": "https://huggingface.co/Xenova/whisper-tiny/resolve/5332fcc35e32a33b86612b9a57a89be7906102b1/onnx/decoder_model_merged_quantized.onnx", "size": 30727765, "sha256": "6c0c125986b007d2e3734bec84c18bda0152071b90b87fadac6d7764499927a0"}
+     ]},
+    {"kind": "model", "id": "ocr-eng", "capability": "ocr", "title": "OCR — English", "version": 1, "languages": ["en"],
+     "engine": "tesseract.js 7.0.0", "lang_code": "eng", "license": "Apache-2.0 (tessdata_fast)", "upstream": "https://github.com/naptha/tessdata",
+     "download_size": 2952873,
+     "files": [{"url": "https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int/eng.traineddata.gz"}]},
+    {"kind": "model", "id": "ocr-hin", "capability": "ocr", "title": "OCR — Hindi (Devanagari)", "version": 1, "languages": ["hi"],
+     "engine": "tesseract.js 7.0.0", "lang_code": "hin", "license": "Apache-2.0 (tessdata_fast)", "upstream": "https://github.com/naptha/tessdata",
+     "download_size": 1389692,
+     "files": [{"url": "https://cdn.jsdelivr.net/npm/@tesseract.js-data/hin@1.0.0/4.0.0_best_int/hin.traineddata.gz"}]}
+  ],
+  "unavailable": [
+    {"capability": "translation", "languages": ["en", "mr"], "reason": "No browser-ready (ONNX) OPUS-MT en↔mr conversion from a trusted publisher was found (only PyTorch/CTranslate2 at Helsinki-NLP/opus-mt-en-mr and -mr-en). The pack system supports it once a conversion is built reproducibly in CI."}
+  ]
+}

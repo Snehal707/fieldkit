@@ -1,0 +1,18 @@
+{
+  "kind": "dictionary",
+  "id": "science-terms",
+  "version": 1,
+  "title": {"en": "Science terms EN–HI (demo)", "hi": "विज्ञान शब्दावली अंग्रेज़ी–हिंदी (डेमो)"},
+  "domain": "education",
+  "languages": ["en", "hi"],
+  "source": {"title": "FieldKit synthetic demo glossary", "license": "CC0-1.0"},
+  "entries": [
+    {"term": "photosynthesis", "lang": "en", "definition": "The process by which green plants use sunlight to make food from carbon dioxide and water.", "translations": {"hi": "प्रकाश संश्लेषण"}, "examples": ["Photosynthesis happens mainly in leaves."], "synonyms": [], "related": ["chlorophyll"]},
+    {"term": "chlorophyll", "lang": "en", "definition": "The green pigment in plants that absorbs light energy.", "translations": {"hi": "पर्णहरित"}, "examples": [], "synonyms": [], "related": ["photosynthesis"]},
+    {"term": "evaporation", "lang": "en", "definition": "The change of a liquid into vapour, usually by heating.", "translations": {"hi": "वाष्पीकरण"}, "examples": ["Evaporation is faster on hot days."], "synonyms": ["vaporisation"], "related": ["condensation"]},
+    {"term": "condensation", "lang": "en", "definition": "The change of vapour into liquid when it cools.", "translations": {"hi": "संघनन"}, "examples": [], "synonyms": [], "related": ["evaporation"]},
+    {"term": "circuit", "lang": "en", "definition": "A closed path through which electric current flows.", "translations": {"hi": "परिपथ"}, "examples": [], "synonyms": [], "related": ["current"]},
+    {"term": "current", "lang": "en", "definition": "The flow of electric charge, measured in amperes.", "translations": {"hi": "विद्युत धारा"}, "examples": [], "synonyms": [], "related": ["circuit"]},
+    {"term": "वाष्पीकरण", "lang": "hi", "definition": "गर्म करने पर द्रव का वाष्प में बदलना।", "translations": {"en": "evaporation"}, "examples": [], "synonyms": [], "related": []}
+  ]
+}

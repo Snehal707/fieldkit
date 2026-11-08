@@ -1,0 +1,20 @@
+{
+  "kind": "dictionary",
+  "id": "maintenance-terms",
+  "version": 1,
+  "title": {"en": "Maintenance terms EN–HI (demo)", "hi": "रखरखाव शब्दावली अंग्रेज़ी–हिंदी (डेमो)"},
+  "domain": "maintenance",
+  "languages": ["en", "hi"],
+  "source": {"title": "FieldKit synthetic demo glossary", "license": "CC0-1.0"},
+  "entries": [
+    {"term": "bearing", "lang": "en", "definition": "A machine part that supports a rotating shaft and reduces friction.", "translations": {"hi": "बेयरिंग"}, "examples": ["The bearing was hot to the touch."], "synonyms": [], "related": ["lubrication", "shaft"]},
+    {"term": "vibration", "lang": "en", "definition": "Rapid back-and-forth motion of a machine or part.", "translations": {"hi": "कंपन"}, "examples": ["Vibration increased after the motor was replaced."], "synonyms": ["oscillation"], "related": ["imbalance", "misalignment"]},
+    {"term": "misalignment", "lang": "en", "definition": "When two connected shafts are not on the same centre line.", "translations": {"hi": "गलत संरेखण"}, "examples": [], "synonyms": [], "related": ["coupling", "alignment"]},
+    {"term": "coupling", "lang": "en", "definition": "A device that joins two shafts so they turn together.", "translations": {"hi": "कपलिंग"}, "examples": [], "synonyms": [], "related": ["misalignment"]},
+    {"term": "lubrication", "lang": "en", "definition": "Applying grease or oil to reduce friction and wear.", "translations": {"hi": "स्नेहन"}, "examples": [], "synonyms": ["greasing"], "related": ["bearing"]},
+    {"term": "seal", "lang": "en", "definition": "A part that stops fluid leaking along a shaft or joint.", "translations": {"hi": "सील"}, "examples": [], "synonyms": [], "related": ["leak"]},
+    {"term": "lockout", "lang": "en", "definition": "Isolating energy sources and locking them off before work.", "translations": {"hi": "लॉकआउट"}, "examples": [], "synonyms": ["isolation"], "related": ["tagout"]},
+    {"term": "कंपन", "lang": "hi", "definition": "किसी मशीन या भाग की तेज़ आगे-पीछे गति।", "translations": {"en": "vibration"}, "examples": [], "synonyms": [], "related": []},
+    {"term": "स्नेहन", "lang": "hi", "definition": "घर्षण और घिसाव कम करने के लिए ग्रीस या तेल लगाना।", "translations": {"en": "lubrication"}, "examples": [], "synonyms": [], "related": []}
+  ]
+}

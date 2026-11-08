@@ -1,0 +1,110 @@
+{
+  "description": "Execution vectors: visibility, validation and local classification for the example workflows. Shared by Python and TypeScript tests.",
+  "cases": [
+    {
+      "name": "maintenance: empty answers",
+      "workflow": "examples/maintenance/workflow.json",
+      "answers": {},
+      "expected": {
+        "hidden": ["vibration_level", "bearing_temp", "leak_fluid"],
+        "errors": {"asset_id": ["required"], "inspection_date": ["required"], "condition": ["required"], "guard_ok": ["required"]},
+        "complete": false,
+        "finding_ids": ["risk", "service_action"]
+      }
+    },
+    {
+      "name": "maintenance: vibration branch revealed and required",
+      "workflow": "examples/maintenance/workflow.json",
+      "answers": {"asset_id": "PMP-0042", "inspection_date": "2026-11-08", "condition": "fair", "symptoms": ["vibration"], "guard_ok": true},
+      "expected": {
+        "hidden": ["bearing_temp", "leak_fluid"],
+        "errors": {"vibration_level": ["required"]},
+        "complete": false,
+        "finding_ids": ["risk", "service_action"]
+      }
+    },
+    {
+      "name": "maintenance: poor + guard missing + high vibration",
+      "workflow": "examples/maintenance/workflow.json",
+      "answers": {"asset_id": "PMP-0042", "inspection_date": "2026-11-08", "condition": "poor", "symptoms": ["vibration"], "vibration_level": 9, "guard_ok": false, "notes": "grinding noise near the coupling", "photos": [{"attachment_id": "att-1"}]},
+      "expected": {
+        "hidden": ["bearing_temp", "leak_fluid"],
+        "errors": {},
+        "complete": true,
+        "finding_ids": ["guard_missing", "vibration_high", "noise_terms", "risk", "service_action"],
+        "severities": {"guard_missing": "critical", "risk": "high", "service_action": "critical"},
+        "scores": {"risk": 10}
+      }
+    },
+    {
+      "name": "maintenance: constraint errors",
+      "workflow": "examples/maintenance/workflow.json",
+      "answers": {"asset_id": "pump 42", "inspection_date": "08/11/2026", "running_hours": 12.5, "condition": "broken", "guard_ok": "yes", "location": {"lat": 95, "lon": 10}},
+      "expected": {
+        "hidden": ["vibration_level", "bearing_temp", "leak_fluid"],
+        "errors": {"asset_id": ["pattern"], "inspection_date": ["type"], "running_hours": ["integer"], "condition": ["option"], "guard_ok": ["type"], "location": ["range"]},
+        "complete": false,
+        "finding_ids": ["risk", "service_action"]
+      }
+    },
+    {
+      "name": "maintenance: stale hidden answer is ignored and dropped",
+      "workflow": "examples/maintenance/workflow.json",
+      "answers": {"asset_id": "PMP-0042", "inspection_date": "2026-11-08", "condition": "good", "symptoms": [], "vibration_level": 99, "guard_ok": true},
+      "expected": {
+        "hidden": ["vibration_level", "bearing_temp", "leak_fluid"],
+        "errors": {},
+        "complete": true,
+        "finding_ids": ["risk", "service_action"],
+        "cleaned_keys": ["asset_id", "condition", "guard_ok", "inspection_date", "symptoms"]
+      }
+    },
+    {
+      "name": "education: other topic required, low attendance, misconception keyword",
+      "workflow": "examples/education/workflow.json",
+      "answers": {"school": "Govt School A", "grade": "7", "topic": "other", "students_present": 8, "resources": ["board"], "misconceptions": "Some said plants eat soil to grow"},
+      "expected": {
+        "hidden": ["practical_desc"],
+        "errors": {"topic_other": ["required"]},
+        "complete": false,
+        "finding_ids": ["low_attendance", "no_practical", "photosynthesis_misconception", "engagement"]
+      }
+    },
+    {
+      "name": "education: min_items on resources",
+      "workflow": "examples/education/workflow.json",
+      "answers": {"school": "B", "grade": "8", "topic": "water_cycle", "students_present": 30, "resources": [], "practical": true},
+      "expected": {
+        "hidden": ["topic_other"],
+        "errors": {"school": ["min_length"]},
+        "complete": false,
+        "finding_ids": ["engagement"],
+        "severities": {"engagement": "low"}
+      }
+    },
+    {
+      "name": "agriculture: yellow old leaves -> nitrogen pattern, photos required",
+      "workflow": "examples/agriculture/workflow.json",
+      "answers": {"plot_id": "P-7", "crop": "rice", "leaf_color": "yellow", "yellow_pattern": "old_leaves", "affected_pct": 40, "plot_location": {"lat": 18.52, "lon": 73.85, "accuracy": 12}, "observations": "small holes and an aphid colony"},
+      "expected": {
+        "hidden": [],
+        "errors": {"leaf_photos": ["required"]},
+        "complete": false,
+        "finding_ids": ["widespread", "pest_terms", "likely_cause"],
+        "details": {"likely_cause": "Pattern consistent with nitrogen deficiency", "pest_terms": "aphid, holes"}
+      }
+    },
+    {
+      "name": "agriculture: green leaves hide pattern question",
+      "workflow": "examples/agriculture/workflow.json",
+      "answers": {"plot_id": "P-8", "crop": "wheat", "leaf_color": "green", "plot_location": {"lat": 18.5, "lon": 73.8}},
+      "expected": {
+        "hidden": ["yellow_pattern"],
+        "errors": {},
+        "complete": true,
+        "finding_ids": ["likely_cause"],
+        "details": {"likely_cause": "No discoloration pattern detected"}
+      }
+    }
+  ]
+}

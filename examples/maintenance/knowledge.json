@@ -1,0 +1,33 @@
+{
+  "kind": "knowledge",
+  "id": "maintenance-basics",
+  "version": 1,
+  "title": {"en": "Rotating equipment basics (demo)", "hi": "घूमने वाले उपकरण की मूल बातें (डेमो)"},
+  "domain": "maintenance",
+  "languages": ["en", "hi"],
+  "source": {"title": "FieldKit synthetic demo content", "license": "CC0-1.0", "note": "Illustrative only; follow your site's procedures and manufacturer manuals."},
+  "entries": [
+    {"id": "vibration", "type": "troubleshooting", "title": {"en": "Common reasons for equipment vibration", "hi": "उपकरण कंपन के सामान्य कारण"},
+     "text": {"en": "Excess vibration in rotating equipment most often comes from imbalance (uneven mass on the rotor), misalignment between motor and driven shaft, looseness (worn mounts, loose bolts, soft foot), worn or damaged bearings, and resonance when running speed matches a natural frequency. Check in this order: confirm mounting bolts are tight, inspect couplings for wear, compare vibration at each bearing, and listen for grinding that suggests bearing damage. Velocity readings in mm/s are compared with severity bands for the machine class.",
+              "hi": "घूमने वाले उपकरणों में अधिक कंपन प्रायः असंतुलन (रोटर पर असमान द्रव्यमान), मोटर और चालित शाफ्ट के बीच गलत संरेखण, ढीलापन (घिसे माउंट, ढीले बोल्ट), घिसे या क्षतिग्रस्त बेयरिंग, और अनुनाद से आता है। इस क्रम में जाँचें: माउंटिंग बोल्ट कसे हैं या नहीं, कपलिंग का घिसाव, हर बेयरिंग पर कंपन की तुलना, और पीसने की आवाज़ जो बेयरिंग क्षति दर्शाती है।"},
+     "tags": ["vibration", "imbalance", "misalignment", "bearing", "looseness", "कंपन"],
+     "followups": ["Is the vibration higher at the motor or the pump end?", "Did the vibration start after maintenance work?"],
+     "related": ["alignment", "bearing-overheating"], "source": "Demo maintenance guide §1"},
+    {"id": "alignment", "type": "procedure", "title": {"en": "Checking shaft alignment", "hi": "शाफ्ट संरेखण की जाँच"},
+     "text": {"en": "With the machine locked out, inspect the coupling for cracked inserts or rubber dust, which indicate misalignment. Use a straightedge across the coupling halves to check parallel offset, and a feeler gauge around the gap to check angular misalignment. Record readings and correct by shimming the motor feet, then re-check. Laser alignment tools give more precise results where available.",
+              "hi": "मशीन को लॉक आउट करके, कपलिंग में दरार या रबर की धूल देखें जो गलत संरेखण दर्शाती है। समानांतर ऑफसेट के लिए स्ट्रेटएज और कोणीय संरेखण के लिए फीलर गेज का प्रयोग करें। रीडिंग दर्ज करें, मोटर के पैरों में शिम लगाकर सुधारें और फिर जाँचें।"},
+     "tags": ["alignment", "coupling", "shim", "procedure"], "source": "Demo maintenance guide §2"},
+    {"id": "bearing-overheating", "type": "troubleshooting", "title": {"en": "Bearing overheating", "hi": "बेयरिंग का अधिक गर्म होना"},
+     "text": {"en": "Hot bearings usually point to lubrication problems (too little grease, too much grease, wrong grade or contamination), excessive load from misalignment or belt tension, or bearing wear. A bearing that is hot to the touch and noisy should be scheduled for replacement. Over-greasing is a frequent cause: add grease in small amounts according to the interval and quantity specified by the manufacturer.",
+              "hi": "गर्म बेयरिंग आम तौर पर स्नेहन की समस्या (कम ग्रीस, अधिक ग्रीस, गलत ग्रेड या संदूषण), गलत संरेखण या बेल्ट तनाव से अधिक भार, या बेयरिंग घिसाव दर्शाते हैं। अधिक ग्रीस डालना एक सामान्य कारण है।"},
+     "tags": ["bearing", "temperature", "heat", "lubrication", "grease"], "source": "Demo maintenance guide §3"},
+    {"id": "lockout", "type": "procedure", "title": {"en": "Lockout and tagout before inspection", "hi": "निरीक्षण से पहले लॉकआउट और टैगआउट"},
+     "text": {"en": "Before touching moving parts, stop the machine, isolate every energy source (electrical, pneumatic, hydraulic, stored mechanical energy), apply your personal lock and tag, and try to start the machine to verify it cannot run. Never remove another person's lock.",
+              "hi": "चलते हिस्सों को छूने से पहले मशीन बंद करें, हर ऊर्जा स्रोत अलग करें, अपना ताला और टैग लगाएँ, और जाँचें कि मशीन चालू नहीं हो सकती। किसी और का ताला कभी न हटाएँ।"},
+     "tags": ["safety", "lockout", "tagout", "isolation"], "source": "Demo maintenance guide §0"},
+    {"id": "leaks", "type": "faq", "title": {"en": "What does an oil leak near a pump indicate?", "hi": "पंप के पास तेल रिसाव क्या दर्शाता है?"},
+     "text": {"en": "Oil near a pump usually comes from a worn shaft seal, a loose drain plug or fitting, or overfilling. Clean the area, run briefly and observe where fresh oil appears. Seal leaks tend to worsen and can let contaminants into bearings.",
+              "hi": "पंप के पास तेल प्रायः घिसी शाफ्ट सील, ढीले ड्रेन प्लग या अधिक भराव से आता है। जगह साफ करें, थोड़ी देर चलाएँ और देखें कि नया तेल कहाँ दिखता है।"},
+     "tags": ["leak", "oil", "seal", "pump"], "source": "Demo maintenance guide §4"}
+  ]
+}

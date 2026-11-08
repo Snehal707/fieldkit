@@ -1,0 +1,44 @@
+name: fieldkit
+version: "0.1.0"
+description: "FieldKit: create offline mobile field workflows through Hermes, run them on a phone with no internet (installable PWA with local findings, knowledge Q&A, dictionaries, translation, OCR and voice), sync securely when back online, and get Hermes analysis and reports in the PWA, the dashboard and Hermes Mobile."
+author: "FieldKit contributors"
+license: MIT
+homepage: "https://github.com/Snehal707/fieldkit"
+requires_hermes: ">=0.23.0"
+tags:
+  - offline
+  - mobile
+  - forms
+  - field-work
+  - pwa
+provides_tools:
+  - fieldkit_create_workflow
+  - fieldkit_validate_workflow
+  - fieldkit_publish_workflow
+  - fieldkit_list_workflows
+  - fieldkit_get_workflow
+  - fieldkit_get_app_link
+  - fieldkit_create_knowledge_pack
+  - fieldkit_create_dictionary_pack
+  - fieldkit_list_knowledge_packs
+  - fieldkit_search_knowledge
+  - fieldkit_list_records
+  - fieldkit_get_record
+  - fieldkit_analyze_record
+  - fieldkit_generate_report
+  - fieldkit_save_report
+  - fieldkit_get_report
+  - fieldkit_list_reports
+  - fieldkit_create_followup
+  - fieldkit_list_followups
+  - fieldkit_get_sync_status
+  - fieldkit_resolve_conflict
+  - fieldkit_process_pending_jobs
+  - fieldkit_install_examples
+provides_hooks:
+  - on_session_start
+python_dependencies:
+  - "jsonschema>=4.17,<5"
+config_keys:
+  - public_url
+  - auto_analyze

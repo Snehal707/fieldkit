@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fieldkit.local/schema/workflow.schema.json",
+  "title": "FieldKit workflow",
+  "type": "object",
+  "required": ["id", "title", "fields"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {"$ref": "#/$defs/slug"},
+    "version": {"type": "integer", "minimum": 1},
+    "status": {"enum": ["draft", "published", "archived"]},
+    "title": {"$ref": "#/$defs/label"},
+    "description": {"$ref": "#/$defs/label"},
+    "domain": {"type": "string", "maxLength": 64},
+    "tags": {"type": "array", "items": {"type": "string", "maxLength": 64}, "maxItems": 32},
+    "languages": {"type": "array", "items": {"$ref": "#/$defs/lang"}, "maxItems": 16},
+    "default_language": {"$ref": "#/$defs/lang"},
+    "knowledge_packs": {"type": "array", "items": {"$ref": "#/$defs/slug"}, "maxItems": 32},
+    "dictionary_packs": {"type": "array", "items": {"$ref": "#/$defs/slug"}, "maxItems": 32},
+    "review_required": {"type": "boolean"},
+    "analysis_instructions": {"type": "string", "maxLength": 4000},
+    "metadata": {"type": "object"},
+    "fields": {"type": "array", "minItems": 1, "maxItems": 300, "items": {"$ref": "#/$defs/field"}},
+    "classification": {"$ref": "#/$defs/classification"}
+  },
+  "$defs": {
+    "slug": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+    "lang": {"type": "string", "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$"},
+    "label": {
+      "oneOf": [
+        {"type": "string", "maxLength": 4000},
+        {"type": "object", "minProperties": 1,
+         "propertyNames": {"pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$"},
+         "additionalProperties": {"type": "string", "maxLength": 4000}}
+      ]
+    },
+    "condition": {
+      "type": "object",
+      "required": ["op"],
+      "properties": {
+        "op": {"enum": ["eq", "neq", "gt", "gte", "lt", "lte", "in", "contains", "exists", "empty", "and", "or", "not", "always"]},
+        "field": {"type": "string"},
+        "value": {},
+        "all": {"type": "array", "items": {"$ref": "#/$defs/condition"}},
+        "any": {"type": "array", "items": {"$ref": "#/$defs/condition"}},
+        "cond": {"$ref": "#/$defs/condition"}
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {"if": {"properties": {"op": {"enum": ["eq", "neq", "gt", "gte", "lt", "lte", "in", "contains", "exists", "empty"]}}},
+         "then": {"required": ["field"]}},
+        {"if": {"properties": {"op": {"const": "and"}}}, "then": {"required": ["all"]}},
+        {"if": {"properties": {"op": {"const": "or"}}}, "then": {"required": ["any"]}},
+        {"if": {"properties": {"op": {"const": "not"}}}, "then": {"required": ["cond"]}}
+      ]
+    },
+    "option": {
+      "type": "object",
+      "required": ["value", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {"type": ["string", "number", "boolean"]},
+        "label": {"$ref": "#/$defs/label"}
+      }
+    },
+    "field": {
+      "type": "object",
+      "required": ["id", "type", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"},
+        "type": {"enum": ["text", "multiline", "number", "date", "time", "checkbox", "single_choice", "multi_choice", "photo", "gps", "audio", "signature", "instruction"]},
+        "label": {"$ref": "#/$defs/label"},
+        "help": {"$ref": "#/$defs/label"},
+        "placeholder": {"$ref": "#/$defs/label"},
+        "section": {"$ref": "#/$defs/label"},
+        "required": {"type": "boolean"},
+        "required_if": {"$ref": "#/$defs/condition"},
+        "visible_if": {"$ref": "#/$defs/condition"},
+        "default": {},
+        "unit": {"type": "string", "maxLength": 32},
+        "options": {"type": "array", "items": {"$ref": "#/$defs/option"}, "maxItems": 200},
+        "knowledge_query": {"type": "string", "maxLength": 300},
+        "explain_topic": {"type": "string", "maxLength": 200},
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min": {"type": "number"},
+            "max": {"type": "number"},
+            "integer": {"type": "boolean"},
+            "min_length": {"type": "integer", "minimum": 0},
+            "max_length": {"type": "integer", "minimum": 1},
+            "pattern": {"type": "string", "maxLength": 200},
+            "min_items": {"type": "integer", "minimum": 0},
+            "max_items": {"type": "integer", "minimum": 1},
+            "max_accuracy_m": {"type": "number", "minimum": 0},
+            "rules": {
+              "type": "array",
+              "maxItems": 20,
+              "items": {
+                "type": "object",
+                "required": ["when", "message"],
+                "additionalProperties": false,
+                "properties": {"when": {"$ref": "#/$defs/condition"}, "message": {"$ref": "#/$defs/label"}}
+              }
+            }
+          }
+        }
+      }
+    },
+    "severity": {"enum": ["info", "low", "medium", "high", "critical"]},
+    "tree_node": {
+      "type": "object",
+      "oneOf": [
+        {"required": ["result"],
+         "properties": {"result": {"type": "object", "required": ["label"],
+                                   "properties": {"label": {"$ref": "#/$defs/label"}, "severity": {"$ref": "#/$defs/severity"}}}}},
+        {"required": ["if", "then", "else"],
+         "properties": {"if": {"$ref": "#/$defs/condition"}, "then": {"$ref": "#/$defs/tree_node"}, "else": {"$ref": "#/$defs/tree_node"}}}
+      ]
+    },
+    "classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rules": {"type": "array", "maxItems": 200, "items": {
+          "type": "object", "required": ["id", "label", "when"], "additionalProperties": false,
+          "properties": {"id": {"type": "string"}, "label": {"$ref": "#/$defs/label"}, "when": {"$ref": "#/$defs/condition"},
+                         "severity": {"$ref": "#/$defs/severity"}, "finding": {"$ref": "#/$defs/label"}}}},
+        "keywords": {"type": "array", "maxItems": 100, "items": {
+          "type": "object", "required": ["id", "label", "fields", "keywords"], "additionalProperties": false,
+          "properties": {"id": {"type": "string"}, "label": {"$ref": "#/$defs/label"},
+                         "fields": {"type": "array", "items": {"type": "string"}},
+                         "keywords": {"type": "array", "items": {"type": "string", "minLength": 1}, "maxItems": 500},
+                         "min_hits": {"type": "integer", "minimum": 1}, "severity": {"$ref": "#/$defs/severity"}}}},
+        "scores": {"type": "array", "maxItems": 50, "items": {
+          "type": "object", "required": ["id", "label", "items"], "additionalProperties": false,
+          "properties": {"id": {"type": "string"}, "label": {"$ref": "#/$defs/label"},
+                         "items": {"type": "array", "items": {"type": "object", "required": ["when", "points"], "additionalProperties": false,
+                                                              "properties": {"when": {"$ref": "#/$defs/condition"}, "points": {"type": "number"}}}},
+                         "bands": {"type": "array", "items": {"type": "object", "required": ["min", "label"], "additionalProperties": false,
+                                                              "properties": {"min": {"type": "number"}, "label": {"$ref": "#/$defs/label"}, "severity": {"$ref": "#/$defs/severity"}}}}}}},
+        "decision_trees": {"type": "array", "maxItems": 20, "items": {
+          "type": "object", "required": ["id", "label", "root"], "additionalProperties": false,
+          "properties": {"id": {"type": "string"}, "label": {"$ref": "#/$defs/label"}, "root": {"$ref": "#/$defs/tree_node"}}}}
+      }
+    }
+  }
+}

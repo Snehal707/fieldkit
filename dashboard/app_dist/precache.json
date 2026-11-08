@@ -1,0 +1,17 @@
+{
+ "version": "76aabe0dca662bc1",
+ "files": [
+  "assets/esm-RsSwHY-K.js",
+  "assets/index-BVlyXuFg.js",
+  "assets/index-vEG-UGeG.css",
+  "assets/src-BuGy7Pm8.js",
+  "assets/transformers.web-CDYqUMEv.js",
+  "icons/icon-192.png",
+  "icons/icon-512.png",
+  "icons/icon-maskable-512.png",
+  "index.html",
+  "manifest.webmanifest",
+  "vendor/tesseract/LICENSE.md",
+  "vendor/tesseract/worker.min.js"
+ ]
+}

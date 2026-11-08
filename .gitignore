@@ -1,0 +1,16 @@
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+test-results/
+playwright-report/
+.fieldkit-dev/
+*.db
+*.db-wal
+*.db-shm
+
+# local Claude Code configuration (not part of the plugin)
+CLAUDE.md
+.claude/
