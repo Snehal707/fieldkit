@@ -534,6 +534,10 @@ function hermesSection(rec: LocalRecord, stored: StoredReport | undefined) {
     box.append(h("p", { class: "muted" }, `Version ${r.version} · generated ${fmtTime(r.generated_at)} by ${r.generated_by} · downloaded ${fmtTime(stored.downloaded_at)} (available offline)`));
     if (r.requires_review) box.append(h("div", { class: "banner warn" }, h("strong", null, "Requires human review"), r.review_reason ? h("div", null, r.review_reason) : null));
     box.append(h("p", null, r.summary));
+    if (r.images?.note) {
+      box.append(h("div", { class: `banner ${r.images.analyzed === false ? "warn" : "hermes"}` },
+        h("strong", null, r.images.analyzed === false ? "Photos not analysed" : "Photos analysed"), h("div", null, r.images.note)));
+    }
     if (r.issues?.length) box.append(h("h3", null, "Issues identified"), h("ul", { class: "clean" }, ...r.issues.map((i: any) => h("li", null, sevBadge(i.severity), " ", h("strong", null, i.title), h("div", { class: "muted" }, i.evidence)))));
     if (r.missing_information?.length) box.append(h("h3", null, "Missing information"), h("ul", null, ...r.missing_information.map((m: string) => h("li", null, m))));
     if (r.suggested_actions?.length) box.append(h("h3", null, "Suggested actions"), h("ul", { class: "clean" }, ...r.suggested_actions.map((a: any) => h("li", null, h("span", { class: "badge" }, a.priority), " ", a.action))));

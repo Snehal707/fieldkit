@@ -44,13 +44,24 @@ def _response(text: str):
 class Recorder:
     """sync_caller replacement: records the host kwargs and returns canned JSON per purpose."""
 
-    def __init__(self, replies: dict[str, object] | None = None, fail_times: int = 0):
+    def __init__(self, replies: dict[str, object] | None = None, fail_times: int = 0,
+                 reject_images: Exception | None = None, always_fail: Exception | None = None):
         self.calls: list[dict] = []
         self.replies = replies or {}
         self.fail_times = fail_times
+        self.reject_images = reject_images  # raised whenever a request carries an image part
+        self.always_fail = always_fail
+
+    @staticmethod
+    def has_image(kw) -> bool:
+        return "image_url" in json.dumps(kw.get("messages", []), default=str)
 
     def __call__(self, **kw):
         self.calls.append(kw)
+        if self.always_fail is not None:
+            raise self.always_fail
+        if self.reject_images is not None and self.has_image(kw):
+            raise self.reject_images
         if self.fail_times > 0:
             self.fail_times -= 1
             raise RuntimeError("provider 503 (test)")

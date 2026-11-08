@@ -25,6 +25,17 @@ def register(ctx) -> None:
     skill = _ROOT / "skills" / "fieldkit" / "SKILL.md"
     if hasattr(ctx, "register_skill") and skill.exists():
         ctx.register_skill("fieldkit", skill, description="Create offline FieldKit workflows and analyse synchronised field records.")
+    # Plugin-owned model slot for photo analysis. Operators may point auxiliary.fieldkit_vision at a
+    # vision-capable model (and set plugin setting vision_task: true) without changing the default model.
+    if hasattr(ctx, "register_auxiliary_task"):
+        try:
+            from fieldkit_core.analysis import VISION_TASK
+            ctx.register_auxiliary_task(
+                VISION_TASK, display_name="FieldKit photo analysis",
+                description="Model used to analyse photos in FieldKit records (falls back to text-only).",
+                inherit_from="vision")
+        except Exception as exc:  # registration is optional; analysis falls back automatically
+            log.warning("fieldkit: could not register auxiliary task: %s", exc)
     # register() does no I/O (no DB open, no threads). The analysis worker starts lazily on the
     # first session or FieldKit tool call in this process, and from the dashboard backend.
     if hasattr(ctx, "register_hook"):

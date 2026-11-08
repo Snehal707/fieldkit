@@ -97,34 +97,136 @@ def _image_inputs(record: dict, limit: int = 2, max_bytes: int = 4_000_000) -> l
     return out
 
 
+#: Plugin-owned Hermes auxiliary task for photo analysis (registered in register(ctx) via
+#: ctx.register_auxiliary_task, inheriting Hermes' built-in "vision" settings). The operator points it at a
+#: vision-capable model under ``auxiliary.fieldkit_vision`` in config.yaml — the gateway's default model is
+#: unchanged — and opts in with plugin setting ``vision_task: true``.
+VISION_TASK = "fieldkit_vision"
+
+TEXT_ONLY_NOTE = (
+    "Photos were attached to this record but are NOT available to you in this request. Do not describe, infer or "
+    "speculate about image contents. Base the report only on the structured answers, notes, OCR text, transcripts, "
+    "local findings and reference passages provided."
+)
+
+_IMAGE_ERROR_HINTS = ("image", "vision", "multimodal", "multi-modal", "modality", "modalities", "image_url",
+                      "content type", "content part", "unsupported content", "non-text")
+
+
+def is_image_rejection(exc: BaseException) -> bool:
+    """True when a provider error means "this model/endpoint does not accept image input".
+
+    Providers phrase this differently (400 "image input is not supported", "image_url is only supported by
+    certain models", "this model does not support multimodal input", ...). A 400/415/422 on a request that
+    carried images is treated the same way: the retry is text-only and costs one extra call at most.
+    Transient failures (timeouts, 429, 5xx) are NOT image rejections and go to the normal job retry.
+    """
+    msg = f"{type(exc).__name__} {exc}".lower()
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None) or getattr(getattr(exc, "response", None), "status_code", None)
+    if isinstance(status, int) and (status == 429 or status >= 500):
+        return False
+    if any(t in msg for t in ("timeout", "timed out", "rate limit", "429", "503", "502", "overloaded", "unavailable")):
+        return False
+    if any(h in msg for h in _IMAGE_ERROR_HINTS):
+        return True
+    return isinstance(status, int) and status in (400, 415, 422)
+
+
+def _is_task_unavailable(exc: BaseException) -> bool:
+    """The opt-in vision task could not be used (trust gate / not registered / not configured)."""
+    name = type(exc).__name__
+    msg = str(exc).lower()
+    return name == "PluginLlmTrustError" or "auxiliary task" in msg or "fieldkit_vision" in msg or "no llm provider configured" in msg
+
+
+def _structured_call(llm: Any, context: dict, images: list[dict], task: Optional[str]) -> Any:
+    text = json.dumps(context, ensure_ascii=False, indent=1)
+    inputs: list[dict] = [{"type": "text", "text": text}] + images
+    system = SYSTEM if images or not context.get("record", {}).get("attachments_present") else f"{SYSTEM} {TEXT_ONLY_NOTE}"
+    kwargs = dict(instructions="Produce the FieldKit report for this record as JSON matching the schema.",
+                  input=inputs, json_schema=REPORT_SCHEMA, schema_name="fieldkit.report", system_prompt=system,
+                  temperature=0.2, max_tokens=1800, purpose="fieldkit.analyze_record", timeout=120)
+    if task:
+        kwargs["task"] = task
+    return llm.complete_structured(**kwargs)
+
+
 def analyze_record(store: Store, llm: Any, record_id: str, *, owner: Any = ALL, lang: str = "en",
-                   with_images: bool = True) -> tuple[dict, bool, str, str]:
-    """Run one structured analysis. Returns (report, requires_review, provider, model). Raises on failure."""
+                   with_images: bool = True, use_vision_task: Optional[bool] = None) -> tuple[dict, bool, str, str]:
+    """Run one structured analysis. Returns (report, requires_review, provider, model). Raises on failure.
+
+    Attempt chain inside ONE job attempt (so a non-multimodal model never burns the job's retries):
+      1. opt-in plugin vision task ``fieldkit_vision`` with photos (only if ``vision_task`` is enabled);
+      2. Hermes' default model with photos;
+      3. default model text-only — answers, notes, OCR/transcripts, local findings, knowledge references —
+         when the model rejects image input. The report then says the photos were not analysed.
+    Attachments are never modified or removed by analysis.
+    """
     if llm is None:
         raise RuntimeError("Hermes LLM access (ctx.llm) is not available in this process")
     record = store.get_record(owner, record_id)
-    if with_images:
-        for a in record["attachments"]:
-            try:
-                a["path"] = store.get_attachment(owner, a["id"]).get("path")
-            except Exception:
-                a["path"] = None
+    for a in record["attachments"]:
+        try:
+            a["path"] = store.get_attachment(owner, a["id"]).get("path")
+        except Exception:
+            a["path"] = None
     wf = store.get_workflow_any_owner(record["workflow_id"], record["workflow_version"])
     if not wf:
         raise RuntimeError(f"workflow {record['workflow_id']}@{record['workflow_version']} missing")
     context = build_context(store, record, wf, lang)
-    inputs: list[dict] = [{"type": "text", "text": json.dumps(context, ensure_ascii=False, indent=1)}]
-    if with_images:
-        inputs += _image_inputs(record)
-    result = llm.complete_structured(
-        instructions="Produce the FieldKit report for this record as JSON matching the schema.",
-        input=inputs, json_schema=REPORT_SCHEMA, schema_name="fieldkit.report", system_prompt=SYSTEM,
-        temperature=0.2, max_tokens=1800, purpose="fieldkit.analyze_record", timeout=120,
-    )
+    images = _image_inputs(record) if with_images else []
+    photo_count = sum(1 for a in record["attachments"] if str(a.get("mime", "")).startswith("image/"))
+    context["record"]["attachments_present"] = photo_count
+
+    if use_vision_task is None:
+        from . import runtime
+        use_vision_task = bool(runtime.setting("vision_task", False))
+    attempts: list[tuple[list[dict], Optional[str], str]] = []
+    if images and use_vision_task:
+        attempts.append((images, VISION_TASK, "vision_task"))
+    if images:
+        attempts.append((images, None, "default_model_with_images"))
+    attempts.append(([], None, "text_only"))
+
+    result, mode, notes = None, "", []
+    for i, (imgs, task, label) in enumerate(attempts):
+        last = i == len(attempts) - 1
+        try:
+            result = _structured_call(llm, context, imgs, task)
+            mode = label
+            break
+        except Exception as exc:
+            if last:
+                raise
+            if label == "vision_task" and (_is_task_unavailable(exc) or is_image_rejection(exc)):
+                notes.append(f"vision task unavailable: {type(exc).__name__}: {str(exc)[:160]}")
+                continue
+            if label == "default_model_with_images" and is_image_rejection(exc):
+                notes.append(f"model rejected image input: {type(exc).__name__}: {str(exc)[:160]}")
+                continue
+            raise  # transient/other errors → normal job retry (no silent downgrade)
+
     report = result.parsed
     if not isinstance(report, dict):
         raise RuntimeError("model did not return a parseable report")
     report = _normalize_report(report, context)
+    analysed = mode in ("vision_task", "default_model_with_images")
+    report["images"] = {
+        "attached": photo_count,
+        "sent_to_model": len(images) if analysed else 0,
+        "analyzed": analysed if photo_count else None,
+        "mode": mode,
+        "note": ("" if not photo_count else
+                 f"{photo_count} photo(s) analysed by the model." if analysed else
+                 f"{photo_count} photo(s) attached but NOT analysed: the configured model does not accept image input"
+                 f"{'' if with_images else ' (image analysis disabled for this run)'}. Findings are based on answers, notes, "
+                 "OCR text, local findings and knowledge references. Photos remain stored with the record."),
+        "fallback_reasons": notes,
+    }
+    if photo_count and not analysed:
+        msg = "Photos were not analysed by Hermes (text-only analysis); review them manually if visual evidence matters."
+        if msg not in report["missing_information"]:
+            report["missing_information"].append(msg)
     critical = any(i.get("severity") in ("high", "critical") for i in report["issues"]) or any(
         f.get("severity") in ("high", "critical") for f in context["local_findings"])
     requires_review = bool(report.get("requires_review")) or (context["workflow"]["review_required"] and critical)
@@ -161,6 +263,11 @@ def process_pending(store: Store, llm: Any, limit: int = 2) -> list[dict]:
     """Claim and run ready jobs. Each job is retried with backoff and fails permanently after max_attempts."""
     done = []
     for job in store.claim_jobs(limit):
+        existing = store.report_for_revision(job["record_id"], job["revision"])
+        if existing:  # a report for this exact revision already exists (e.g. saved by Hermes) → never duplicate
+            store.finish_job_without_report(job)
+            done.append({"job_id": job["id"], "record_id": job["record_id"], "report_id": existing, "status": "already_reported"})
+            continue
         try:
             report, review, provider, model = analyze_record(store, llm, job["record_id"])
             saved = store.complete_job(job, report, review, provider, model, generated_by="fieldkit.worker")

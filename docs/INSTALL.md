@@ -47,6 +47,21 @@ After a sync, FieldKit queues a durable `analyze` job.
   hermes cron create "every 15m" "Call fieldkit_process_pending_jobs and report any FieldKit record that requires review." --name fieldkit-analysis --skill fieldkit
   ```
 
+## Photos with a text-only default model
+If your default model can't read images, FieldKit analyses records **text-only** automatically and marks the report "Photos not analysed". To analyse photos with a separate vision model without changing the default model:
+```yaml
+auxiliary:
+  fieldkit_vision:            # FieldKit's own model slot (inherits auxiliary.vision settings)
+    provider: <vision-capable provider>
+    model: <vision-capable model>
+plugins:
+  entries:
+    fieldkit:
+      settings:
+        vision_task: true
+```
+If that model is unavailable, FieldKit falls back to the default model, then to text-only. After a plugin update, run "process pending FieldKit jobs with retry_failed" once in Hermes to re-run jobs that failed before the fix.
+
 ## Building from source
 ```bash
 npm ci --legacy-peer-deps

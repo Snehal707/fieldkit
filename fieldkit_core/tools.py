@@ -236,7 +236,9 @@ def resolve_conflict(a: dict) -> str:
 def process_pending_jobs(a: dict) -> str:
     store = get_store()
     store.recover_stale_jobs()
-    return _ok(processed=analysis.process_pending(store, runtime.llm, limit=int(a.get("limit", 3))), jobs=store.job_counts())
+    requeued = store.requeue_failed_jobs() if a.get("retry_failed") else 0
+    return _ok(requeued_failed=requeued, processed=analysis.process_pending(store, runtime.llm, limit=int(a.get("limit", 3))),
+               jobs=store.job_counts())
 
 
 def install_examples(a: dict) -> str:
@@ -314,7 +316,10 @@ TOOLS: list[tuple[dict, Callable[[dict], str]]] = [
     (_s("fieldkit_resolve_conflict", "Resolve a synchronisation conflict: keep_server, use_client, or merge (with merged_answers).",
         {"conflict_id": STR, "resolution": {"type": "string", "enum": ["keep_server", "use_client", "merge"]}, "merged_answers": OBJ},
         ["conflict_id", "resolution"]), resolve_conflict),
-    (_s("fieldkit_process_pending_jobs", "Run queued automatic analysis jobs for newly synchronised records.", {"limit": INT}),
+    (_s("fieldkit_process_pending_jobs",
+        "Run queued automatic analysis jobs for newly synchronised records. retry_failed=true gives jobs that "
+        "previously failed permanently one fresh set of attempts (records that already have a report are skipped).",
+        {"limit": INT, "retry_failed": BOOL}),
      process_pending_jobs),
     (_s("fieldkit_install_examples", "Install FieldKit's synthetic example workflows and packs (education, maintenance, agriculture).",
         {}), install_examples),

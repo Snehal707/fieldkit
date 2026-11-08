@@ -1900,17 +1900,23 @@
       );
     }
     function ReportView({ r }) {
-      var _a2, _b2, _c, _d;
+      var _a2, _b2, _c, _d, _e;
       return h(
         "div",
         { style: box },
         h("div", { style: { fontSize: 12, opacity: 0.7 } }, `v${r.version} \xB7 ${ts(r.generated_at)} \xB7 ${r.generated_by} \xB7 ${r.provider || ""} ${r.model || ""}`),
         r.requires_review && h("div", { style: { color: "#d97706", fontWeight: 600 } }, `Requires human review${r.review_reason ? `: ${r.review_reason}` : ""}`),
         h("p", null, r.summary),
-        ((_a2 = r.issues) == null ? void 0 : _a2.length) > 0 && h("div", null, h("b", null, "Issues"), r.issues.map((i, k) => h("div", { key: k }, h(Sev, { s: i.severity }), ` ${i.title} \u2014 ${i.evidence}`))),
-        ((_b2 = r.missing_information) == null ? void 0 : _b2.length) > 0 && h("div", null, h("b", null, "Missing information"), h("ul", null, r.missing_information.map((m, k) => h("li", { key: k }, m)))),
-        ((_c = r.suggested_actions) == null ? void 0 : _c.length) > 0 && h("div", null, h("b", null, "Suggested actions"), h("ul", null, r.suggested_actions.map((a, k) => h("li", { key: k }, `[${a.priority}] ${a.action}`)))),
-        ((_d = r.references) == null ? void 0 : _d.length) > 0 && h("div", null, h("b", null, "References"), h("ul", null, r.references.map((x, k) => h("li", { key: k }, `${x.title}${x.source ? ` \u2014 ${x.source}` : ""}`))))
+        ((_a2 = r.images) == null ? void 0 : _a2.note) && h(
+          "div",
+          { style: { margin: "6px 0", padding: 8, borderRadius: 6, border: `1px solid ${r.images.analyzed === false ? "#d97706" : "#0f766e"}` } },
+          h("b", null, r.images.analyzed === false ? "Photos not analysed: " : "Photos: "),
+          r.images.note
+        ),
+        ((_b2 = r.issues) == null ? void 0 : _b2.length) > 0 && h("div", null, h("b", null, "Issues"), r.issues.map((i, k) => h("div", { key: k }, h(Sev, { s: i.severity }), ` ${i.title} \u2014 ${i.evidence}`))),
+        ((_c = r.missing_information) == null ? void 0 : _c.length) > 0 && h("div", null, h("b", null, "Missing information"), h("ul", null, r.missing_information.map((m, k) => h("li", { key: k }, m)))),
+        ((_d = r.suggested_actions) == null ? void 0 : _d.length) > 0 && h("div", null, h("b", null, "Suggested actions"), h("ul", null, r.suggested_actions.map((a, k) => h("li", { key: k }, `[${a.priority}] ${a.action}`)))),
+        ((_e = r.references) == null ? void 0 : _e.length) > 0 && h("div", null, h("b", null, "References"), h("ul", null, r.references.map((x, k) => h("li", { key: k }, `${x.title}${x.source ? ` \u2014 ${x.source}` : ""}`))))
       );
     }
     function Records() {

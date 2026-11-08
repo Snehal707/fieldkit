@@ -602,6 +602,44 @@ class Store:
                           (_now(), rec["analysis_job_id"]))
             return res
 
+    def report_for_revision(self, rid: str, revision: int) -> Optional[str]:
+        rows = self._q("SELECT id FROM reports WHERE record_id=? AND record_revision=? ORDER BY version DESC LIMIT 1",
+                       (rid, revision))
+        return rows[0]["id"] if rows else None
+
+    def finish_job_without_report(self, job: dict) -> None:
+        """Mark a claimed job completed because its revision already has a report (no duplicate report)."""
+        with self.tx() as c:
+            c.execute("UPDATE jobs SET status='completed', last_error=NULL, updated_at=? WHERE id=?", (_now(), job["id"]))
+            rec = c.execute("SELECT analysis_status, report_id FROM records WHERE id=?", (job["record_id"],)).fetchone()
+            if rec and rec["analysis_status"] in ("pending", "processing") and rec["report_id"]:
+                content = c.execute("SELECT content FROM reports WHERE id=?", (rec["report_id"],)).fetchone()
+                review = bool(_uj(content["content"]).get("requires_review")) if content else False
+                c.execute("UPDATE records SET analysis_status=? WHERE id=?",
+                          ("requires_review" if review else "completed", job["record_id"]))
+
+    def requeue_failed_jobs(self, limit: int = 50) -> int:
+        """Give permanently failed analysis jobs one fresh set of attempts (e.g. after a plugin fix).
+        Jobs whose revision already has a report are completed instead, so nothing is duplicated."""
+        with self.tx() as c:
+            rows = c.execute("SELECT * FROM jobs WHERE kind='analyze' AND status='failed' ORDER BY updated_at LIMIT ?",
+                             (limit,)).fetchall()
+            n = 0
+            for j in rows:
+                has = c.execute("SELECT 1 FROM reports WHERE record_id=? AND record_revision=?",
+                                (j["record_id"], j["revision"])).fetchone()
+                if has:
+                    c.execute("UPDATE jobs SET status='completed', updated_at=? WHERE id=?", (_now(), j["id"]))
+                    continue
+                c.execute("UPDATE jobs SET status='pending', attempts=0, next_run_at=?, last_error=NULL, updated_at=? "
+                          "WHERE id=?", (_now(), _now(), j["id"]))
+                c.execute("UPDATE records SET analysis_status='pending' WHERE id=? AND analysis_job_id=?",
+                          (j["record_id"], j["id"]))
+                n += 1
+            if n:
+                self.audit(c, ALL, "analysis.requeue_failed", "", {"count": n})
+            return n
+
     def job_counts(self) -> dict:
         return {r["status"]: r["n"] for r in self._q("SELECT status, COUNT(*) n FROM jobs GROUP BY status")}
 

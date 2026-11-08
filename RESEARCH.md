@@ -26,6 +26,24 @@ or exercised by a test in this repository.
   - So the automatic path reaches the real host LLM entry point. **A successful real model call is not yet verified**; it needs the hosted instance, with permission.
 - Tests use Hermes' own `make_plugin_llm_for_test` with an injected `sync_caller`, loaded from the Hermes source. That exercises the real trust gate, message building and schema validation.
 
+## Photos and non-multimodal models (0.1.2)
+
+- **Problem:** `ctx.llm` uses the operator's default model. A text-only model (reported on the hosted instance with `z-ai/glm-5.3`) rejects image parts, so analysis of any record with photos failed on every retry.
+- **Fix:** one job attempt runs a chain:
+  1. Opt-in plugin vision task.
+  2. Default model with photos.
+  3. Default model **text-only**: answers, notes, OCR text, transcripts, local findings and knowledge references, with an explicit instruction not to infer image contents.
+  - It falls back only on image rejections (image/vision/multimodal wording, or a 400/415/422 on a request that carried images). Timeouts, 429 and 5xx go to the normal job retry.
+  - The report carries `images: {attached, sent_to_model, analyzed, mode, note, fallback_reasons}` plus a "missing information" line, and the PWA and dashboard show "Photos not analysed".
+  - Attachments are never touched.
+  - Jobs whose revision already has a report are completed without a new LLM call (no duplicates).
+  - `fieldkit_process_pending_jobs(retry_failed=true)` gives previously failed jobs one fresh set of attempts.
+- **Per-plugin vision model (supported, no gateway change):**
+  - `ctx.register_auxiliary_task("fieldkit_vision", inherit_from="vision")` registers a plugin-owned model slot. Verified: Hermes logs "registered auxiliary task: fieldkit_vision".
+  - Calls with `task="fieldkit_vision"` pass Hermes' trust gate (`agent/plugin_llm.py:_check_task`, own tasks are always allowed). The operator selects the model under `auxiliary.fieldkit_vision` in config.yaml, and FieldKit uses it when plugin setting `vision_task: true`.
+  - The built-in `vision` task would need `plugins.entries.fieldkit.llm.allow_task_override: true`. A plugin-owned task avoids widening trust.
+  - **Not yet verified against a real vision provider.**
+
 ## Dashboard extension
 
 | Item | Finding |

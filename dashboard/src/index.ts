@@ -160,6 +160,8 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
       h("div", { style: { fontSize: 12, opacity: .7 } }, `v${r.version} · ${ts(r.generated_at)} · ${r.generated_by} · ${r.provider || ""} ${r.model || ""}`),
       r.requires_review && h("div", { style: { color: "#d97706", fontWeight: 600 } }, `Requires human review${r.review_reason ? `: ${r.review_reason}` : ""}`),
       h("p", null, r.summary),
+      r.images?.note && h("div", { style: { margin: "6px 0", padding: 8, borderRadius: 6, border: `1px solid ${r.images.analyzed === false ? "#d97706" : "#0f766e"}` } },
+        h("b", null, r.images.analyzed === false ? "Photos not analysed: " : "Photos: "), r.images.note),
       r.issues?.length > 0 && h("div", null, h("b", null, "Issues"), r.issues.map((i: any, k: number) => h("div", { key: k }, h(Sev, { s: i.severity }), ` ${i.title} — ${i.evidence}`))),
       r.missing_information?.length > 0 && h("div", null, h("b", null, "Missing information"), h("ul", null, r.missing_information.map((m: string, k: number) => h("li", { key: k }, m)))),
       r.suggested_actions?.length > 0 && h("div", null, h("b", null, "Suggested actions"), h("ul", null, r.suggested_actions.map((a: any, k: number) => h("li", { key: k }, `[${a.priority}] ${a.action}`)))),
