@@ -8,6 +8,7 @@ import { chromium, webkit, expect, request, test, type BrowserContext, type Page
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { signIn } from "./auth";
 
 // FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
@@ -18,8 +19,16 @@ const API = `${BASE}/api/plugins/fieldkit`;
 
 async function serverClient() {
   const r = await request.newContext();
-  await r.post(`${BASE}/auth/password-login`, { data: { provider: "basic", username: "demo", password: PASS, next: "/" } });
-  return r;
+  await signIn(r);
+  // The test Hermes uses a short session TTL: sign in again only when the session has expired (401). Logging in
+  // before every check (e.g. inside expect.poll) exhausts Hermes' 10-logins-per-minute budget for later tests.
+  const get = async (url: string) => {
+    const res = await r.get(url);
+    if (res.status() !== 401) return res;
+    await signIn(r);
+    return r.get(url);
+  };
+  return { get, dispose: () => r.dispose() };
 }
 
 function recordTraffic(ctx: BrowserContext) {
@@ -33,8 +42,8 @@ function recordTraffic(ctx: BrowserContext) {
 
 async function setup(profile: string) {
   const ctx = await engine.launchPersistentContext(profile, { viewport: { width: 390, height: 844 } });
-  await ctx.request.post(`${BASE}/auth/password-login`, { data: { provider: "basic", username: "demo", password: PASS, next: "/" } });
-  await ctx.request.post(`${API}/examples/install`);
+  await signIn(ctx.request);
+  expect((await ctx.request.post(`${API}/examples/install`)).ok()).toBe(true);
   const page = await ctx.newPage();
   await page.goto(APP);
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);

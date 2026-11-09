@@ -4,6 +4,7 @@ import { chromium, webkit, expect, test } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { signIn } from "./auth";
 
 // FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
@@ -16,7 +17,7 @@ test("Sign in returns to FieldKit and first-run download makes it offline-ready"
   test.skip(!PASS, "set FIELDKIT_E2E_PASS");
   const ctx = await engine.launchPersistentContext(mkdtempSync(join(tmpdir(), "fieldkit-login-")), { viewport: { width: 390, height: 844 } });
   // One-time: install the app shell while signed in, make sure examples are published, then lose the session.
-  await ctx.request.post(`${BASE}/auth/password-login`, { data: { provider: "basic", username: USER, password: PASS, next: "/" } });
+  await signIn(ctx.request, USER, PASS);
   await ctx.request.post(`${BASE}/api/plugins/fieldkit/examples/install`);
   const page = await ctx.newPage();
   await page.goto(APP);

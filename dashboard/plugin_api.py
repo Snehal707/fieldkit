@@ -36,7 +36,27 @@ ATTACHMENT_MIME = {"image/jpeg", "image/png", "image/webp", "audio/webm", "audio
 
 
 # ----------------------------------------------------------------------------- identity
+def _observe_origin(request: Request) -> None:
+    """Remember the public URL users reach Hermes at (behind proxies too) so Hermes can hand out tappable app
+    links without configuration. Only called for authenticated requests."""
+    try:
+        h = request.headers
+        proto = (h.get("x-forwarded-proto") or request.url.scheme).split(",")[0].strip()
+        host = (h.get("x-forwarded-host") or h.get("host") or request.url.netloc).split(",")[0].strip()
+        path = request.url.path
+        prefix = path.split("/api/plugins/fieldkit", 1)[0] if "/api/plugins/fieldkit" in path else ""
+        runtime.record_observed_url(f"{proto}://{host}{prefix}")
+    except Exception:
+        pass
+
+
 def current_user(request: Request) -> dict:
+    user = _current_user(request)
+    _observe_origin(request)
+    return user
+
+
+def _current_user(request: Request) -> dict:
     sess = getattr(request.state, "session", None)
     if sess is not None:
         uid = getattr(sess, "user_id", None) or (sess.get("user_id") if isinstance(sess, dict) else None)
@@ -345,8 +365,9 @@ def update_followup(fid: str, request: Request, status: str = Body(..., embed=Tr
 
 @router.get("/jobs")
 def jobs(request: Request):
-    _uid(request)
-    return {"jobs": get_store().list_jobs(), "counts": get_store().job_counts(), "mode": runtime.mode()}
+    uid = _uid(request)
+    store = get_store()
+    return {"jobs": store.list_jobs(owner=uid), "counts": store.job_counts_for(uid), "mode": runtime.mode()}
 
 
 @router.post("/examples/install")

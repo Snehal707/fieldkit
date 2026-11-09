@@ -5,6 +5,7 @@ import { chromium, webkit, expect, test, type BrowserContext } from "@playwright
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { signIn } from "./auth";
 
 // FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
@@ -21,8 +22,7 @@ async function launch(offline: boolean): Promise<BrowserContext> {
 }
 
 async function login(ctx: BrowserContext) {
-  const r = await ctx.request.post(`${BASE}/auth/password-login`, { data: { provider: "basic", username: USER, password: PASS, next: "/" } });
-  expect(r.ok(), await r.text()).toBeTruthy();
+  await signIn(ctx.request, USER, PASS);
 }
 
 test.describe.configure({ mode: "serial" });

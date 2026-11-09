@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { signIn } from "./auth";
 
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
@@ -17,7 +18,7 @@ test("a downloaded Hermes report stays readable offline after a cold restart", a
   test.skip(!PASS || !DATA_DIR, "set FIELDKIT_E2E_PASS and FIELDKIT_E2E_DATA_DIR");
   const profile = mkdtempSync(join(tmpdir(), "fieldkit-report-"));
   let ctx = await engine.launchPersistentContext(profile, { viewport: { width: 390, height: 844 } });
-  await ctx.request.post(`${BASE}/auth/password-login`, { data: { provider: "basic", username: "demo", password: PASS, next: "/" } });
+  await signIn(ctx.request);
   await ctx.request.post(`${BASE}/api/plugins/fieldkit/examples/install`);
   let page = await ctx.newPage();
   await page.goto(APP);

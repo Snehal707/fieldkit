@@ -4,6 +4,7 @@ import { chromium, webkit, expect, test } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { signIn } from "./auth";
 
 // FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
@@ -15,8 +16,11 @@ const isApi = (u: URL) => u.pathname.startsWith("/api/plugins/fieldkit/") && !u.
 
 test("network up but Hermes unreachable or captive portal: honest status, nothing lost, then confirmed", async () => {
   test.skip(!PASS, "set FIELDKIT_E2E_PASS");
+  // Playwright's route() cannot intercept requests from a service-worker-controlled page in WebKit, so the
+  // outage cannot be simulated there (requests really reach the server). Covered on Chromium and a real iPhone.
+  test.skip(process.env.FIELDKIT_E2E_BROWSER === "webkit", "route() cannot block SW-controlled traffic in WebKit");
   const ctx = await engine.launchPersistentContext(mkdtempSync(join(tmpdir(), "fieldkit-unreach-")), { viewport: { width: 390, height: 844 } });
-  await ctx.request.post(`${BASE}/auth/password-login`, { data: { provider: "basic", username: "demo", password: PASS, next: "/" } });
+  await signIn(ctx.request);
   await ctx.request.post(`${API}/examples/install`);
   const page = await ctx.newPage();
   await page.goto(APP);

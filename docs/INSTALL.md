@@ -12,20 +12,29 @@ The repo ships its built front-ends (`dashboard/dist/`, `dashboard/app_dist/`), 
 Building yourself is covered in [Building from source](#building-from-source).
 
 ## 2. Configure (optional)
-`config.yaml`:
+No configuration is needed for app links. The first time anyone opens the **FieldKit** dashboard tab or the app over
+**https**, FieldKit records that public URL. Proxy headers and path prefixes are respected, https is preferred, and
+loopback addresses are ignored. Hermes then returns full, tappable app links.
+
+To set the address explicitly, use the command below. An explicit setting always wins over the detected URL. It is read live, so no restart is needed.
+```bash
+hermes config set plugins.entries.fieldkit.settings.public_url https://YOUR-DOMAIN
+```
+
+Or in `config.yaml`:
 ```yaml
 plugins:
   entries:
     fieldkit:
       settings:
-        public_url: https://your-hermes.example.org   # lets Hermes return absolute app links
+        public_url: https://your-hermes.example.org   # optional; overrides the detected URL
         auto_analyze: true                           # queue Hermes analysis for every synced record
 ```
 
 ## 3. Load it
-- **API routes:** a plugin enabled after the dashboard started is hot-mounted on its first request; Hermes does this itself.
-- **Tools and the skill** are picked up by the agent on its next plugin load. A restart of the gateway or agent may be needed, depending on how Hermes runs.
-- **Plugin updates:** an already-mounted router only picks up new code after a dashboard restart.
+- **Install and enable** do not need a dashboard restart (verified with Hermes v0.23.0). A plugin enabled after the dashboard started is hot-mounted on its first request; Hermes does this itself.
+- **Updates:** the phone app files take effect immediately (installed apps show "Update ready"). Changes to FieldKit's **Python** code (API, tools, analysis) take effect only after Hermes reloads the plugin code, i.e. the next dashboard/gateway restart, because Python keeps an already-loaded plugin in memory.
+- **Tools and the skill** load in the next Hermes session.
 - **Don't restart a shared or hosted instance without its operator's agreement.**
 
 ## 4. Phones
@@ -39,6 +48,8 @@ plugins:
    - On iOS the installed app has its own storage, separate from Safari. Open it and sign in once from inside it.
 6. Check that **Home → Offline readiness** shows ✔ for the first three checks.
 
+The app header shows the device network, Hermes reachability, records awaiting confirmation and "N not submitted" drafts. Tap the status pill to open **Connection diagnostics**, which runs a live connection test and shows evidence of every request.
+
 ## 5. Automatic analysis
 After a sync, FieldKit queues a durable `analyze` job.
 - **Automatic mode** (`/status` → `analysis_mode: automatic`): a background worker in the dashboard process runs the job with Hermes' own LLM.
@@ -46,21 +57,18 @@ After a sync, FieldKit queues a durable `analyze` job.
   ```bash
   hermes cron create "every 15m" "Call fieldkit_process_pending_jobs and report any FieldKit record that requires review." --name fieldkit-analysis --skill fieldkit
   ```
+  Deferred mode and the cron job are not yet verified end to end.
 
-## Photos with a text-only default model
-If your default model can't read images, FieldKit analyses records **text-only** automatically and marks the report "Photos not analysed". To analyse photos with a separate vision model without changing the default model:
-```yaml
-auxiliary:
-  fieldkit_vision:            # FieldKit's own model slot (inherits auxiliary.vision settings)
-    provider: <vision-capable provider>
-    model: <vision-capable model>
-plugins:
-  entries:
-    fieldkit:
-      settings:
-        vision_task: true
+## Photo analysis with a vision model
+If your default model can't read images, FieldKit analyses records **text-only** and marks the report "Photos not analysed". To analyse photos with a separate vision model, without changing the gateway's default model, set FieldKit's own model slot. These settings are read live, so no restart is needed:
+```bash
+hermes config set auxiliary.fieldkit_vision.provider <provider>
+hermes config set auxiliary.fieldkit_vision.model <vision-model-id>
+hermes config set plugins.entries.fieldkit.settings.vision_task true
 ```
-If that model is unavailable, FieldKit falls back to the default model, then to text-only. After a plugin update, run "process pending FieldKit jobs with retry_failed" once in Hermes to re-run jobs that failed before the fix.
+If `config set` refuses the unknown key, add `--force`.
+
+If that model is unavailable, FieldKit falls back to the default model, then to text-only. After a plugin update, ask Hermes to "process pending FieldKit jobs with `retry_failed: true`" once to re-run jobs that failed before the fix.
 
 ## Building from source
 ```bash

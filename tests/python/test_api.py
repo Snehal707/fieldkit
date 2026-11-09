@@ -305,3 +305,43 @@ def test_app_serving_and_traversal(env, tmp_path, monkeypatch):
     assert env.client.get(f"{PREFIX}/app/records/123", headers=H()).text == "<html>fk</html>"  # SPA fallback
     assert env.client.get(f"{PREFIX}/app/..%2F..%2Fplugin_api.py", headers=H()).status_code == 404
     assert env.client.get(f"{PREFIX}/app/missing.js", headers=H()).status_code == 404
+
+
+# ----------------------------------------------------------------------------- app links (Hermes Mobile)
+def test_app_link_detected_from_authenticated_traffic(env, monkeypatch):
+    from fieldkit_core import runtime as rt, tools
+    monkeypatch.delenv("FIELDKIT_PUBLIC_URL", raising=False)
+    assert tools.app_link("equipment-inspection")["absolute"] is False          # nothing seen yet
+    # unauthenticated requests never record anything
+    env.client.get(f"{PREFIX}/status", headers={"Host": "evil.example", "X-Forwarded-Proto": "https"})
+    assert rt.observed_url() == ""
+    # behind a reverse proxy, under a path prefix
+    env.client.get(f"/hermes{PREFIX}/status".replace("/hermes", ""), headers={**H(), "X-Forwarded-Proto": "https",
+                   "X-Forwarded-Host": "hermes.example.org"})
+    link = tools.app_link("equipment-inspection")
+    assert link["url"] == "https://hermes.example.org/api/plugins/fieldkit/app/#/workflow/equipment-inspection"
+    assert link["source"] == "detected from dashboard/app traffic"
+    # a later plain-http request never downgrades a recorded https origin; loopback is ignored
+    env.client.get(f"{PREFIX}/status", headers={**H(), "Host": "10.0.0.5:9119"})
+    env.client.get(f"{PREFIX}/status", headers={**H(), "Host": "127.0.0.1:9119", "X-Forwarded-Proto": "https"})
+    assert rt.observed_url() == "https://hermes.example.org"
+    # explicit setting wins
+    monkeypatch.setenv("FIELDKIT_PUBLIC_URL", "https://fk.example.com/")
+    assert tools.app_link()["url"] == "https://fk.example.com/api/plugins/fieldkit/app/"
+    assert tools.app_link()["source"] == "public_url setting"
+
+
+def test_observed_url_keeps_dashboard_prefix(env):
+    from fieldkit_core import runtime as rt
+    rt.record_observed_url("https://example.org/hermes")
+    assert rt.observed_url() == "https://example.org/hermes"
+
+
+def test_jobs_are_scoped_to_their_owner(env):
+    _install(env)
+    _sync(env, _record(rid="rec_alice_job_01"), user="alice")
+    _sync(env, _record(rid="rec_bob_job_0001"), user="bob")
+    a = env.client.get(f"{PREFIX}/jobs", headers=H("alice")).json()
+    b = env.client.get(f"{PREFIX}/jobs", headers=H("bob")).json()
+    assert [j["record_id"] for j in a["jobs"]] == ["rec_alice_job_01"] and a["counts"] == {"pending": 1}
+    assert [j["record_id"] for j in b["jobs"]] == ["rec_bob_job_0001"]

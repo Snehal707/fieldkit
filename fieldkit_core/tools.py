@@ -47,9 +47,11 @@ def _guard(fn: Callable[[dict], str]) -> Callable[..., str]:
 def app_link(workflow_id: str | None = None) -> dict:
     path = "/api/plugins/fieldkit/app/" + (f"#/workflow/{workflow_id}" if workflow_id else "")
     base = runtime.public_url()
+    explicit = bool(str(runtime.setting("public_url", "") or "").strip())
     return {"url": f"{base}{path}" if base else path, "path": path, "absolute": bool(base),
-            "note": "" if base else "Set plugins.entries.fieldkit.settings.public_url to your dashboard's https URL "
-                                   "so Hermes can return a full link."}
+            "source": "public_url setting" if explicit else ("detected from dashboard/app traffic" if base else "none"),
+            "note": "" if base else "Open the FieldKit dashboard tab once over https (or set plugins.entries.fieldkit."
+                                   "settings.public_url) so Hermes can return a full link."}
 
 
 def _brief(wf: dict) -> dict:

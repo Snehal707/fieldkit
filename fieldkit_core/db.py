@@ -643,8 +643,18 @@ class Store:
     def job_counts(self) -> dict:
         return {r["status"]: r["n"] for r in self._q("SELECT status, COUNT(*) n FROM jobs GROUP BY status")}
 
-    def list_jobs(self, limit: int = 50) -> list[dict]:
-        return [dict(r) for r in self._q("SELECT * FROM jobs ORDER BY updated_at DESC LIMIT ?", (limit,))]
+    def list_jobs(self, limit: int = 50, owner: Any = ALL) -> list[dict]:
+        """Analysis jobs, newest first. A user sees only jobs for their own records (ALL = instance owner)."""
+        if owner is ALL:
+            return [dict(r) for r in self._q("SELECT * FROM jobs ORDER BY updated_at DESC LIMIT ?", (limit,))]
+        return [dict(r) for r in self._q(
+            "SELECT j.* FROM jobs j JOIN records r ON r.id = j.record_id WHERE r.owner_user_id=? "
+            "ORDER BY j.updated_at DESC LIMIT ?", (owner, limit))]
+
+    def job_counts_for(self, owner: str) -> dict:
+        return {r["status"]: r["n"] for r in self._q(
+            "SELECT j.status, COUNT(*) n FROM jobs j JOIN records r ON r.id = j.record_id WHERE r.owner_user_id=? "
+            "GROUP BY j.status", (owner,))}
 
     # ------------------------------------------------------------------ reports & followups
     def get_report(self, owner: Any, report_id: Optional[str] = None, record_id: Optional[str] = None) -> dict:

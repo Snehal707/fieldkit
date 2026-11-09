@@ -7,6 +7,7 @@ import { chromium, webkit, expect, test } from "@playwright/test";
 import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { signIn } from "./auth";
 
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
@@ -16,7 +17,7 @@ const PLUGIN_DIR = process.env.FIELDKIT_E2E_PLUGIN_DIR ?? "";  // deployed plugi
 
 async function signedIn(profile: string, opts: object = {}) {
   const ctx = await engine.launchPersistentContext(profile, { viewport: { width: 390, height: 844 }, ...opts });
-  await ctx.request.post(`${BASE}/auth/password-login`, { data: { provider: "basic", username: "demo", password: PASS, next: "/" } });
+  await signIn(ctx.request);
   const page = await ctx.newPage();
   await page.goto(APP);
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);

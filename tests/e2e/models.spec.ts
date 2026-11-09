@@ -4,6 +4,7 @@ import { chromium, webkit, expect, test } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { signIn } from "./auth";
 
 // FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
@@ -15,8 +16,7 @@ test("offline translation (en→hi) and OCR after cold restart with no network",
   test.skip(!process.env.FIELDKIT_E2E_MODELS || !process.env.FIELDKIT_E2E_PASS, "set FIELDKIT_E2E_MODELS=1 and FIELDKIT_E2E_PASS");
   test.setTimeout(900_000);
   let ctx = await engine.launchPersistentContext(profile, { viewport: { width: 390, height: 844 } });
-  const r = await ctx.request.post(`${BASE}/auth/password-login`, { data: { provider: "basic", username: process.env.FIELDKIT_E2E_USER ?? "demo", password: process.env.FIELDKIT_E2E_PASS, next: "/" } });
-  expect(r.ok()).toBeTruthy();
+  await signIn(ctx.request);
   let page = await ctx.newPage();
   await page.goto(APP);
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);

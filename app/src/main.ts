@@ -141,13 +141,16 @@ async function registerSw() {
 }
 
 (async () => {
+  // Register the service worker FIRST and in parallel: the first screen can take a while (e.g. a deep link from
+  // Hermes Mobile downloads its workflow), and offline support must not wait for — or depend on — that.
+  const sw = registerSw();
   await restoreAuthFlag();
   await refreshPending();
   // Back from Hermes sign-in (via dashboard-plugins/fieldkit/return.html): reopen the screen the user left.
   const back = takeReturn();
   if (back && (location.hash || "#/") === "#/") history.replaceState(null, "", back);
   await route();
-  await registerSw();
+  await sw;
   if (isOnline()) {
     // A successful /me clears the paused-sync flag; the screen re-renders with fresh signed-in state.
     const me = await whoAmI();

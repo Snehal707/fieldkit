@@ -1,6 +1,6 @@
 # Hackathon submission
 
-**Event:** Hermes Agent Plugin Hackathon. The deadline is reported as **2026-11-11 17:00 ET**. Confirm it against the official Nous Research announcement.
+**Event:** Hermes Agent Plugin Hackathon. The deadline is reported as **Nov 11 2026, 5 PM ET**. Confirm it against the official Nous Research announcement before submitting.
 
 ## Pitch (short)
 FieldKit makes Hermes useful where there is no internet. You ask Hermes Mobile for a workflow, an equipment
@@ -15,28 +15,27 @@ Back online, records sync securely and idempotently through the plugin API. Herm
 LLM, writes structured reports and follow-ups, and answers questions about them in Hermes Mobile. The phone keeps
 downloaded reports for the next offline shift. It's one plugin, with unlimited workflows and knowledge domains.
 
-## Demo script (40 steps condensed)
-1. Hermes Mobile: "Create an equipment inspection workflow with troubleshooting instructions and photographs, in English and Hindi, and publish it."
-   - Tools: `fieldkit_create_workflow` → `fieldkit_publish_workflow`. Hermes returns the app link.
-2. "Make a knowledge pack from this maintenance guide." (`fieldkit_create_knowledge_pack`)
-3. Phone: open the link, sign in, then **Offline Packs**:
-   - download the workflow;
-   - install English→Hindi translation, OCR (English) and speech-to-text.
-4. Install to the home screen. Home shows ✔ Offline readiness.
-5. Airplane mode. Fully close the app, then reopen it from the home screen.
-6. Ask the assistant "Common reasons for equipment vibration". You get an answer, a source and follow-ups.
-7. **Translate** "The pump is vibrating." → Hindi (on device). **Dictionary**: "bearing". **Scan text**: photograph a nameplate.
-8. Run the workflow:
+## Demo script (3–4 minutes)
+Steps 1–9 are the core demo. Step 10 is optional. Verified on iPhone: the offline inspection, automatic sync, the AI report and photo analysis. Verified in Chromium and WebKit only: OCR, translation, speech-to-text and downloaded reports. Pending on iPhone: OCR, translation, speech, offline reports and the full Hermes Mobile conversation.
+
+1. **Create and publish (Hermes Mobile).** "Create an equipment inspection workflow with troubleshooting instructions and photographs, in English and Hindi, and publish it."
+   - Tools: `fieldkit_create_workflow` → `fieldkit_publish_workflow`. Hermes returns a tappable app link.
+2. **Download on the phone.** Open the link over HTTPS and sign in. In **Offline Packs**, download the workflow, then the translation, OCR (English) and speech-to-text packs.
+3. **Install and go offline.** Share → **Add to Home Screen**, then sign in once inside the installed app. Turn on airplane mode, with Wi-Fi and mobile data both off. Reopen FieldKit from the home screen.
+4. **Inspect offline.**
    - Symptoms → vibration, which reveals the vibration question; enter 9 mm/s.
-   - Guard → No. Add a photo, a voice note (transcribe it offline), GPS and a signature.
-9. **Results:** local findings (safety guard problem, vibration above alarm level, risk score, recommended action), references, explanations. "Saved locally. Pending synchronization."
-10. Close and reopen offline; the record and its results are still there.
-11. Reconnect. If the session expired, the banner asks you to sign in, then sync resumes. Show **Synchronised** and **Hermes analysis: pending → completed**.
-12. The Results page now shows the Hermes report, issues, actions and follow-ups. Tap **Download report**.
-13. Hermes Mobile: "Analyse my latest FieldKit inspection", "What should I do next?", "Compare my last five inspections."
-    - Tools: `fieldkit_list_records`, `fieldkit_get_report`, `fieldkit_get_record`, `fieldkit_save_report`, `fieldkit_create_followup`.
-14. Airplane mode again; the downloaded Hermes report is still readable.
-15. Repeat steps 1–9 quickly with *Classroom observation* (education) and *Crop health survey* (agriculture) to show domain independence.
+   - Guard → No. Add a photo, a voice note, GPS and a signature.
+   - Ask the assistant "Common reasons for equipment vibration". You get an answer, a source and follow-ups.
+   - **Translate** "The pump is vibrating." → Hindi. **Scan text**: photograph a nameplate.
+5. **Local results.** Show local findings (safety guard problem, vibration above alarm level, risk score, recommended action), references and explanations, with the label "Saved locally. Pending synchronization." The header shows **1 awaiting confirmation**.
+6. **Close and reopen offline.** Fully close the app and reopen it. The record and its results are still there.
+7. **Reconnect.** Turn the network back on. Sync runs automatically with no user action. In the verified run, the record was received 41 s after completion, with all 11 answers and the photo uploaded.
+8. **AI report.** The report is generated automatically (GLM 5.3, text-only fallback), and photos are analysed through the `fieldkit_vision` model slot. Show the report on the phone, in the FieldKit dashboard tab, and in Hermes Mobile. Tap **Download report**.
+   - Tools: `fieldkit_list_records`, `fieldkit_get_report`, `fieldkit_get_record`.
+9. **Follow up in Hermes Mobile.** "Analyse my latest FieldKit inspection", "What should I do next?", and create a follow-up.
+   - Tools: `fieldkit_save_report`, `fieldkit_create_followup`.
+   - Pending: the full Hermes Mobile conversation on a real device.
+10. **Offline again (optional).** Turn on airplane mode. The downloaded Hermes report is still readable. Optionally repeat steps 1–5 with *Classroom observation* (education) or *Crop health survey* (agriculture) to show domain independence.
 
 ## Catalog entry (draft — do not open the PR without the owner's go-ahead)
 Repository must be public; `sha` must be the full 40-character commit; `version` quoted.
@@ -45,16 +44,26 @@ Repository must be public; `sha` must be the full 40-character commit; `version`
 name: fieldkit
 repo: https://github.com/Snehal707/fieldkit
 sha: "<40-char commit sha>"
-version: "0.1.0"
+version: "0.1.7"
 requires_hermes: ">=0.23.0"
 description: "Offline mobile field workflows with local findings, knowledge Q&A, translation, OCR and voice; secure sync and Hermes analysis/reports."
 network_disclosure: "PWA downloads pinned on-device model files from huggingface.co and cdn.jsdelivr.net only when the user installs a model pack. Backend makes no third-party calls."
 ```
 
+## Known limitations
+- The small OPUS-MT model mistranslates some technical terms (for example "bearing" → "bear").
+- Whisper tiny's Hindi accuracy is limited.
+- iOS PWAs have separate storage from Safari. Sign in once inside the installed app.
+- Uploads run while the app is open. There is no background upload from a closed app.
+- Hermes OAuth sessions last 15 minutes. Sync pauses and asks you to sign in; nothing is lost.
+
 ## Checklist before submitting
-- [ ] Confirm the deadline and the submission format (catalog PR, form, or both).
-- [ ] Push to a public GitHub repo. Per the project rule, don't add Claude as a contributor.
-- [ ] Run `hermes plugins validate .` and `hermes plugins doctor . --ci` on the final commit.
+- [ ] Confirm the deadline (reported as Nov 11 2026, 5 PM ET) and the submission format (catalog PR, form, or both) against the official announcement.
+- [ ] Push to the public GitHub repo at https://github.com/Snehal707/fieldkit.
+- [ ] Run `hermes plugins validate .` and `hermes plugins doctor . --ci` on the final commit. Both pass on v0.1.7 (security scan safe; doctor: 23 tools, 1 hook). Re-run on the exact commit you submit.
 - [ ] Run `npm run build` and commit `dashboard/dist` and `dashboard/app_dist`.
-- [ ] With the owner's permission: install on the hosted instance, confirm one real report and one Hermes Mobile conversation, and run the device checklist in TESTING.md.
-- [ ] Record the demo video.
+- [ ] Pending, with the owner's permission: on the hosted instance, confirm a full Hermes Mobile conversation, the hosted dashboard tab click-through, and the device checklist in TESTING.md.
+- [ ] Pending on iPhone: OCR, translation and speech-to-text; offline reports.
+- [ ] Pending: Android Chrome; connection diagnostics; app-link auto-detection; deferred analysis (cron).
+- [ ] Record the demo video (3–4 minutes).
+- [ ] Open the catalog PR only with the owner's go-ahead.

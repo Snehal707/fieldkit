@@ -5,6 +5,7 @@ import { chromium, expect, test } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { signIn } from "./auth";
 
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
 const PASS = process.env.FIELDKIT_E2E_PASS ?? "";
@@ -17,13 +18,13 @@ test("voice note recorded, Whisper installed, transcribed offline after restart"
   test.skip(!PASS || !process.env.FIELDKIT_E2E_MODELS, "set FIELDKIT_E2E_PASS and FIELDKIT_E2E_MODELS=1");
   test.setTimeout(900_000);
   let ctx = await chromium.launchPersistentContext(profile, opts);
-  await ctx.request.post(`${BASE}/auth/password-login`, { data: { provider: "basic", username: "demo", password: PASS, next: "/" } });
+  await signIn(ctx.request);
   await ctx.request.post(`${BASE}/api/plugins/fieldkit/examples/install`);
   let page = await ctx.newPage();
   await page.goto(APP);
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);
   await page.goto(`${APP}#/packs`);
-  await page.locator("li", { hasText: "Equipment inspection" }).first().getByRole("button").click();
+  await page.locator("li", { hasText: "Equipment inspection" }).getByRole("button", { name: /Download for offline|Re-download|Update/ }).first().click();
   await expect(page.locator("text=Downloaded Equipment inspection")).toBeVisible({ timeout: 30_000 });
   const stt = page.locator("li", { hasText: "Speech to text" }).filter({ has: page.getByRole("button", { name: /install/i }) });
   await stt.getByRole("button", { name: /install/i }).click();

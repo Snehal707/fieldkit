@@ -1,5 +1,6 @@
 // The FieldKit tab rendered inside the REAL Hermes dashboard SPA (real plugin SDK, real auth), every section.
 import { chromium, webkit, expect, test } from "@playwright/test";
+import { signIn } from "./auth";
 
 // FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
@@ -10,7 +11,7 @@ test("FieldKit dashboard tab renders every section in the real Hermes dashboard"
   test.skip(!PASS, "set FIELDKIT_E2E_PASS");
   const browser = await engine.launch();
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  await ctx.request.post(`${BASE}/auth/password-login`, { data: { provider: "basic", username: "demo", password: PASS, next: "/" } });
+  await signIn(ctx.request);
   await ctx.request.post(`${BASE}/api/plugins/fieldkit/examples/install`);
   const page = await ctx.newPage();
   const errors: string[] = [];
