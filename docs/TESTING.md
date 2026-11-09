@@ -72,7 +72,7 @@ FIELDKIT_E2E_MODELS=1 FIELDKIT_E2E_PASS=<password> npm run test:e2e -- models.sp
   - Navigation still opens the cached app.
   - The app-wide banner says "Sign in to Hermes to continue syncing", and the queue shows "Waiting (1)".
 - **Signed in again:** sync resumes and the server holds **exactly one** record (also after a forced re-sync), `sync_status: complete`.
-  - Answers, local findings and GPS round-trip intact. The Results page shows "Synchronised — durably received by Hermes" and the Hermes analysis status separately.
+  - Answers, local findings and GPS round-trip intact. The Results page shows "Saved to Hermes — confirmed" and the Hermes analysis status separately.
 
 `login.spec.ts` (**passed**, 0.1.1):
 - Signed out, Home offers **Sign in** → Hermes' own login page with `next=/dashboard-plugins/fieldkit/return.html` → username and password entered → the browser lands back in **FieldKit** (not the dashboard) and shows "Signed in as …".
@@ -202,6 +202,25 @@ It cleans up after itself. Results:
 - **Full suite (0.2.2):** Chromium 23 passed, 3 skipped; WebKit 17 passed, 9 skipped; no failures.
 
 The intermittent WebKit `settings.spec › storage state: protected` failure was a test-harness bug. The init script overrode `persisted()` on the `navigator.storage` instance, which WebKit can replace after a garbage collection. It now patches the prototype. Before the fix, a forced-GC reproduction failed every time; after it, the reproduction passes.
+
+### App-wide audit (`audit.spec.ts`, 0.2.3)
+Checks each audit fix against the real test Hermes:
+- **Home:** the Saved Records tile shows the account's total and how many records are available offline. After an offline cold start it still shows both, from the remembered list.
+- **Sign-in on a new install:** a new install opening a Hermes link while signed out is asked to sign in, not told its session expired.
+- **Retrying rejected records:** a record Hermes rejected because it lacked the workflow shows "Hermes didn't accept this record" and **Try again**. That first puts the workflow version back, and the record is then accepted. Before, such records stayed stuck with no retry.
+- **Safe removal:** for a record Hermes no longer has, "Remove from device" isn't offered, and "Free up space" keeps it.
+- **Backup import:** importing a backup with an unsent record queues it, and Hermes receives it.
+
+Unit tests cover retrying a rejected record, and report refresh continuing past a record Hermes doesn't have.
+
+Test-harness fixes found during the full runs:
+- `login.spec` now waits out Hermes' login rate limit (HTTP 429) on the form, as `auth.ts` does for the API.
+- `ui.spec` uses an always-present input.
+
+Results (0.2.3):
+- **Chromium:** 26 passed, 3 skipped.
+- **WebKit:** 20 passed, 9 skipped.
+- No failures on either.
 
 ## 5. Not yet verified (needs your hardware or permission)
 - A real model-generated report (needs a provider; it would run on the hosted instance).

@@ -146,7 +146,7 @@ test("A: browser offline (page + service worker) → stays pending, survives res
   await ctx.setOffline(false);
   await expect.poll(async () => (await server.get(`${API}/records/${id}`)).status(), { timeout: 60_000 }).toBe(200);
   await expect(page.locator("header", { hasText: "all confirmed" })).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("text=Synchronised — durably received by Hermes")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("text=Saved to Hermes — confirmed")).toBeVisible({ timeout: 30_000 });
   const rec = await (await server.get(`${API}/records/${id}`)).json();
   expect(rec.revision).toBe(1);
   expect(rec.received_at * 1000).toBeGreaterThan(Date.parse(rec.completed_at));

@@ -1,6 +1,6 @@
 import "./style.css";
 import { PUBLIC_APP_URL, RUNNING_FROM_LEGACY_PATH, takeReturn } from "./config";
-import { setSetting } from "./db";
+import { getSetting, setSetting } from "./db";
 import { registerDevice } from "./device";
 import { isStandalone } from "./storage";
 import { refreshPending, onSyncState, restoreAuthFlag, startAutoSync, registerBackgroundSync, clearAuthRequired, getSyncState } from "./sync";
@@ -59,7 +59,10 @@ onSyncState((s) => {
   if (s.auth_required !== authShown) {
     authShown = s.auth_required;
     clear(authSlot);
-    if (s.auth_required) authSlot.append(h("div", { style: "padding-top:1rem" }, authBanner()));
+    // Never tell a brand-new install (e.g. a just-added Home Screen app) that its "session expired".
+    if (s.auth_required) void getSetting<unknown>("last_account", null).then((acct) => {
+      if (authShown && !authSlot.firstChild) authSlot.append(h("div", { style: "padding-top:1rem" }, authBanner(!acct)));
+    });
   }
 });
 

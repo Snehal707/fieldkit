@@ -89,7 +89,7 @@ test("install online, then work fully offline after a cold restart, then sync", 
   await expect(page.locator("text=Safety guard problem")).toBeVisible();
   await expect(page.locator("text=Vibration above alarm level")).toBeVisible();
   await expect(page.locator(".tag-local")).toBeVisible();
-  await expect(page.locator("text=Available after the record is synchronised")).toBeVisible();
+  await expect(page.locator("text=Available after Hermes has received and analyzed this record")).toBeVisible();
   const recordUrl = page.url();
   const recordId = recordUrl.split("#/results/")[1];
   await ctx.close();
@@ -115,7 +115,7 @@ test("install online, then work fully offline after a cold restart, then sync", 
   await page.reload();
   await expect.poll(async () => (await ctx.request.get(`${API}/records/${recordId}`)).status(), { timeout: 30_000 }).toBe(200);
   await page.goto(recordUrl);
-  await expect(page.locator("text=Synchronised — durably received by Hermes")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("text=Saved to Hermes — confirmed")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("header .pill", { hasText: "all confirmed" })).toBeVisible({ timeout: 15_000 });
   await expect(page.locator("header .pill", { hasText: "Hermes reachable" })).toBeVisible({ timeout: 15_000 });
   await expect(page.locator("text=Hermes analysis:")).toBeVisible();

@@ -34,7 +34,7 @@ test("a downloaded Hermes report stays readable offline after a cold restart", a
   await page.locator("#f-condition label", { hasText: "Fair" }).click();
   await page.locator("#f-guard_ok label", { hasText: "No" }).click();
   await page.getByRole("button", { name: "Complete workflow" }).click();
-  await expect(page.locator("text=Synchronised — durably received by Hermes")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("text=Saved to Hermes — confirmed")).toBeVisible({ timeout: 30_000 });
   const id = page.url().split("#/results/")[1];
 
   // Store a report exactly as the analysis worker / fieldkit_save_report does.

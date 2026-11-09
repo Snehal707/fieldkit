@@ -67,8 +67,9 @@ test("update notice after a real service-worker update is compact, opaque and ne
   const original = readFileSync(swPath, "utf-8");
   const { ctx, page } = await signedIn(mkdtempSync(join(tmpdir(), "fieldkit-upd-")), { viewport: { width: 320, height: 568 } });  // iPhone SE size
   try {
-    await page.goto(`${APP}#/assistant`);
-    const input = page.getByPlaceholder(/Ask a question/);
+    // Any always-present text input will do (the Assistant hides its box when no knowledge pack is installed).
+    await page.goto(`${APP}#/dictionary`);
+    const input = page.getByPlaceholder(/Search a word/);
     await input.focus();                                                // keyboard-open situation
     appendFileSync(swPath, `\n// e2e update ${Date.now()}\n`);          // a genuinely new service worker
     await page.evaluate(async () => { const r = await navigator.serviceWorker.getRegistration(); await r?.update(); });

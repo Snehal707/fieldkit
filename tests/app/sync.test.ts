@@ -186,3 +186,43 @@ describe("upload again records Hermes no longer has", () => {
     expect((await d.get("records", "rec_test_pending"))!.sync_status).toBe("pending");   // untouched
   });
 });
+
+describe("audit fixes", () => {
+  it("a record Hermes rejected can be retried (it was stuck forever before)", async () => {
+    const { retryRecords } = await import("../../app/src/sync");
+    const d = await db();
+    await addRecord();
+    await d.put("workflows", { id: "equipment-inspection", version: 1, downloaded_at: "",
+      definition: { id: "equipment-inspection", version: 1, title: { en: "Equipment inspection" }, fields: [] } as any });
+    // First upload: Hermes lacks the workflow → 422 → "error", removed from the queue.
+    handler = () => json(422, { detail: "unknown workflow_id/workflow_version" });
+    await enqueueRecord("rec_test_000001");
+    await runSync({ force: true });
+    expect((await d.get("records", "rec_test_000001"))!.sync_status).toBe("error");
+    expect(await d.count("outbox")).toBe(0);
+    await runSync({ force: true });
+    expect((await d.get("records", "rec_test_000001"))!.sync_status).toBe("error");   // nothing retries it by itself
+    // Try again: the workflow version goes back first, then the record is accepted.
+    calls.length = 0;
+    handler = (url) => url.endsWith("/workflows/restore") ? json(200, { restored: true, version: 1 }) : json(200, ack());
+    expect(await retryRecords(["rec_test_000001"])).toBe(1);
+    await vi.waitFor(async () => {
+      if (getSyncState().running) await new Promise((r) => setTimeout(r, 10)); else await runSync({ force: true });
+      expect((await d.get("records", "rec_test_000001"))!.sync_status).toBe("synced");
+    }, { timeout: 4000, interval: 20 });
+    expect(calls.findIndex((c) => c.url.endsWith("/workflows/restore"))).toBeLessThan(calls.findIndex((c) => c.url.endsWith("/sync/records")));
+    expect(await retryRecords(["rec_test_000001"])).toBe(0);    // only rejected records are retried this way
+  });
+
+  it("one record Hermes doesn't have no longer stops report downloads for the others", async () => {
+    await addRecord({ id: "rec_gone_000001", sync_status: "synced", server_revision: 1, analysis_status: "pending" });
+    await addRecord({ id: "rec_here_000001", sync_status: "synced", server_revision: 1, analysis_status: "pending" });
+    handler = (url) => {
+      if (url.includes("rec_gone_000001")) return json(404, { detail: "Not found" });
+      if (url.endsWith("/records/rec_here_000001/report")) return json(200, { report_id: "rep_1", version: 1, summary: "ok" });
+      return json(200, { id: "rec_here_000001", analysis_status: "completed", report_id: "rep_1", report_version: 1 });
+    };
+    expect(await refreshReports()).toBe(1);
+    expect((await (await db()).get("reports", "rec_here_000001"))?.report_id).toBe("rep_1");
+  });
+});

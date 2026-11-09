@@ -61,7 +61,7 @@ test("records Hermes lost are detected on the device that made them and can be u
   await A.page.locator("#f-condition label", { hasText: "Fair" }).click();
   await A.page.locator("#f-guard_ok label", { hasText: "No" }).click();
   await A.page.getByRole("button", { name: "Complete workflow" }).click();
-  await expect(A.page.locator("text=Synchronised — durably received by Hermes")).toBeVisible({ timeout: 30_000 });
+  await expect(A.page.locator("text=Saved to Hermes — confirmed")).toBeVisible({ timeout: 30_000 });
   const id = A.page.url().split("#/results/")[1].split("?")[0];
 
   // Hermes loses the record and its workflow (what a reset / different data volume looks like). Test instance only.

@@ -34,12 +34,21 @@ test("Sign in returns to FieldKit and first-run download makes it offline-ready"
   // Hermes' own login page, with next= pointing at FieldKit's return page (not an /api path).
   await page.waitForURL(/\/login\?next=/, { timeout: 20_000 });
   expect(decodeURIComponent(page.url())).toContain("next=/dashboard-plugins/fieldkit/app_dist/index.html");
-  await page.locator("input[name=username]").first().fill(USER);
-  await page.locator("input[name=password]").first().fill(PASS);
-  await page.locator("input[name=password]").first().press("Enter");
+  // Hermes allows 10 password logins per minute per IP and the whole suite signs in from one IP: if the form
+  // is throttled (HTTP 429, page stays on /login), wait and submit again, like tests/e2e/auth.ts does for the API.
+  const backInApp = (u: URL) => u.pathname.endsWith("/dashboard-plugins/fieldkit/app_dist/index.html");
+  const deadline = Date.now() + 90_000;
+  for (;;) {
+    await page.locator("input[name=username]").first().fill(USER);
+    await page.locator("input[name=password]").first().fill(PASS);
+    const answer = page.waitForResponse((r) => r.url().includes("/auth/password-login"), { timeout: 20_000 });
+    await page.locator("input[name=password]").first().press("Enter");
+    if ((await answer).status() !== 429 || Date.now() > deadline) break;
+    await page.waitForTimeout(5_000);
+  }
 
   // Lands back in FieldKit — not on the dashboard — signed in.
-  await page.waitForURL((u) => u.pathname.endsWith("/dashboard-plugins/fieldkit/app_dist/index.html"), { timeout: 30_000 });
+  await page.waitForURL(backInApp, { timeout: 30_000 });
   await expect(page.locator("text=Signed in as")).toBeVisible({ timeout: 15_000 });
 
   // First run: one tap downloads everything published → offline ready.

@@ -289,7 +289,14 @@ export async function refreshReports(recordId?: string): Promise<number> {
     if (!["synced", "received"].includes(rec.sync_status)) continue;
     const have = await d.get("reports", rec.id);
     if (!recordId && have && have.report_id === rec.report_id && ["completed", "requires_review"].includes(rec.analysis_status)) continue;
-    const server = await api<any>(`records/${encodeURIComponent(rec.id)}`);
+    let server: any;
+    try { server = await api<any>(`records/${encodeURIComponent(rec.id)}`); }
+    catch (e) {
+      // Hermes doesn't have this record (its data was reset or moved): skip it, keep refreshing the others.
+      // Saved Records offers "Upload again" for such records. Sign-in and connection problems still stop here.
+      if (e instanceof HttpError && e.status === 404 && !recordId) continue;
+      throw e;
+    }
     const patch: Partial<LocalRecord> = { analysis_status: server.analysis_status, analysis_job_id: server.analysis_job_id,
       report_id: server.report_id, report_version: server.report_version };
     if (server.report_id && (!have || have.report_id !== server.report_id)) {
@@ -351,9 +358,19 @@ export async function registerBackgroundSync(): Promise<boolean> {
  * which is still on this device. Never touches records that are not confirmed-synced.
  */
 export async function resendRecords(ids: string[]): Promise<number> {
+  return retryRecords(ids, { missingOnServer: true });
+}
+
+/**
+ * Upload records again, on the user's request:
+ *  - missingOnServer: confirmed records Hermes no longer has → sent as new (base revision 0);
+ *  - otherwise: records Hermes REJECTED ("Sync problem", e.g. it lacked the workflow) → sent again as they are.
+ * Puts back the exact workflow version first when this device has it. Never touches conflicts or drafts.
+ */
+export async function retryRecords(ids: string[], opts: { missingOnServer?: boolean } = {}): Promise<number> {
   const d = await db();
-  const recs = (await Promise.all(ids.map((id) => d.get("records", id))))
-    .filter((r): r is LocalRecord => !!r && (r.sync_status === "synced" || r.sync_status === "received"));
+  const ok = (r: LocalRecord) => opts.missingOnServer ? (r.sync_status === "synced" || r.sync_status === "received") : r.sync_status === "error";
+  const recs = (await Promise.all(ids.map((id) => d.get("records", id)))).filter((r): r is LocalRecord => !!r && ok(r));
   // A reset Hermes has lost the workflows too, and would reject these records (unknown workflow). Put back the exact
   // versions they were made with, from the copies this device downloaded (the server never overwrites a version).
   const needed = new Map(recs.map((r) => [`${r.workflow_id}@${r.workflow_version}`, r]));
@@ -367,7 +384,7 @@ export async function resendRecords(ids: string[]): Promise<number> {
   let n = 0;
   for (const rec of recs) {
     const id = rec.id;
-    await d.put("records", { ...rec, server_revision: 0, server_ack: undefined, sync_error: undefined });
+    await d.put("records", opts.missingOnServer ? { ...rec, server_revision: 0, server_ack: undefined, sync_error: undefined } : { ...rec, sync_error: undefined });
     await enqueueRecord(id);
     n++;
   }

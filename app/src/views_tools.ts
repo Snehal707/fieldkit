@@ -13,10 +13,10 @@ import {
   fetchCatalog, installedPacks, installedWorkflows, installPack, installWorkflow, removePack, removeWorkflow,
   storageInfo, updatesAvailable,
 } from "./packs";
-import { getSyncState } from "./sync";
+import { enqueueRecord, getSyncState, runSync } from "./sync";
 import { clear, fmtBytes, fmtTime, h, isOnline, toast } from "./util";
-import { authBanner, go, lang, readiness, whoAmI, type View } from "./views_core";
-import { currentDeviceLabel, registerDevice } from "./device";
+import { go, lang, readiness, signInBanner, whoAmI, type View } from "./views_core";
+import { currentDeviceLabel, describeLoadProblem, registerDevice } from "./device";
 import { languageLabel, requestOutcome, requestProtection, storageMessage, storageState, summarizeVoices } from "./storage";
 
 // ------------------------------------------------------------------ assistant
@@ -54,6 +54,12 @@ export const assistantView: View = async (main) => {
       a.followups.length ? h("div", null, h("h3", null, "Follow-up questions"), h("div", { class: "row" }, ...a.followups.map((f) => h("button", { onclick: () => ask(f) }, f)))) : null,
       a.related.length ? h("div", null, h("h3", null, "Related topics"), h("div", { class: "row" }, ...a.related.map((r) => h("a", { class: "btn", href: `#/knowledge/${encodeURIComponent(r.key)}` }, r.title)))) : null));
   };
+  if (!packs.length) {
+    main.append(h("div", { class: "card" }, h("h2", null, "Offline Assistant"),
+      h("p", null, "No knowledge packs on this device yet. The assistant answers only from downloaded knowledge."),
+      h("a", { class: "btn primary", href: "#/packs" }, "Download knowledge packs")));
+    return;
+  }
   main.append(h("div", { class: "card" }, h("h2", null, "Offline Assistant"),
     h("p", { class: "muted" }, `Answers come from ${idx.size} entries in your downloaded knowledge packs, with sources. It does not invent answers.`),
     h("form", { class: "row", onsubmit: (e: Event) => { e.preventDefault(); void ask(q.value); } }, h("div", { class: "grow" }, q), h("button", { class: "primary" }, "Ask")),
@@ -115,7 +121,7 @@ export const translateView: View = async (main) => {
       h("a", { class: "btn primary", href: "#/packs" }, "Install translation in Offline Packs")));
     return;
   }
-  const sel = h("select", null, ...pairs.map(([f, t]) => h("option", { value: `${f}>${t}` }, `${f} → ${t}`))) as HTMLSelectElement;
+  const sel = h("select", null, ...pairs.map(([f, t]) => h("option", { value: `${f}>${t}` }, `${languageLabel(f, "en")} → ${languageLabel(t, "en")}`))) as HTMLSelectElement;
   const src = h("textarea", { placeholder: "Type or paste a sentence…" }) as HTMLTextAreaElement;
   const out = h("div");
   const btn = h("button", { class: "primary", onclick: async () => {
@@ -175,7 +181,9 @@ export const ocrView: View = async (main) => {
     } catch (err) { status.textContent = (err as Error).message; }
   } });
   main.append(h("div", { class: "card" }, h("h2", null, "Scan text (OCR, offline)"), h("div", { class: "row" }, sel, file), prog, status, out,
-    h("button", { onclick: async () => { await navigator.clipboard?.writeText(out.value).catch(() => undefined); toast("Copied"); } }, "Copy")));
+    h("button", { onclick: async () => {
+      try { await navigator.clipboard.writeText(out.value); toast("Copied", "ok"); } catch { out.select(); toast("Select the text and copy it", "info"); }
+    } }, "Copy")));
 };
 
 // ------------------------------------------------------------------ packs
@@ -210,8 +218,9 @@ export const packsView: View = async (main) => {
   if (!isOnline()) { avail.append(h("p", { class: "muted" }, "Connect to the internet to download workflows and packs.")); return; }
   let cat;
   try { cat = await fetchCatalog(); } catch (e) {
-    if (e instanceof AuthRequired) { avail.append(authBanner()); return; }
-    avail.append(h("p", { class: "muted" }, `Could not reach Hermes: ${(e as Error).message}`)); return;
+    if (e instanceof AuthRequired) { avail.append(await signInBanner()); return; }
+    avail.append(h("p", { class: "muted" }, describeLoadProblem(e, isOnline()).message.replace("your records", "the catalog")),
+      h("button", { onclick: () => go(`#/packs?r=${Date.now()}`) }, "Try again")); return;
   }
   const upd = updatesAvailable(cat, wfs, packs);
   if (upd.workflows.length || upd.packs.length) avail.append(h("div", { class: "banner warn" }, `Updates available: ${[...upd.workflows, ...upd.packs].join(", ")}`));
@@ -281,7 +290,6 @@ export const settingsView: View = async (main) => {
       h("dt", null, "App version"), h("dd", null, APP_VERSION),
       h("dt", null, "Offline ready"), h("dd", null, checks.slice(0, 3).every((c) => c.ok !== false) ? "yes" : "no")),
     h("div", { class: "row", style: "margin-top:.8rem" },
-      h("button", { onclick: () => signIn("#/settings") }, "Sign in to Hermes"),
       h("a", { class: "btn", href: "#/diagnostics" }, "Connection diagnostics"))));
 
   // ---- Hermes account + this device
@@ -370,16 +378,33 @@ export const settingsView: View = async (main) => {
       h("button", { onclick: async () => exportData() }, "Export data"),
       h("label", { class: "btn" }, "Import backup", h("input", { type: "file", accept: "application/json", style: "display:none", onchange: async (e: Event) => {
         const f = (e.target as HTMLInputElement).files?.[0];
-        if (f) { const n = await importData(f); toast(`Restored ${n.records} record(s), ${n.attachments} file(s). Existing items were kept.`, "ok"); }
+        if (!f) return;
+        try {
+          const n = await importData(f);
+          toast(`Restored ${n.records} record(s), ${n.attachments} file(s)${n.queued ? `; ${n.queued} queued for upload` : ""}. Existing items were kept.`, "ok");
+          go(`#/settings?r=${Date.now()}`);
+        } catch (err) { toast(`Couldn't import: ${(err as Error).message}`, "error"); }
       } })))));
 
   const synced = (await d.getAll("records")).filter((r) => r.sync_status === "synced");
-  main.append(h("div", { class: "card" }, h("h2", null, "Free up space"),
-    h("p", { class: "muted" }, `${synced.length} record(s) are fully synchronised and can be removed from this phone. Unsynchronised records are never removed.`),
-    h("button", { class: "danger", disabled: !synced.length, onclick: async () => {
-      for (const r of synced) await deleteRecord(r.id);
-      toast(`Removed ${synced.length} synced record(s).`, "ok"); go(`#/settings?r=${Date.now()}`);
-    } }, "Remove synced records")));
+  main.append(h("div", { class: "card", id: "free-space-card" }, h("h2", null, "Free up space"),
+    h("p", { class: "muted" }, `${synced.length} record(s) on this device are confirmed by Hermes. Before removing any, FieldKit checks that Hermes still has them; records Hermes doesn't have are kept. Records not yet confirmed are never removed.`),
+    h("button", { class: "danger", disabled: !synced.length, onclick: async (ev: Event) => {
+      const btn = ev.currentTarget as HTMLButtonElement;
+      if (!confirm(`Remove up to ${synced.length} record(s) from this device? They stay in your Hermes account.`)) return;
+      btn.disabled = true;
+      let onServer: Set<string>;
+      try { onServer = new Set((await api<{ records: { id: string }[] }>("records?limit=500")).records.map((r) => r.id)); }
+      catch (e) {
+        toast(e instanceof AuthRequired ? "Sign in to Hermes first, so FieldKit can check what Hermes has." : `Nothing removed: ${describeLoadProblem(e, isOnline()).message}`, "error");
+        btn.disabled = false; return;
+      }
+      const safe = synced.filter((r) => onServer.has(r.id));
+      for (const r of safe) await deleteRecord(r.id);
+      const kept = synced.length - safe.length;
+      toast(`Removed ${safe.length} record(s).${kept ? ` Kept ${kept} that Hermes doesn't have. See Saved Records.` : ""}`, kept ? "info" : "ok");
+      go(`#/settings?r=${Date.now()}`);
+    } }, "Remove confirmed records")));
 };
 
 async function blobToB64(b: Blob): Promise<string> {
@@ -405,12 +430,22 @@ async function exportData() {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-async function importData(file: File): Promise<{ records: number; attachments: number }> {
-  const data = JSON.parse(await file.text());
-  if (data.format !== "fieldkit-backup") throw new Error("Not a FieldKit backup file");
+async function importData(file: File): Promise<{ records: number; attachments: number; queued: number }> {
+  let data: any;
+  try { data = JSON.parse(await file.text()); } catch { throw new Error("this file isn't a FieldKit backup (not valid JSON)"); }
+  if (data?.format !== "fieldkit-backup") throw new Error("this file isn't a FieldKit backup");
   const d = await db();
   let records = 0, attachments = 0;
-  for (const r of data.records ?? []) if (!(await d.get("records", r.id))) { await d.put("records", r); records++; }
+  const toQueue: string[] = [];
+  for (const r of data.records ?? []) {
+    if (await d.get("records", r.id)) continue;
+    // A record that was still waiting (or mid-upload) on the old device must upload from this one.
+    // ("received" = Hermes has the record but not all its photos/audio: re-sending makes Hermes ask for the rest.)
+    const unsent = !["synced", "conflict", "error"].includes(r.sync_status);
+    await d.put("records", unsent ? { ...r, sync_status: "pending" } : r);
+    if (unsent) toQueue.push(r.id);
+    records++;
+  }
   for (const r of data.drafts ?? []) if (!(await d.get("drafts", r.id))) await d.put("drafts", r);
   for (const r of data.reports ?? []) if (!(await d.get("reports", r.record_id))) await d.put("reports", r);
   for (const a of data.attachments ?? []) {
@@ -420,7 +455,9 @@ async function importData(file: File): Promise<{ records: number; attachments: n
     await d.put("attachments", { ...rest, blob: new Blob([bin], { type: a.mime }) });
     attachments++;
   }
-  return { records, attachments };
+  for (const id of toQueue) await enqueueRecord(id);   // after the media is in place
+  if (toQueue.length) void runSync();
+  return { records, attachments, queued: toQueue.length };
 }
 
 export async function storedLang(): Promise<string> { return getSetting("lang", "en"); }
@@ -467,18 +504,24 @@ export const diagnosticsView: View = async (main) => {
       if (res.type === "opaqueredirect") {
         msg = h("div", { class: "banner warn" }, h("strong", null, "Something redirected the request — not Hermes."),
           h("div", null, "Typical of a Wi-Fi login page (hotel, office, café). The phone has a network but cannot reach Hermes."));
-      } else if (ct.includes("json") && body && typeof body === "object" && ("user_id" in body || "detail" in body)) {
-        msg = h("div", { class: "banner hermes" }, h("strong", null, `Hermes answered just now (HTTP ${res.status}).`),
-          h("div", null, `Server clock: ${date ?? "n/a"}. This phone HAS a working connection to Hermes right now — `
-            + "so the internet is not actually off. Check that both Wi-Fi and Mobile Data are grey in Control Centre "
-            + "(Airplane mode can keep Wi-Fi on)."));
+      } else if (ct.includes("json") && body && typeof body === "object" && "user_id" in body) {
+        msg = h("div", { class: "banner hermes" }, h("strong", null, "Connected: Hermes answered just now."),
+          h("div", null, `Signed in as ${(body as any).display_name || (body as any).user_id}. Server clock: ${date ?? "n/a"}.`));
+      } else if (res.status === 401 && ct.includes("json")) {
+        msg = h("div", { class: "banner warn" }, h("strong", null, "Connected, but signed out."),
+          h("div", null, "Hermes answered (HTTP 401): this app's Hermes session has expired or it hasn't signed in yet."),
+          h("button", { class: "primary", onclick: () => signIn("#/diagnostics") }, "Sign in"));
+      } else if (ct.includes("json") && body && typeof body === "object" && "detail" in body) {
+        msg = h("div", { class: "banner warn" }, h("strong", null, `Hermes answered with an error (HTTP ${res.status}).`),
+          h("div", null, String((body as any).detail)));
       } else {
         msg = h("div", { class: "banner warn" }, h("strong", null, `Something answered (HTTP ${res.status}, ${ct || "no type"}) but it is NOT Hermes.`),
           h("div", null, `Answered by: ${res.url || "unknown"}. Body starts: ${typeof body === "string" ? body : JSON.stringify(body)?.slice(0, 160)}`));
       }
     } catch {
-      msg = h("div", { class: "banner local" }, h("strong", null, "No connection."),
-        h("div", null, "The request could not leave the phone. FieldKit is correctly working offline."));
+      msg = h("div", { class: "banner local" }, h("strong", null, navigator.onLine ? "Can't reach Hermes." : "No connection."),
+        h("div", null, navigator.onLine ? "The device reports a network, but the request didn't get through. Records stay on this device and upload later."
+          : "This device is offline. FieldKit keeps working offline; records upload when you're connected."));
     }
     clear(verdict);
     verdict.append(msg);
@@ -486,7 +529,7 @@ export const diagnosticsView: View = async (main) => {
   };
 
   main.append(h("div", { class: "card" }, h("h2", null, "Connection diagnostics"),
-    h("p", { class: "muted" }, "Shows exactly what FieldKit sent and what came back. Stored only on this phone."),
+    h("p", { class: "muted" }, "Shows exactly what FieldKit sent and what came back. Stored only on this device."),
     h("div", { class: "row" },
       h("button", { class: "primary", onclick: liveTest }, "Run live connection test"),
       h("button", { onclick: async () => { try { await navigator.clipboard.writeText(pre.textContent || ""); toast("Report copied", "ok"); } catch { toast("Select the report text below and copy it", "error"); } } }, "Copy report"),
