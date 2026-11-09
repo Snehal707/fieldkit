@@ -1720,15 +1720,15 @@
             { style: { fontSize: 13, opacity: 0.8 } },
             "Automatic analysis jobs are queued durably. Ask Hermes to run \u201Cfieldkit_process_pending_jobs\u201D, or schedule it with a Hermes cron job."
           ),
-          h("p", null, `Records: ${JSON.stringify(sync.records_by_sync_status)} \xB7 Analysis: ${JSON.stringify(sync.records_by_analysis_status)} \xB7 Jobs: ${JSON.stringify(sync.jobs)} \xB7 Open conflicts: ${sync.open_conflicts}`)
+          h("p", null, `Records: ${counts(sync.records_by_sync_status)} \xB7 Analysis: ${counts(sync.records_by_analysis_status)} \xB7 Jobs: ${counts(sync.jobs)} \xB7 Open conflicts: ${sync.open_conflicts}`)
         ),
         h(Section, { title: "Recent records" }, h(RecordList, { records: recs.records })),
         h(Section, { title: "Recent reports" }, reps.reports.length ? reps.reports.map((r) => h(
           "div",
           { key: r.id, style: box },
-          h("b", null, r.workflow_id),
-          ` \xB7 v${r.version} \xB7 ${ts(r.created_at)}`,
-          r.requires_review && h(Badge, { style: { marginLeft: 8, color: "#d97706" } }, "requires review"),
+          h("b", null, title(r)),
+          ` \xB7 report v${r.version} \xB7 ${ts(r.created_at)}`,
+          r.requires_review && h(Badge, { style: { marginLeft: 8, color: "#d97706" } }, "needs review"),
           h("div", null, r.summary)
         )) : "No reports yet.")
       );
@@ -1831,23 +1831,57 @@
         )
       );
     }
+    const STATE_WORDS = {
+      complete: "complete",
+      received: "files still uploading",
+      not_requested: "not analysed",
+      pending: "waiting for analysis",
+      processing: "being analysed",
+      completed: "analysed",
+      failed: "failed",
+      requires_review: "need human review",
+      done: "done",
+      queued: "queued"
+    };
+    function counts(o) {
+      const parts = Object.entries(o != null ? o : {}).filter(([, n]) => Number(n) > 0).map(([k, n]) => {
+        var _a2;
+        return `${n} ${(_a2 = STATE_WORDS[k]) != null ? _a2 : k.replace(/_/g, " ")}`;
+      });
+      return parts.length ? parts.join(", ") : "none";
+    }
+    function title(r) {
+      return `${r.workflow_title || r.workflow_id}${r.subject ? ` \xB7 ${r.subject}` : ""}`;
+    }
+    const small = { fontSize: 11, opacity: 0.55, fontFamily: "monospace" };
+    const ANALYSIS_LABEL = {
+      requires_review: "needs review",
+      completed: "analysed",
+      pending: "waiting",
+      processing: "analysing",
+      failed: "failed",
+      not_requested: "not analysed"
+    };
     function RecordList({ records }) {
       const [open, setOpen] = useState(null);
       if (!(records == null ? void 0 : records.length)) return h("div", null, "No synchronised records yet.");
-      return h("div", null, records.map((r) => h(
-        "div",
-        { key: r.id, style: box },
-        h(
+      return h("div", null, records.map((r) => {
+        var _a2, _b2;
+        return h(
           "div",
-          { style: row },
-          h("b", { style: { flex: 1 } }, `${r.workflow_id} \xB7 ${r.id}`),
-          h(Badge, null, `sync: ${r.sync_status}`),
-          h(Badge, null, `analysis: ${r.analysis_status}`),
-          h("span", null, ts(r.received_at)),
-          h(Button, { onClick: () => setOpen(open === r.id ? null : r.id) }, open === r.id ? "Hide" : "Details")
-        ),
-        open === r.id && h(RecordDetail, { id: r.id })
-      )));
+          { key: r.id, style: box },
+          h(
+            "div",
+            { style: row },
+            h("div", { style: { flex: 1 } }, h("b", null, title(r)), h("div", { style: small }, r.id)),
+            h(Badge, null, r.sync_status === "complete" ? "synced" : (_a2 = STATE_WORDS[r.sync_status]) != null ? _a2 : r.sync_status),
+            h(Badge, null, (_b2 = ANALYSIS_LABEL[r.analysis_status]) != null ? _b2 : r.analysis_status),
+            h("span", null, ts(r.received_at)),
+            h(Button, { onClick: () => setOpen(open === r.id ? null : r.id) }, open === r.id ? "Hide" : "Details")
+          ),
+          open === r.id && h(RecordDetail, { id: r.id })
+        );
+      }));
     }
     function Attachment({ a }) {
       const [url, setUrl] = useState(null);
@@ -1978,7 +2012,7 @@
         Section,
         { title: "Synchronised records" },
         h(Err, { msg: err }),
-        h("input", { placeholder: "Filter by workflow id", value: wf, onChange: (e) => setWf(e.target.value), style: { marginBottom: 8 } }),
+        h("input", { placeholder: "Filter by workflow id (e.g. equipment-inspection)", value: wf, onChange: (e) => setWf(e.target.value), style: { marginBottom: 8 } }),
         h(RecordList, { records: (_a2 = data == null ? void 0 : data.records) != null ? _a2 : [] })
       );
     }
@@ -2000,7 +2034,8 @@
           h(
             "div",
             { style: row },
-            h("b", { style: { flex: 1 } }, `${r.workflow_id} \xB7 record ${r.record_id} \xB7 v${r.version}`),
+            h("div", { style: { flex: 1 } }, h("b", null, `${title(r)} \xB7 report v${r.version}`), h("div", { style: small }, r.record_id)),
+            r.requires_review && h(Badge, { style: { color: "#d97706" } }, "needs review"),
             h("span", null, ts(r.created_at)),
             h(Button, { onClick: () => setOpen(open === r.id ? null : r.id) }, open === r.id ? "Hide" : "Open")
           ),
@@ -2026,8 +2061,8 @@
           Section,
           { title: "Synchronisation", actions: h(Button, { onClick: reload }, "Refresh") },
           h("div", null, `Last record received: ${ts(st.last_received_at)} \xB7 Attachments outstanding: ${st.attachments_outstanding} \xB7 Open conflicts: ${st.open_conflicts}`),
-          h("div", null, `By sync status: ${JSON.stringify(st.records_by_sync_status)} \xB7 By analysis: ${JSON.stringify(st.records_by_analysis_status)}`),
-          h("div", { style: { marginTop: 8 } }, h("b", null, "Devices"), st.devices.map((d) => h("div", { key: d.id }, `${d.id} \xB7 last seen ${ts(d.last_seen)}`)))
+          h("div", null, `Records: ${counts(st.records_by_sync_status)} \xB7 Analysis: ${counts(st.records_by_analysis_status)}`),
+          h("div", { style: { marginTop: 8 } }, h("b", null, "Devices"), st.devices.map((d) => h("div", { key: d.id }, `${d.label || "Unnamed device"} \xB7 last seen ${ts(d.last_seen)} `, h("span", { style: small }, d.id))))
         ),
         h(Section, { title: "Conflicts" }, cf.conflicts.length ? cf.conflicts.map((c) => {
           var _a2, _b2;

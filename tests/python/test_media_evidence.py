@@ -238,3 +238,32 @@ def test_voice_note_is_transcribed_on_hermes_right_after_upload(store, tmp_path,
     api._STT_POOL.shutdown(wait=True)
     api._STT_POOL = None
     assert stt2.paths == []
+
+
+def test_dashboard_lists_have_readable_labels_and_clean_previews(store, tmp_path):
+    """Dashboard polish: records/reports carry a workflow title and a subject (the asset id); previews end on a word."""
+    import importlib.util
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    spec = importlib.util.spec_from_file_location("fk_api_labels", Path(__file__).parents[2] / "dashboard" / "plugin_api.py")
+    api = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(api)
+    app = FastAPI()
+
+    @app.middleware("http")
+    async def fake_session(request, call_next):
+        request.state.session = type("S", (), {"user_id": "alice"})()
+        return await call_next(request)
+
+    app.include_router(api.router, prefix="/api/plugins/fieldkit")
+    c = TestClient(app)
+    rid = _inspection(store, tmp_path)
+    long = "Pump PMP-0042 shows rust on the housing and a leak near the casing " * 10
+    store.save_report_direct(rid, {**GOOD_REPORT, "summary": long}, True, generated_by="test")
+    rec = c.get("/api/plugins/fieldkit/records").json()["records"][0]
+    assert rec["workflow_title"] == "Equipment inspection" and rec["subject"] == "PMP-0042"
+    rep = c.get("/api/plugins/fieldkit/reports").json()["reports"][0]
+    assert rep["subject"] == "PMP-0042" and rep["workflow_title"] == "Equipment inspection"
+    assert rep["summary"].endswith("…") and len(rep["summary"]) <= 401
+    assert rep["summary"][:-1] == long[:len(rep["summary"]) - 1]          # cut on a word, nothing invented
+    assert db.preview("short", 400) == "short"

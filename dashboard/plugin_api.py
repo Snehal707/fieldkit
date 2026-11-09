@@ -351,11 +351,31 @@ def resolve_conflict(cid: str, request: Request, resolution: str = Body(...), me
 def list_records(request: Request, workflow_id: Optional[str] = None, limit: int = Query(50, le=500),
                  analysis_status: Optional[str] = None):
     store = get_store()
-    rows = store.list_records(_uid(request), workflow_id, limit, analysis_status)
-    titles = {w["id"]: w["title"] for w in store.list_workflows(ALL)}
-    for r in rows:  # lets other devices show a readable name without downloading the record
-        r["workflow_title"] = titles.get(r["workflow_id"], r["workflow_id"])
+    uid = _uid(request)
+    rows = store.list_records(uid, workflow_id, limit, analysis_status)
+    _label(store, uid, rows, "id")   # lets other devices and the dashboard show readable names
     return {"records": rows}
+
+
+def _subject(wf: Optional[dict], answers: dict) -> str:
+    """A short human label for a record: the first short text answer (an asset id, farm or class name)."""
+    for f in (wf or {}).get("fields", []):
+        v = answers.get(f.get("id"))
+        if f.get("type") == "text" and isinstance(v, str) and 0 < len(v.strip()) <= 40:
+            return v.strip()
+    return ""
+
+
+def _label(store: Any, uid: str, rows: list[dict], key: str) -> None:
+    titles = {w["id"]: w["title"] for w in store.list_workflows(ALL)}
+    info = store.record_answers(uid, [r[key] for r in rows])
+    defs: dict = {}
+    for r in rows:
+        r["workflow_title"] = titles.get(r["workflow_id"], r["workflow_id"])
+        wid, ver, answers = info.get(r[key], (r["workflow_id"], None, {}))
+        if (wid, ver) not in defs:
+            defs[(wid, ver)] = store.get_workflow_any_owner(wid, ver) if ver else None
+        r["subject"] = _subject(defs[(wid, ver)], answers or {})
 
 
 @router.get("/devices")
@@ -403,7 +423,10 @@ def record_report(rid: str, request: Request):
 
 @router.get("/reports")
 def list_reports(request: Request, record_id: Optional[str] = None, limit: int = Query(50, le=200)):
-    return {"reports": get_store().list_reports(_uid(request), record_id, limit)}
+    store, uid = get_store(), _uid(request)
+    rows = store.list_reports(uid, record_id, limit)
+    _label(store, uid, rows, "record_id")
+    return {"reports": rows}
 
 
 @router.get("/reports/{rep_id}")

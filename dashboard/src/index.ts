@@ -60,10 +60,10 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
           h(Badge, null, `auto-analyze ${status.auto_analyze ? "on" : "off"}`), h(Badge, null, `app ${status.app_built ? "built" : "NOT built"}`)),
         status.analysis_mode === "deferred" && h("p", { style: { fontSize: 13, opacity: .8 } },
           "Automatic analysis jobs are queued durably. Ask Hermes to run “fieldkit_process_pending_jobs”, or schedule it with a Hermes cron job."),
-        h("p", null, `Records: ${JSON.stringify(sync.records_by_sync_status)} · Analysis: ${JSON.stringify(sync.records_by_analysis_status)} · Jobs: ${JSON.stringify(sync.jobs)} · Open conflicts: ${sync.open_conflicts}`)),
+        h("p", null, `Records: ${counts(sync.records_by_sync_status)} · Analysis: ${counts(sync.records_by_analysis_status)} · Jobs: ${counts(sync.jobs)} · Open conflicts: ${sync.open_conflicts}`)),
       h(Section, { title: "Recent records" }, h(RecordList, { records: recs.records })),
       h(Section, { title: "Recent reports" }, reps.reports.length ? reps.reports.map((r: any) => h("div", { key: r.id, style: box },
-        h("b", null, r.workflow_id), ` · v${r.version} · ${ts(r.created_at)}`, r.requires_review && h(Badge, { style: { marginLeft: 8, color: "#d97706" } }, "requires review"),
+        h("b", null, title(r)), ` · report v${r.version} · ${ts(r.created_at)}`, r.requires_review && h(Badge, { style: { marginLeft: 8, color: "#d97706" } }, "needs review"),
         h("div", null, r.summary))) : "No reports yet."));
   }
 
@@ -118,12 +118,31 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
   }
 
   // ---------------------------------------------------------------- Records
+  const STATE_WORDS: Record<string, string> = {
+    complete: "complete", received: "files still uploading", not_requested: "not analysed", pending: "waiting for analysis",
+    processing: "being analysed", completed: "analysed", failed: "failed", requires_review: "need human review",
+    done: "done", queued: "queued",
+  };
+  /** {"complete": 7} → "7 complete" */
+  function counts(o: any): string {
+    const parts = Object.entries(o ?? {}).filter(([, n]) => Number(n) > 0).map(([k, n]) => `${n} ${STATE_WORDS[k] ?? k.replace(/_/g, " ")}`);
+    return parts.length ? parts.join(", ") : "none";
+  }
+  /** "Equipment inspection · PMP-0045" */
+  function title(r: any): string {
+    return `${r.workflow_title || r.workflow_id}${r.subject ? ` · ${r.subject}` : ""}`;
+  }
+  const small = { fontSize: 11, opacity: .55, fontFamily: "monospace" };
+  const ANALYSIS_LABEL: Record<string, string> = { requires_review: "needs review", completed: "analysed", pending: "waiting",
+    processing: "analysing", failed: "failed", not_requested: "not analysed" };
+
   function RecordList({ records }: { records: any[] }) {
     const [open, setOpen] = useState(null);
     if (!records?.length) return h("div", null, "No synchronised records yet.");
     return h("div", null, records.map((r: any) => h("div", { key: r.id, style: box },
-      h("div", { style: row }, h("b", { style: { flex: 1 } }, `${r.workflow_id} · ${r.id}`),
-        h(Badge, null, `sync: ${r.sync_status}`), h(Badge, null, `analysis: ${r.analysis_status}`), h("span", null, ts(r.received_at)),
+      h("div", { style: row }, h("div", { style: { flex: 1 } }, h("b", null, title(r)), h("div", { style: small }, r.id)),
+        h(Badge, null, r.sync_status === "complete" ? "synced" : STATE_WORDS[r.sync_status] ?? r.sync_status),
+        h(Badge, null, ANALYSIS_LABEL[r.analysis_status] ?? r.analysis_status), h("span", null, ts(r.received_at)),
         h(Button, { onClick: () => setOpen(open === r.id ? null : r.id) }, open === r.id ? "Hide" : "Details")),
       open === r.id && h(RecordDetail, { id: r.id }))));
   }
@@ -198,7 +217,7 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
     const [wf, setWf] = useState("");
     const [data, err] = useLoad(() => get(`records?limit=100${wf ? `&workflow_id=${encodeURIComponent(wf)}` : ""}`), [wf]);
     return h(Section, { title: "Synchronised records" }, h(Err, { msg: err }),
-      h("input", { placeholder: "Filter by workflow id", value: wf, onChange: (e: any) => setWf(e.target.value), style: { marginBottom: 8 } }),
+      h("input", { placeholder: "Filter by workflow id (e.g. equipment-inspection)", value: wf, onChange: (e: any) => setWf(e.target.value), style: { marginBottom: 8 } }),
       h(RecordList, { records: data?.records ?? [] }));
   }
 
@@ -212,7 +231,8 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
     const [reps, fus] = data as any[];
     return h("div", null,
       h(Section, { title: "Reports" }, reps.reports.length ? reps.reports.map((r: any) => h("div", { key: r.id, style: box },
-        h("div", { style: row }, h("b", { style: { flex: 1 } }, `${r.workflow_id} · record ${r.record_id} · v${r.version}`), h("span", null, ts(r.created_at)),
+        h("div", { style: row }, h("div", { style: { flex: 1 } }, h("b", null, `${title(r)} · report v${r.version}`), h("div", { style: small }, r.record_id)),
+          r.requires_review && h(Badge, { style: { color: "#d97706" } }, "needs review"), h("span", null, ts(r.created_at)),
           h(Button, { onClick: () => setOpen(open === r.id ? null : r.id) }, open === r.id ? "Hide" : "Open")),
         open === r.id && full ? h(ReportView, { r: full }) : h("div", null, r.summary))) : "No reports yet."),
       h(Section, { title: "Follow-up actions" }, fus.followups.length ? fus.followups.map((f: any) => h("div", { key: f.id, style: { ...box, ...row } },
@@ -228,8 +248,8 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
     return h("div", null,
       h(Section, { title: "Synchronisation", actions: h(Button, { onClick: reload }, "Refresh") },
         h("div", null, `Last record received: ${ts(st.last_received_at)} · Attachments outstanding: ${st.attachments_outstanding} · Open conflicts: ${st.open_conflicts}`),
-        h("div", null, `By sync status: ${JSON.stringify(st.records_by_sync_status)} · By analysis: ${JSON.stringify(st.records_by_analysis_status)}`),
-        h("div", { style: { marginTop: 8 } }, h("b", null, "Devices"), st.devices.map((d: any) => h("div", { key: d.id }, `${d.id} · last seen ${ts(d.last_seen)}`)))),
+        h("div", null, `Records: ${counts(st.records_by_sync_status)} · Analysis: ${counts(st.records_by_analysis_status)}`),
+        h("div", { style: { marginTop: 8 } }, h("b", null, "Devices"), st.devices.map((d: any) => h("div", { key: d.id }, `${d.label || "Unnamed device"} · last seen ${ts(d.last_seen)} `, h("span", { style: small }, d.id))))),
       h(Section, { title: "Conflicts" }, cf.conflicts.length ? cf.conflicts.map((c: any) => h("div", { key: c.id, style: box },
         h("div", null, `Record ${c.record_id}: phone edited revision ${c.base_revision}, server is at ${c.server_revision}`),
         h("pre", { style: pre }, JSON.stringify(c.client_payload?.record?.answers, null, 2)),

@@ -93,6 +93,15 @@ MIGRATIONS: list[str] = [
 ]
 
 
+def preview(text: str, n: int) -> str:
+    """Shorten to at most n characters on a word boundary, with an ellipsis when cut."""
+    text = str(text or "").strip()
+    if len(text) <= n:
+        return text
+    cut = text[:n].rsplit(" ", 1)[0].rstrip(" ,;:.-")
+    return (cut or text[:n]) + "…"
+
+
 class NotFound(Exception):
     pass
 
@@ -758,8 +767,18 @@ class Store:
             content = _uj(r["content"])
             out.append({"id": r["id"], "record_id": r["record_id"], "workflow_id": r["workflow_id"], "version": r["version"],
                         "created_at": r["created_at"], "generated_by": r["generated_by"],
-                        "summary": content.get("summary", "")[:400], "requires_review": content.get("requires_review", False)})
+                        "summary": preview(content.get("summary", ""), 400), "requires_review": content.get("requires_review", False)})
         return out
+
+    def record_answers(self, owner: Any, ids: list[str]) -> dict:
+        """{record_id: (workflow_id, workflow_version, answers)} for building readable list labels."""
+        if not ids:
+            return {}
+        clause, args = self._owner_clause(owner)
+        marks = ",".join("?" * len(ids))
+        rows = self._q(f"SELECT id, workflow_id, workflow_version, answers FROM records WHERE id IN ({marks}) AND {clause}",
+                       (*ids, *args))
+        return {r["id"]: (r["workflow_id"], r["workflow_version"], _uj(r["answers"])) for r in rows}
 
     def create_followup(self, owner: Any, title: str, detail: str = "", record_id: Optional[str] = None,
                         due_date: Optional[str] = None, source: str = "user") -> dict:
