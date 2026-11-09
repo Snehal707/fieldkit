@@ -82,3 +82,13 @@ dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .8rem
 .thumbs img.sig-img { width: auto; max-width: 100%; height: 88px; object-fit: contain; }
 .thumbs .media audio { width: 260px; max-width: 100%; }
 .thumbs .media-problem { max-width: 260px; }
+
+/* Decision-focused reports (0.2.5) */
+.banner.decision .decision-label { display: block; font-size: 1.25rem; margin: .1rem 0 .3rem; }
+.banner.decision.sev-critical, .banner.decision.sev-high { border-left: 6px solid #b91c1c; }
+.banner.decision.sev-medium { border-left: 6px solid #d97706; }
+.banner.decision.sev-low, .banner.decision.sev-info { border-left: 6px solid #0f766e; }
+ol.actions { padding-left: 1.2rem; } ol.actions li { margin-bottom: .7rem; }
+.badge.origin-ai_suggestion { background: #fef3c7; color: #92400e; }
+.badge.origin-guide, .badge.origin-knowledge { background: #ccfbf1; color: #115e59; }
+.lang-switch button { padding: .2rem .6rem; }

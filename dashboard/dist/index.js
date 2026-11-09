@@ -1984,24 +1984,43 @@
       );
     }
     function ReportView({ r }) {
-      var _a2, _b2, _c, _d, _e, _f, _g;
+      var _a2, _b2, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
       return h(
         "div",
         { style: box },
         h("div", { style: { fontSize: 12, opacity: 0.7 } }, `v${r.version} \xB7 ${ts(r.generated_at)} \xB7 ${r.generated_by} \xB7 ${r.provider || ""} ${r.model || ""}`),
         r.requires_review && h("div", { style: { color: "#d97706", fontWeight: 600 } }, `Requires human review${r.review_reason ? `: ${r.review_reason}` : ""}`),
+        ((_a2 = r.decision) == null ? void 0 : _a2.outcome) && h(
+          "div",
+          { style: { margin: "6px 0", padding: 8, borderRadius: 6, border: "1px solid #0f766e" } },
+          h("b", null, "Decision: "),
+          ((_c = ((_b2 = r.decision_scale) != null ? _b2 : []).find((d) => d.id === r.decision.outcome)) == null ? void 0 : _c.label) || r.decision.outcome,
+          ` \xB7 confidence ${r.decision.confidence}`,
+          typeof r.decision.deadline_days === "number" ? ` \xB7 within ${r.decision.deadline_days} day(s)` : "",
+          r.decision.escalate_to ? ` \xB7 escalate to ${r.decision.escalate_to}` : "",
+          h("div", null, r.decision.rationale)
+        ),
         h("p", null, r.summary),
-        ((_a2 = r.images) == null ? void 0 : _a2.note) && h(
+        ((_d = r.next_actions) == null ? void 0 : _d.length) > 0 && h("div", null, h("b", null, "Next actions"), h("ol", null, r.next_actions.map((a, k) => h(
+          "li",
+          { key: k },
+          a.action,
+          a.who ? ` (${a.who}` + (typeof a.by_when_days === "number" ? `, within ${a.by_when_days} day(s))` : ")") : "",
+          h("div", { style: { fontSize: 12, opacity: 0.75 } }, `Verify: ${a.verify_by} \xB7 ${a.origin === "ai_suggestion" ? "AI suggestion" : `from workspace ${a.origin}`}`)
+        )))),
+        ((_e = r.uncertainty) == null ? void 0 : _e.length) > 0 && h("div", null, h("b", null, "Uncertain"), h("ul", null, r.uncertainty.map((u, k) => h("li", { key: k }, `${u.unknown} \u2014 ${u.how_to_resolve}`)))),
+        ((_g = (_f = r.quality) == null ? void 0 : _f.problems) == null ? void 0 : _g.length) > 0 && h("div", { style: { color: "#d97706" } }, `Quality checks not passed: ${r.quality.problems.join("; ")}`),
+        ((_h = r.images) == null ? void 0 : _h.note) && h(
           "div",
           { style: { margin: "6px 0", padding: 8, borderRadius: 6, border: `1px solid ${r.images.analyzed === false ? "#d97706" : "#0f766e"}` } },
           h("b", null, r.images.analyzed === false ? "Photos not analysed: " : "Photos: "),
           r.images.note
         ),
-        ((_c = (_b2 = r.attachments) == null ? void 0 : _b2.evidence) == null ? void 0 : _c.length) > 0 && h(Evidence, { att: r.attachments }),
-        ((_d = r.issues) == null ? void 0 : _d.length) > 0 && h("div", null, h("b", null, "Issues"), r.issues.map((i, k) => h("div", { key: k }, h(Sev, { s: i.severity }), ` ${i.title} \u2014 ${i.evidence}`))),
-        ((_e = r.missing_information) == null ? void 0 : _e.length) > 0 && h("div", null, h("b", null, "Missing information"), h("ul", null, r.missing_information.map((m, k) => h("li", { key: k }, m)))),
-        ((_f = r.suggested_actions) == null ? void 0 : _f.length) > 0 && h("div", null, h("b", null, "Suggested actions"), h("ul", null, r.suggested_actions.map((a, k) => h("li", { key: k }, `[${a.priority}] ${a.action}`)))),
-        ((_g = r.references) == null ? void 0 : _g.length) > 0 && h("div", null, h("b", null, "References"), h("ul", null, r.references.map((x, k) => h("li", { key: k }, `${x.title}${x.source ? ` \u2014 ${x.source}` : ""}`))))
+        ((_j = (_i = r.attachments) == null ? void 0 : _i.evidence) == null ? void 0 : _j.length) > 0 && h(Evidence, { att: r.attachments }),
+        ((_k = r.issues) == null ? void 0 : _k.length) > 0 && h("div", null, h("b", null, "Issues"), r.issues.map((i, k) => h("div", { key: k }, h(Sev, { s: i.severity }), ` ${i.title} \u2014 ${i.evidence}`))),
+        ((_l = r.missing_information) == null ? void 0 : _l.length) > 0 && h("div", null, h("b", null, "Missing information"), h("ul", null, r.missing_information.map((m, k) => h("li", { key: k }, m)))),
+        ((_m = r.suggested_actions) == null ? void 0 : _m.length) > 0 && h("div", null, h("b", null, "Suggested actions"), h("ul", null, r.suggested_actions.map((a, k) => h("li", { key: k }, `[${a.priority}] ${a.action}`)))),
+        ((_n = r.references) == null ? void 0 : _n.length) > 0 && h("div", null, h("b", null, "References"), h("ul", null, r.references.map((x, k) => h("li", { key: k }, `${x.title}${x.source ? ` \u2014 ${x.source}` : ""}`))))
       );
     }
     function Records() {

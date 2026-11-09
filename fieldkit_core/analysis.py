@@ -11,19 +11,20 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from . import engine, media, packs as packs_mod
+from . import decision, engine, media, packs as packs_mod
 from .db import ALL, Store
 
 REPORT_SCHEMA: dict = {
     "type": "object",
-    "required": ["summary", "issues", "missing_information", "suggested_actions", "followups", "requires_review"],
+    "required": ["summary", "decision", "issues", "missing_information", "next_actions", "uncertainty", "requires_review"],
     "additionalProperties": False,
     "properties": {
         "summary": {"type": "string"},
         "issues": {"type": "array", "items": {
-            "type": "object", "required": ["title", "severity", "evidence"], "additionalProperties": False,
+            "type": "object", "required": ["title", "severity", "evidence", "interpretation", "evidence_refs"], "additionalProperties": False,
             "properties": {"title": {"type": "string"}, "severity": {"enum": ["info", "low", "medium", "high", "critical"]},
-                           "evidence": {"type": "string"}, "field_ids": {"type": "array", "items": {"type": "string"}}}}},
+                           "evidence": {"type": "string"}, "field_ids": {"type": "array", "items": {"type": "string"}},
+                           **decision.ISSUE_V2}}},
         "missing_information": {"type": "array", "items": {"type": "string"}},
         "references": {"type": "array", "items": {
             "type": "object", "required": ["title"], "additionalProperties": False,
@@ -36,6 +37,7 @@ REPORT_SCHEMA: dict = {
             "properties": {"title": {"type": "string"}, "detail": {"type": "string"}, "due_in_days": {"type": "integer"}}}},
         "requires_review": {"type": "boolean"},
         "review_reason": {"type": "string"},
+        **decision.V2_PROPERTIES,
     },
 }
 
@@ -112,7 +114,27 @@ def build_context(store: Store, record: dict, wf: dict, lang: str = "en", files:
         "local_findings": findings,
         "reference_passages": [{"title": r["title"], "source": r["source"], "entry_id": r["entry_id"], "text": r["text"][:1500]}
                                for r in refs],
+        **_decision_context(store, record, wf, lang),
     }
+
+
+def _decision_context(store: Store, record: dict, wf: dict, lang: str) -> dict:
+    ws = decision.workspace_for_workflow(store, wf["id"])
+    wc = decision.workspace_context(ws)
+    status = wc.pop("_evidence_status", {})
+    knowledge = []
+    for pid in (ws or {}).get("packs", []):
+        content = store.get_pack_content(pid) if pid.endswith("-knowledge") else None
+        for e in (content or {}).get("entries", []):
+            if e.get("evidence_status") in ("verified", "supported", "user_procedure"):
+                knowledge.append({"id": e["id"], "title": engine.text(e.get("title"), lang), "type": e.get("type"),
+                                  "evidence_status": e["evidence_status"]})
+    langs = (ws or {}).get("languages") or [lang]
+    checks = (record.get("local_results") or {}).get("followup_checks") or []
+    return {"decision_scale": [{"id": d["id"], "label": engine.text(d.get("label"), lang), "severity": d.get("severity")}
+                               for d in decision.scale_for(ws)],
+            **wc, "workspace_knowledge": knowledge[:60], "report_languages": langs,
+            "previous_followup_checks": checks, "_evidence_status": status}
 
 
 def _image_inputs(files: list[dict], limit: int = 2, max_bytes: int = 4_000_000) -> list[dict]:
@@ -177,12 +199,13 @@ def _is_task_unavailable(exc: BaseException) -> bool:
 
 
 def _structured_call(llm: Any, context: dict, images: list[dict], task: Optional[str]) -> Any:
-    text = json.dumps(context, ensure_ascii=False, indent=1)
+    text = json.dumps({k: v for k, v in context.items() if not k.startswith("_")}, ensure_ascii=False, indent=1)
     inputs: list[dict] = [{"type": "text", "text": text}] + images
     system = SYSTEM if images or not context.get("record", {}).get("attachments_present") else f"{SYSTEM} {TEXT_ONLY_NOTE}"
     if context.get("record", {}).get("voice_notes_present"):
         system = f"{system} {VOICE_NOTE}"
-    kwargs = dict(instructions="Produce the FieldKit report for this record as JSON matching the schema.",
+    kwargs = dict(instructions="Produce the FieldKit report for this record as JSON matching the schema. " + decision.INSTRUCTIONS
+                  + (" " + context["_repair"] if context.get("_repair") else ""),
                   input=inputs, json_schema=REPORT_SCHEMA, schema_name="fieldkit.report", system_prompt=system,
                   temperature=0.2, max_tokens=1800, purpose="fieldkit.analyze_record", timeout=120)
     if task:
@@ -266,7 +289,26 @@ def analyze_record(store: Store, llm: Any, record_id: str, *, owner: Any = ALL, 
     report = result.parsed
     if not isinstance(report, dict):
         raise RuntimeError("model did not return a parseable report")
+    scale = [{"id": d["id"], "severity": d.get("severity")} for d in context["decision_scale"]]
+    refs = decision.allowed_refs(record, context["local_findings"], files)
+    guide_ids = {g["id"] for g in context.get("workspace_guides", [])}
+    entry_ids = {e["id"] for e in context.get("workspace_knowledge", [])}
+    problems = decision.check_report(report, scale, refs, guide_ids, entry_ids)
+    repaired = False
+    if problems:
+        used = next(((imgs, task) for imgs, task, label in attempts if label == mode), ([], None))
+        context["_repair"] = ("REPAIR THESE PROBLEMS in your previous report and return the corrected full report: "
+                              + " | ".join(problems) + " PREVIOUS REPORT: " + json.dumps(report, ensure_ascii=False)[:6000])
+        try:
+            again = _structured_call(llm, context, used[0], used[1])
+            if isinstance(again.parsed, dict):
+                report, result, repaired = again.parsed, again, True
+                problems = decision.check_report(report, scale, refs, guide_ids, entry_ids)
+        except Exception as exc:  # keep the first report; its problems are shown
+            notes.append(f"repair call failed: {type(exc).__name__}")
+        context.pop("_repair", None)
     report = _normalize_report(report, context)
+    report["quality"] = {"problems": problems, "repaired": repaired}
     analysed = mode in ("vision_task", "default_model_with_images")
     report["images"] = {
         "attached": photo_count,
@@ -322,22 +364,41 @@ def review_triggers(report: dict, context: dict) -> list[str]:
     reason = str(report.get("review_reason") or "").strip()
     if report.get("requires_review") and reason:
         out.append(f"Hermes: {reason[:300]}")
+    scale = {d.get("id"): d for d in context.get("decision_scale", [])}
+    outcome = (report.get("decision") or {}).get("outcome")
+    if scale.get(outcome, {}).get("severity") == "critical" and not worst:
+        out.append("critical decision")
+    q = (report.get("quality") or {}).get("problems") or []
+    if q:
+        out.append(f"report failed {len(q)} quality check(s)")
     return out
 
 
 def _normalize_report(report: dict, context: dict) -> dict:
     now = time.time()
     fus = []
+    if report.get("next_actions") or report.get("follow_up_verification"):
+        report = dict(report, followups=decision.followups_from(report))
     for f in report.get("followups", []) or []:
         days = f.get("due_in_days")
         due = time.strftime("%Y-%m-%d", time.gmtime(now + 86400 * int(days))) if isinstance(days, int) and 0 <= days < 3650 else None
-        fus.append({"title": f.get("title", "")[:300], "detail": f.get("detail", "")[:2000], "due_date": due})
+        fus.append({"title": f.get("title", "")[:300], "detail": f.get("detail", "")[:2000], "due_date": due,
+                    "verify_by": str(f.get("verify_by", ""))[:500]})
     return {
         "summary": str(report.get("summary", ""))[:4000],
         "issues": report.get("issues", [])[:50],
         "missing_information": [str(x) for x in report.get("missing_information", [])][:50],
         "references": report.get("references", [])[:20],
-        "suggested_actions": report.get("suggested_actions", [])[:30],
+        "suggested_actions": report.get("suggested_actions") or _v1_actions({**report, "decision_scale": context.get("decision_scale", [])}),
+        "schema_version": 2,
+        "decision": report.get("decision") or {},
+        "decision_scale": context.get("decision_scale", []),
+        "next_actions": sorted(report.get("next_actions") or [], key=lambda a: a.get("order") or 99)[:30],
+        "uncertainty": (report.get("uncertainty") or [])[:20],
+        "differences_from_local_findings": (report.get("differences_from_local_findings") or [])[:20],
+        "follow_up_verification": (report.get("follow_up_verification") or [])[:20],
+        "translations": report.get("translations") or {},
+        "workspace": context.get("workspace"),
         "followups": fus[:20],
         "requires_review": bool(report.get("requires_review")),
         "review_reason": str(report.get("review_reason", ""))[:1000],
@@ -348,6 +409,13 @@ def _normalize_report(report: dict, context: dict) -> dict:
                                  for r in context["reference_passages"]],
         "source": "hermes",
     }
+
+
+def _v1_actions(report: dict) -> list:
+    """Older readers expect suggested_actions[{action, priority}]; derive them from next_actions."""
+    sev = {d.get("id"): d.get("severity") for d in report.get("decision_scale", [])}
+    pr = {"critical": "urgent", "high": "high", "medium": "medium"}.get(sev.get((report.get("decision") or {}).get("outcome")), "low")
+    return [{"action": a.get("action", ""), "priority": pr} for a in report.get("next_actions") or []][:30]
 
 
 def process_pending(store: Store, llm: Any, limit: int = 2) -> list[dict]:

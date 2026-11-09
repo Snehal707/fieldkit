@@ -237,7 +237,12 @@ def test_job_processing_creates_report(env):
     assert rep["source"] == "hermes" and rep["summary"].startswith("Guard missing")
     assert rep["local_findings"][0]["source"] == "local"  # local findings preserved separately
     fus = env.client.get(f"{PREFIX}/followups", headers=H()).json()["followups"]
-    assert fus[0]["title"] == "Re-inspect after alignment" and fus[0]["due_date"]
+    # Report v2: each next action and each follow-up check becomes a task that says how to verify it.
+    by_title = {f["title"]: f for f in fus}
+    assert by_title["Tag out the machine until the guard is refitted."]["detail"].startswith("Verify: Guard refitted")
+    check = by_title["Check: Vibration after alignment"]
+    assert check["due_date"] and check["detail"] == "How: Measure at both bearings"
+    assert rep["decision"]["outcome"] == "stop" and rep["schema_version"] == 2 and rep["quality"]["problems"] == []
     assert env.client.get(f"{PREFIX}/records/{rec['id']}/report", headers=H("bob")).status_code == 404
 
 

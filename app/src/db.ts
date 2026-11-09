@@ -8,6 +8,7 @@ export type AnalysisStatus = "not_requested" | "pending" | "processing" | "compl
 
 export interface Reference { pack_id: string; entry_id: string; title: string; source: string; excerpt?: string }
 export interface LocalResults {
+  followup_checks?: import("./followups").FollowupCheck[];   // answers to the previous report's checks (0.2.5)
   generated_at: string;
   source: "local";
   validation: { complete: boolean; errors: Record<string, string[]>; messages: Record<string, string[]> };
@@ -20,6 +21,7 @@ export interface LocalResults {
 
 export interface Draft {
   id: string; workflow_id: string; workflow_version: number; answers: Answers; started_at: string; updated_at: string; lang: string;
+  followup_checks?: import("./followups").FollowupCheck[];
 }
 
 export interface LocalRecord {

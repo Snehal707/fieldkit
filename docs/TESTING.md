@@ -386,3 +386,22 @@ local score was inconsistent with the evidence.
   (publish → link → one-tap download → offline cold restart). pytest 151 passed; Chromium E2E 28 passed / 4 skipped;
   `hermes plugins validate` passed; `doctor --ci`: 29 tools, 1 hook.
 - Not verifiable here: a real Hermes conversation that runs the interview and live web research (needs the hosted Hermes).
+
+### Phase D: reports that help decide (0.2.5)
+- **Report v2** (`fieldkit_core/decision.py`, `analysis.py`): a decision on the workspace's scale (or the default
+  stop / act soon / monitor / no action) with rationale, honest confidence, deadline and escalation; issues that cite
+  record evidence (field, attachment, local finding, previous record, follow-up check) and interpret it; ordered next
+  actions with who, by when and **how to verify it worked**, marked as from a workspace guide/knowledge entry or as an AI
+  suggestion; what is uncertain and how to resolve it; differences from the phone's findings; checks for next time;
+  translations for the workspace's other languages.
+- **Enforced after the model answers:** issues without record evidence, restated answers, actions without a check,
+  citations of guides/knowledge that are not in the workspace (only verified/supported entries are offered), a
+  critical/high decision without escalation, and "high" confidence with a decisive unknown are problems. Hermes gets
+  **one repair pass**; anything left is shown on the report and triggers review.
+- Next actions and checks become follow-up tasks that say how to verify them. Older (v1) readers still get
+  `suggested_actions` and `followups`.
+- **Phone:** the report leads with the decision, then actions (with "How to do this offline" for guide-backed steps),
+  why, what is uncertain and checks for next time, with a language switch. **The next inspection of the same subject asks
+  the previous report's checks** (Done / Not done / Can't check + reading); the answers travel with the new record.
+- Tests: `tests/python/test_decision_reports.py` (15), `tests/e2e/decision.spec.ts`. pytest 166 passed; Chromium E2E
+  30 passed / 3 skipped.

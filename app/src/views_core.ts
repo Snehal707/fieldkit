@@ -9,6 +9,7 @@ import { KnowledgeIndex } from "./knowledge";
 import { attachmentUrl, captureGps, compressPhoto, getAttachment, hermesMediaUrl, saveAttachment, signaturePad, updateAttachment, VoiceRecorder } from "./media";
 import { installedPacks, installedWorkflows, installWorkflow, shellCached, storageInfo } from "./packs";
 import { completeDraft } from "./results";
+import { previousChecks, setCheck, type FollowupCheck } from "./followups";
 import { getSyncState, refreshPending, refreshReports, requestAnalysis, resendRecords, resolveConflict, retryRecords, runSync } from "./sync";
 import { clear, fmtBytes, fmtTime, h, isOnline, nowIso, toast, uuid } from "./util";
 
@@ -337,10 +338,34 @@ export const runView: View = async (main, p) => {
   };
 
   const notice = h("div");
+  const checksBox = h("div", { id: "followup-checks" });
+  let checksFor = "";
+  const renderChecks = async () => {
+    const prev = await previousChecks(wf, draft.answers, draft.id);
+    const key = prev ? prev.subject + prev.date : "";
+    if (key === checksFor) return;
+    checksFor = key;
+    clear(checksBox);
+    if (!prev) return;
+    const answered = new Map((draft.followup_checks ?? []).map((c) => [c.id, c] as [string, FollowupCheck]));
+    checksBox.append(h("div", { class: "card", "data-checks": String(prev.checks.length) },
+      h("h3", null, `Checks from the last report (${fmtTime(prev.date)})`),
+      h("p", { class: "muted" }, "Hermes asked for these to be verified. Your answers tell it what actually worked."),
+      ...prev.checks.map((c) => {
+        const cur = answered.get(c.id);
+        const value = h("input", { placeholder: "Reading or note (optional)", value: cur?.value ?? "",
+          oninput: async (e: Event) => { setCheck(draft, c, { value: (e.target as HTMLInputElement).value }); await save(); } }) as HTMLInputElement;
+        return h("div", { class: "field", "data-check": c.id }, h("div", null, h("strong", null, c.what)), c.how ? h("div", { class: "muted" }, `How: ${c.how}`) : null,
+          h("div", { class: "choices row" }, ...([["done", "Done"], ["not_done", "Not done"], ["cannot_check", "Can't check"]] as [FollowupCheck["result"], string][]).map(([v, lab]) =>
+            h("label", null, h("input", { type: "radio", name: `chk-${c.id}`, checked: cur?.result === v,
+              onchange: async () => { setCheck(draft, c, { result: v }); await save(); } }), lab))), value);
+      })));
+  };
   const render = () => {
     const st = computeState(wf, draft.answers, l);
     clear(form);
-    form.append(notice);
+    form.append(notice, checksBox);
+    void renderChecks();
     const vis = new Set(st.visible);
     for (const f of wf.fields) {
       if (!vis.has(f.id)) continue;
@@ -703,7 +728,7 @@ function hermesSection(rec: LocalRecord, stored: StoredReport | undefined) {
   if (stored) {
     const r = stored.report;
     box.append(h("p", { class: "muted" }, `Version ${r.version} · generated ${fmtTime(r.generated_at)} by ${r.generated_by} · downloaded ${fmtTime(stored.downloaded_at)} (available offline)`));
-    reportBody(box, r);
+    reportBody(box, r, rec.lang);
   } else if (rec.sync_status !== "synced" && rec.sync_status !== "received") {
     box.append(h("p", { class: "muted" }, "Available after Hermes has received and analyzed this record."));
   } else {
@@ -750,22 +775,91 @@ function evidenceSection(att: any): HTMLElement {
   return sec;
 }
 
-/** Body of a Hermes report — shared by this device's records and records from other devices. */
-export function reportBody(box: HTMLElement, r: any): void {
-  {
-    if (r.requires_review) box.append(h("div", { class: "banner warn" }, h("strong", null, "Requires human review"), r.review_reason ? h("div", null, r.review_reason) : null));
-    box.append(h("p", null, r.summary));
-    if (r.images?.note) {
-      box.append(h("div", { class: `banner ${r.images.analyzed === false ? "warn" : "hermes"}` },
-        h("strong", null, r.images.analyzed === false ? "Photos not analysed" : "Photos analysed"), h("div", null, r.images.note)));
-    }
-    if (r.attachments?.evidence?.length) box.append(evidenceSection(r.attachments));
-    if (r.issues?.length) box.append(h("h3", null, "Issues identified"), h("ul", { class: "clean" }, ...r.issues.map((i: any) => h("li", null, sevBadge(i.severity), " ", h("strong", null, i.title), h("div", { class: "muted" }, i.evidence)))));
-    if (r.missing_information?.length) box.append(h("h3", null, "Missing information"), h("ul", null, ...r.missing_information.map((m: string) => h("li", null, m))));
-    if (r.suggested_actions?.length) box.append(h("h3", null, "Suggested actions"), h("ul", { class: "clean" }, ...r.suggested_actions.map((a: any) => h("li", null, h("span", { class: "badge" }, a.priority), " ", a.action))));
-    if (r.followups?.length) box.append(h("h3", null, "Follow-up tasks"), h("ul", { class: "clean" }, ...r.followups.map((f: any) => h("li", null, h("strong", null, f.title), f.due_date ? ` — due ${f.due_date}` : "", f.detail ? h("div", { class: "muted" }, f.detail) : null))));
-    if (r.references?.length) box.append(h("h3", null, "Supporting references"), h("ul", null, ...r.references.map((x: any) => h("li", null, `${x.title}${x.source ? ` — ${x.source}` : ""}`))));
+/** Body of a Hermes report — shared by this device's records and records from other devices. Report v2 (0.2.5) leads
+ *  with the decision, then ordered actions (who, by when, how to verify, how to do it offline), interpreted issues with
+ *  their evidence, what is uncertain, and the checks for next time. v1 reports keep their original layout. */
+export function reportBody(box: HTMLElement, r: any, uiLang = "en"): void {
+  const langs = Object.keys(r.translations ?? {});
+  const body = h("div", { class: "report-body" });
+  const draw = (lg: string) => {
+    clear(body);
+    const tr = lg !== "en" ? r.translations?.[lg] : null;
+    if (r.schema_version >= 2 && r.decision?.outcome) reportV2(body, r, tr, lg);
+    else reportV1(body, r);
+  };
+  if (langs.length) {
+    const opts = ["en", ...langs.filter((x) => x !== "en")];
+    box.append(h("div", { class: "row lang-switch", role: "group", "aria-label": "Report language" },
+      ...opts.map((lg) => h("button", { "data-lang": lg, onclick: () => draw(lg) }, languageName(lg)))));
   }
+  box.append(body);
+  draw(langs.includes(uiLang) ? uiLang : "en");
+}
+
+function languageName(code: string): string {
+  return ({ en: "English", hi: "हिंदी" } as Record<string, string>)[code] ?? code;
+}
+
+const ORIGIN_TEXT: Record<string, string> = { guide: "From your workspace guide", knowledge: "From your workspace knowledge", ai_suggestion: "AI suggestion" };
+
+function reportV2(box: HTMLElement, r: any, tr: any, lg: string): void {
+  const scale = new Map<string, any>((r.decision_scale ?? []).map((d: any) => [d.id, d]));
+  const dec = r.decision;
+  const step = scale.get(dec.outcome);
+  const sev = step?.severity ?? "info";
+  const label = typeof step?.label === "object" ? text(step.label, lg) : step?.label || dec.outcome;
+  const when = typeof dec.deadline_days === "number" ? (dec.deadline_days <= 0 ? "Now" : `Within ${dec.deadline_days} day(s)`) : "";
+  box.append(h("div", { class: `banner decision sev-${sev}`, id: "report-decision", "data-outcome": dec.outcome, "data-confidence": dec.confidence },
+    h("div", { class: "muted" }, "Decision"), h("strong", { class: "decision-label" }, label),
+    h("div", null, tr?.rationale || dec.rationale),
+    h("div", { class: "muted" }, [`Confidence: ${dec.confidence}`, when, dec.escalate_to ? `Escalate to: ${dec.escalate_to}` : ""].filter(Boolean).join(" · "))));
+  if (r.requires_review) box.append(h("div", { class: "banner warn" }, h("strong", null, "Needs human review"),
+    h("div", null, (r.review_triggers ?? []).join("; ") || r.review_reason || "")));
+  box.append(h("p", null, tr?.summary || r.summary));
+  const acts = r.next_actions ?? [];
+  if (acts.length) {
+    const ws = r.workspace?.id;
+    box.append(h("h3", null, "What to do next"), h("ol", { class: "actions", id: "report-actions" }, ...acts.map((a: any, i: number) =>
+      h("li", { "data-origin": a.origin }, h("strong", null, tr?.next_actions?.[i] || a.action),
+        h("div", { class: "muted" }, [a.who, typeof a.by_when_days === "number" ? (a.by_when_days <= 0 ? "now" : `within ${a.by_when_days} day(s)`) : ""].filter(Boolean).join(" · ")),
+        a.verify_by ? h("div", null, `Check it worked: ${a.verify_by}`) : null,
+        h("div", { class: "row" }, h("span", { class: `badge origin-${a.origin}` }, ORIGIN_TEXT[a.origin] ?? a.origin),
+          a.origin === "guide" && ws && a.guide_id ? h("a", { class: "btn", href: `#/guide/${encodeURIComponent(ws)}/${encodeURIComponent(a.guide_id)}` }, "How to do this offline") : null,
+          a.origin === "knowledge" && ws && a.entry_id ? h("a", { class: "btn", href: `#/knowledge/${encodeURIComponent(`ws-${ws}-knowledge::${a.entry_id}`)}` }, "Read the procedure") : null)))));
+  }
+  if (r.issues?.length) box.append(h("h3", null, "Why"), h("ul", { class: "clean", id: "report-issues" }, ...r.issues.map((i: any, k: number) =>
+    h("li", null, sevBadge(i.severity), " ", h("strong", null, tr?.issues?.[k] || i.title),
+      i.interpretation ? h("div", null, i.interpretation) : null,
+      (i.evidence_refs ?? []).length ? h("div", { class: "muted evidence-refs" }, "Evidence: ", (i.evidence_refs as any[]).map((e) => `${e.kind.replace(/_/g, " ")} ${e.ref}${e.quote ? ` (“${e.quote}”)` : ""}`).join("; ")) : h("div", { class: "muted" }, i.evidence)))));
+  if (r.uncertainty?.length) box.append(h("h3", null, "Not certain"), h("ul", { id: "report-uncertainty" }, ...r.uncertainty.map((u: any) =>
+    h("li", null, h("strong", null, u.unknown), u.impact ? ` — ${u.impact}` : "", h("div", { class: "muted" }, `To find out: ${u.how_to_resolve}`)))));
+  if (r.differences_from_local_findings?.length) box.append(h("h3", null, "Compared with the phone's own findings"),
+    h("ul", null, ...r.differences_from_local_findings.map((x: any) => h("li", null, `Phone: ${x.local} → Hermes: ${x.hermes}`, h("div", { class: "muted" }, x.why)))));
+  if (r.follow_up_verification?.length) box.append(h("h3", null, "Checks for next time"),
+    h("ul", { id: "report-checks" }, ...r.follow_up_verification.map((c: any) => h("li", null, c.what, h("div", { class: "muted" }, `${c.how}${typeof c.due_in_days === "number" ? ` · within ${c.due_in_days} day(s)` : ""}`)))),
+    h("p", { class: "muted" }, "Your next inspection of this subject asks these checks."));
+  if (r.images?.note) box.append(h("div", { class: `banner ${r.images.analyzed === false ? "warn" : "hermes"}` },
+    h("strong", null, r.images.analyzed === false ? "Photos not analysed" : "Photos analysed"), h("div", null, r.images.note)));
+  if (r.attachments?.evidence?.length) box.append(evidenceSection(r.attachments));
+  if (r.missing_information?.length) box.append(h("h3", null, "Missing information"), h("ul", null, ...r.missing_information.map((m: string) => h("li", null, m))));
+  if (r.quality?.problems?.length) box.append(h("div", { class: "banner warn" }, h("strong", null, "This report did not pass every quality check"),
+    h("ul", null, ...r.quality.problems.map((q: string) => h("li", null, q)))));
+  if (r.references?.length) box.append(h("h3", null, "Supporting references"), h("ul", null, ...r.references.map((x: any) => h("li", null, `${x.title}${x.source ? ` — ${x.source}` : ""}`))));
+}
+
+function reportV1(box: HTMLElement, r: any): void {
+  if (r.requires_review) box.append(h("div", { class: "banner warn" }, h("strong", null, "Requires human review"), r.review_reason ? h("div", null, r.review_reason) : null));
+  box.append(h("p", null, r.summary));
+  if (r.images?.note) {
+    box.append(h("div", { class: `banner ${r.images.analyzed === false ? "warn" : "hermes"}` },
+      h("strong", null, r.images.analyzed === false ? "Photos not analysed" : "Photos analysed"), h("div", null, r.images.note)));
+  }
+  if (r.attachments?.evidence?.length) box.append(evidenceSection(r.attachments));
+  if (r.issues?.length) box.append(h("h3", null, "Issues identified"), h("ul", { class: "clean" }, ...r.issues.map((i: any) => h("li", null, sevBadge(i.severity), " ", h("strong", null, i.title), h("div", { class: "muted" }, i.evidence)))));
+  if (r.missing_information?.length) box.append(h("h3", null, "Missing information"), h("ul", null, ...r.missing_information.map((m: string) => h("li", null, m))));
+  if (r.suggested_actions?.length) box.append(h("h3", null, "Suggested actions"), h("ul", { class: "clean" }, ...r.suggested_actions.map((a: any) => h("li", null, h("span", { class: "badge" }, a.priority), " ", a.action))));
+  if (r.followups?.length) box.append(h("h3", null, "Follow-up tasks"), h("ul", { class: "clean" }, ...r.followups.map((f: any) => h("li", null, h("strong", null, f.title), f.due_date ? ` — due ${f.due_date}` : "", f.detail ? h("div", { class: "muted" }, f.detail) : null))));
+  if (r.references?.length) box.append(h("h3", null, "Supporting references"), h("ul", null, ...r.references.map((x: any) => h("li", null, `${x.title}${x.source ? ` — ${x.source}` : ""}`))));
 }
 
 // ------------------------------------------------------------------ records / sync / reports
@@ -1000,7 +1094,7 @@ export const remoteView: View = async (main, p) => {
   }
   main.append(h("div", { class: "card" }, h("h2", null, "Answers"), dl));
   const rep = h("div", { class: "card", id: "remote-report" }, h("h2", null, h("span", { class: "tag-hermes" }, "Hermes report")));
-  if (r.report) reportBody(rep, r.report); else rep.append(h("p", { class: "muted" }, "No Hermes report yet."));
+  if (r.report) reportBody(rep, r.report, l); else rep.append(h("p", { class: "muted" }, "No Hermes report yet."));
   main.append(rep);
   main.append(h("div", { class: "row" },
     live ? h("button", { class: "primary", onclick: async () => {

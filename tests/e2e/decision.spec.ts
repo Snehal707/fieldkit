@@ -1,0 +1,97 @@
+// 0.2.5 decision-focused reports, against a real Hermes: the report leads with a decision, ordered actions with how to
+// verify them, and checks for next time; the next inspection of the same asset asks those checks and Hermes receives
+// the answers with the new record (verified outcomes for the learning loop). The analysis runs FieldKit's real
+// pipeline with the LLM round-trip stubbed (tests/python/hermes_stub.py).
+import { chromium, webkit, expect, test, type Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { signIn } from "./auth";
+
+const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
+const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
+const PASS = process.env.FIELDKIT_E2E_PASS ?? "";
+const DATA_DIR = process.env.FIELDKIT_E2E_DATA_DIR ?? "";
+const APP = `${BASE}/dashboard-plugins/fieldkit/app_dist/index.html`;
+const API = `${BASE}/api/plugins/fieldkit`;
+const ROOT = resolve(import.meta.dirname, "../..");
+const PY = resolve(ROOT, ".venv/Scripts/python.exe");
+const run = String(Date.now() % 1_000_000).padStart(6, "0");
+const ASSET = `DEC-${run}`;
+
+async function inspect(page: Page): Promise<string> {
+  await page.goto(`${APP}#/workflows`);
+  await page.locator("li", { hasText: "Equipment inspection" }).getByRole("button", { name: "Start" }).click();
+  await page.locator("#in-asset_id").fill(ASSET);
+  await page.locator("#in-asset_id").blur();
+  await page.locator("#in-inspection_date").fill("2026-11-10");
+  await page.locator("#f-condition label", { hasText: "Fair" }).click();
+  await page.locator("#f-guard_ok label", { hasText: "No" }).click();
+  return "";
+}
+
+test("the report leads with a decision and its checks are asked on the next inspection", async () => {
+  test.skip(!PASS || !DATA_DIR, "set FIELDKIT_E2E_PASS and FIELDKIT_E2E_DATA_DIR");
+  test.setTimeout(180_000);
+  const ctx = await engine.launchPersistentContext(mkdtempSync(join(tmpdir(), "fk-dec-")), { viewport: { width: 390, height: 844 } });
+  await signIn(ctx.request);
+  await ctx.request.post(`${API}/examples/install`);
+  const page = await ctx.newPage();
+  page.on("dialog", (d) => d.accept());
+  await page.goto(APP);
+  await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);
+  await page.goto(`${APP}#/packs`);
+  await page.locator("li", { hasText: "Equipment inspection" }).first().getByRole("button").click();
+  await expect(page.locator("text=Downloaded Equipment inspection")).toBeVisible({ timeout: 30_000 });
+
+  await inspect(page);
+  await page.getByRole("button", { name: "Complete workflow" }).click();
+  await expect(page.locator("text=Saved to Hermes — confirmed")).toBeVisible({ timeout: 30_000 });
+  const id = page.url().split("#/results/")[1].split("?")[0];
+
+  const out = execFileSync(PY, ["-c", `
+import json, os, sys
+sys.path.insert(0, ${JSON.stringify(ROOT)}); sys.path.insert(0, ${JSON.stringify(join(ROOT, "tests", "python"))})
+os.environ["FIELDKIT_DATA_DIR"] = ${JSON.stringify(DATA_DIR)}
+from hermes_stub import GOOD_REPORT, Recorder, make_llm
+from fieldkit_core import analysis, db
+s = db.Store(path=os.path.join(${JSON.stringify(DATA_DIR)}, "data.db"))
+report, review, *_ = analysis.analyze_record(s, make_llm(Recorder({"default": GOOD_REPORT})), ${JSON.stringify(id)})
+s.save_report_direct(${JSON.stringify(id)}, report, review, generated_by="e2e-decision")
+print(json.dumps({"outcome": report["decision"]["outcome"], "problems": report["quality"]["problems"]}))
+`]).toString();
+  const res = JSON.parse(out.trim().split("\n").pop()!);
+  expect(res).toEqual({ outcome: "stop", problems: [] });
+
+  await page.goto(`${APP}#/results/${id}?r=${Date.now()}`);
+  await page.getByRole("button", { name: /Download report|Check for newer report/ }).click();
+  const decisionBox = page.locator("#report-decision");
+  await expect(decisionBox).toBeVisible({ timeout: 20_000 });
+  await expect(decisionBox).toHaveAttribute("data-outcome", "stop");
+  await expect(decisionBox).toContainText("Stop and escalate");
+  await expect(decisionBox).toContainText("Escalate to: maintenance supervisor");
+  await expect(page.locator("#report-actions li")).toHaveCount(2);
+  await expect(page.locator("#report-actions li").first()).toContainText("Check it worked: Guard refitted");
+  await expect(page.locator("#report-actions li").first()).toContainText("AI suggestion");
+  await expect(page.locator("#report-checks")).toContainText("Vibration after alignment");
+
+  // Next inspection of the same asset: the report's checks are asked, and the answers reach Hermes.
+  await inspect(page);
+  const checks = page.locator("#followup-checks [data-check]");
+  await expect(checks).toHaveCount(3, { timeout: 15_000 });       // 2 actions with verify_by + 1 follow-up check
+  const vib = checks.filter({ hasText: "Vibration after alignment" });
+  await vib.locator("label", { hasText: "Done" }).first().click();
+  await vib.locator("input[placeholder^='Reading']").fill("3.9 mm/s at both bearings");
+  await checks.filter({ hasText: "Tag out" }).locator("label", { hasText: "Not done" }).click();
+  await page.getByRole("button", { name: "Complete workflow" }).click();
+  await expect(page.locator("text=Saved to Hermes — confirmed")).toBeVisible({ timeout: 30_000 });
+  const id2 = page.url().split("#/results/")[1].split("?")[0];
+  const rec2 = await (await ctx.request.get(`${API}/records/${id2}`)).json();
+  const got = rec2.local_results.followup_checks as any[];
+  expect(got.map((c) => [c.what, c.result, c.value ?? ""])).toEqual(expect.arrayContaining([
+    ["Vibration after alignment", "done", "3.9 mm/s at both bearings"],
+    ["Tag out the machine until the guard is refitted.", "not_done", ""]]));
+  expect(got.every((c) => c.record_id === id)).toBe(true);
+  await ctx.close();
+});

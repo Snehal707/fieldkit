@@ -92,4 +92,17 @@ GOOD_REPORT = {
     "followups": [{"title": "Re-inspect after alignment", "detail": "Measure vibration at both bearings.", "due_in_days": 7}],
     "requires_review": True,
     "review_reason": "Safety-critical finding.",
+    # Report v2 (0.2.5): decision-focused.
+    "decision": {"outcome": "stop", "rationale": "The guard is missing and vibration is above the alarm level, so running "
+                 "the machine risks injury and further damage.", "confidence": "high", "deadline_days": 0,
+                 "escalate_to": "maintenance supervisor"},
+    "next_actions": [{"order": 1, "action": "Tag out the machine until the guard is refitted.", "who": "inspector",
+                      "by_when_days": 0, "verify_by": "Guard refitted and the tag removed by the supervisor", "origin": "ai_suggestion"},
+                     {"order": 2, "action": "Check alignment and bearings.", "who": "technician", "by_when_days": 7,
+                      "verify_by": "Vibration below 4.5 mm/s at both bearings", "origin": "ai_suggestion"}],
+    "uncertainty": [{"unknown": "Bearing temperature", "impact": "could raise urgency", "how_to_resolve": "Measure with the IR thermometer"}],
+    "follow_up_verification": [{"what": "Vibration after alignment", "how": "Measure at both bearings", "due_in_days": 7}],
 }
+for _i, _ev in zip(GOOD_REPORT["issues"], (("answer", "guard_ok"), ("measurement", "vibration_level"))):
+    _i["interpretation"] = "This is a direct safety or damage risk: it decides whether the machine may keep running."
+    _i["evidence_refs"] = [{"kind": _ev[0], "ref": _ev[1]}, {"kind": "answer", "ref": "condition"}]

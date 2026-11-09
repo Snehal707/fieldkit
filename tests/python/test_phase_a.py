@@ -72,7 +72,15 @@ def test_edited_example_is_never_overwritten(store):
 
 
 def _report(**kw):
-    return {**GOOD_REPORT, "issues": [{"title": "Leak at casing", "severity": "medium", "evidence": "notes"}], **kw}
+    return {**GOOD_REPORT,
+            "issues": [{"title": "Leak at casing", "severity": "medium", "evidence": "notes",
+                        "interpretation": "An active leak wastes water and wets the motor base; it should be repaired soon but is not dangerous.",
+                        "evidence_refs": [{"kind": "answer", "ref": "notes"}]}],
+            "decision": {"outcome": "act_soon", "rationale": "Leak and rust need repair within a week.", "confidence": "medium",
+                         "deadline_days": 7},
+            "next_actions": [{"order": 1, "action": "Find the leak source and replace the seal.", "who": "technician",
+                              "by_when_days": 7, "verify_by": "No water at the casing after one hour of running", "origin": "ai_suggestion"}],
+            **kw}
 
 
 @pytest.mark.parametrize("report,local,flag", [
