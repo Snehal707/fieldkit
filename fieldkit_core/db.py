@@ -90,6 +90,27 @@ MIGRATIONS: list[str] = [
     ALTER TABLE attachments ADD COLUMN transcript_error TEXT;
     ALTER TABLE attachments ADD COLUMN transcribed_at REAL;
     """,
+    # v4 (0.2.5): workspaces built by Hermes, their briefs, and the learning loop. Additive only.
+    """
+    CREATE TABLE workspace_briefs (id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, brief TEXT NOT NULL,
+                                   confirmed INTEGER NOT NULL DEFAULT 0, created_at REAL, updated_at REAL);
+    CREATE TABLE workspaces (id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, title TEXT, brief_id TEXT,
+                             latest_version INTEGER NOT NULL, published_version INTEGER, starter INTEGER NOT NULL DEFAULT 0,
+                             created_at REAL, updated_at REAL);
+    CREATE TABLE workspace_versions (workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                                     version INTEGER NOT NULL, bundle TEXT NOT NULL, validation TEXT NOT NULL,
+                                     status TEXT NOT NULL, changelog TEXT, created_at REAL, created_by TEXT,
+                                     PRIMARY KEY (workspace_id, version));
+    CREATE TABLE learning_events (id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, workspace_id TEXT, kind TEXT NOT NULL,
+                                  ref_type TEXT, ref_id TEXT, payload TEXT NOT NULL, device_id TEXT,
+                                  idempotency_key TEXT NOT NULL, created_at REAL, received_at REAL,
+                                  UNIQUE (owner_user_id, idempotency_key));
+    CREATE INDEX learning_events_ws ON learning_events(workspace_id, kind);
+    CREATE TABLE candidates (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, kind TEXT NOT NULL, target TEXT,
+                             payload TEXT NOT NULL, basis TEXT NOT NULL, status TEXT NOT NULL, fingerprint TEXT,
+                             created_at REAL, decided_at REAL, decided_by TEXT, decision_note TEXT);
+    ALTER TABLE records ADD COLUMN workspace_id TEXT;
+    """,
 ]
 
 
@@ -396,6 +417,79 @@ class Store:
             if not c.execute(f"DELETE FROM packs WHERE id=? AND {clause}", (pid, *args)).rowcount:
                 raise NotFound(pid)
             self.audit(c, owner, "pack.delete", pid)
+
+    # ------------------------------------------------------------------ workspaces
+    def save_workspace_brief(self, owner: Any, brief: dict, brief_id: Optional[str] = None, confirmed: bool = False) -> dict:
+        owner_id = "owner" if owner is ALL else owner
+        now = _now()
+        bid = brief_id or _id("brf")
+        with self.tx() as c:
+            row = c.execute("SELECT owner_user_id FROM workspace_briefs WHERE id=?", (bid,)).fetchone()
+            if row and owner is not ALL and row["owner_user_id"] != owner:
+                raise NotFound(bid)
+            c.execute("INSERT INTO workspace_briefs(id, owner_user_id, brief, confirmed, created_at, updated_at) VALUES (?,?,?,?,?,?) "
+                      "ON CONFLICT(id) DO UPDATE SET brief=excluded.brief, confirmed=excluded.confirmed, updated_at=excluded.updated_at",
+                      (bid, row["owner_user_id"] if row else owner_id, _j(brief), int(confirmed), now, now))
+            self.audit(c, owner, "workspace.brief", bid, {"confirmed": confirmed})
+        return {"brief_id": bid, "confirmed": confirmed, "brief": brief}
+
+    def get_workspace_brief(self, owner: Any, bid: str) -> dict:
+        clause, args = self._owner_clause(owner)
+        rows = self._q(f"SELECT * FROM workspace_briefs WHERE id=? AND {clause}", (bid, *args))
+        if not rows:
+            raise NotFound(bid)
+        r = dict(rows[0])
+        return {"brief_id": r["id"], "confirmed": bool(r["confirmed"]), "brief": _uj(r["brief"])}
+
+    def save_workspace_draft(self, owner: Any, bundle: dict, validation: dict, brief_id: Optional[str] = None,
+                             changelog: Optional[list] = None, starter: bool = False) -> dict:
+        wid = bundle["id"]
+        owner_id = "owner" if owner is ALL else owner
+        now = _now()
+        with self.tx() as c:
+            row = c.execute("SELECT * FROM workspaces WHERE id=?", (wid,)).fetchone()
+            if row and owner is not ALL and row["owner_user_id"] not in (owner, "owner"):
+                raise NotFound(wid)
+            version = (row["latest_version"] + 1) if row else 1
+            if row:
+                c.execute("UPDATE workspaces SET title=?, latest_version=?, brief_id=COALESCE(?, brief_id), updated_at=? WHERE id=?",
+                          (_title(bundle.get("title")), version, brief_id, now, wid))
+            else:
+                c.execute("INSERT INTO workspaces(id, owner_user_id, title, brief_id, latest_version, published_version, starter, "
+                          "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                          (wid, owner_id, _title(bundle.get("title")), brief_id, version, None, int(starter), now, now))
+            c.execute("INSERT INTO workspace_versions(workspace_id, version, bundle, validation, status, changelog, created_at, created_by) "
+                      "VALUES (?,?,?,?,?,?,?,?)", (wid, version, _j(dict(bundle, version=version)), _j(validation), "draft",
+                                                   _j(changelog or []), now, str(owner_id)))
+            self.audit(c, owner, "workspace.draft", wid, {"version": version, "ok": validation.get("ok")})
+        return {"workspace_id": wid, "version": version, "status": "draft"}
+
+    def get_workspace_version(self, wid: str, version: Optional[int] = None) -> dict:
+        row = self._q("SELECT * FROM workspaces WHERE id=?", (wid,))
+        if not row:
+            raise NotFound(wid)
+        v = version or row[0]["published_version"] or row[0]["latest_version"]
+        vr = self._q("SELECT * FROM workspace_versions WHERE workspace_id=? AND version=?", (wid, v))
+        if not vr:
+            raise NotFound(f"{wid}@{v}")
+        r = dict(vr[0])
+        return {"workspace_id": wid, "version": v, "status": r["status"], "bundle": _uj(r["bundle"]),
+                "validation": _uj(r["validation"]), "changelog": _uj(r["changelog"] or "[]"), "created_at": r["created_at"],
+                "published_version": row[0]["published_version"], "latest_version": row[0]["latest_version"],
+                "starter": bool(row[0]["starter"]), "owner_user_id": row[0]["owner_user_id"]}
+
+    def list_workspaces(self, published_only: bool = True) -> list[dict]:
+        sql = "SELECT * FROM workspaces" + (" WHERE published_version IS NOT NULL" if published_only else "") + " ORDER BY starter, updated_at DESC"
+        return [{"id": r["id"], "title": r["title"], "latest_version": r["latest_version"], "published_version": r["published_version"],
+                 "starter": bool(r["starter"]), "updated_at": r["updated_at"]} for r in self._q(sql)]
+
+    def mark_workspace_published(self, wid: str, version: int, manifest_pack: str) -> None:
+        now = _now()
+        with self.tx() as c:
+            c.execute("UPDATE workspace_versions SET status='superseded' WHERE workspace_id=? AND status='published'", (wid,))
+            c.execute("UPDATE workspace_versions SET status='published' WHERE workspace_id=? AND version=?", (wid, version))
+            c.execute("UPDATE workspaces SET published_version=?, updated_at=? WHERE id=?", (version, now, wid))
+            self.audit(c, ALL, "workspace.publish", wid, {"version": version, "pack": manifest_pack})
 
     # ------------------------------------------------------------------ sync
     def sync_record(self, owner: str, idempotency_key: str, device_id: str, rec: dict,

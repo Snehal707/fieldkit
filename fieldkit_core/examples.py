@@ -50,4 +50,6 @@ def install(store: Store, owner: Any) -> dict:
                 cur = store.get_workflow_any_owner(wf["id"], existing[wf["id"]]["latest_version"])
                 if cur and content_hash(cur) in PREVIOUS_EXAMPLES.get(wf["id"], set()) and content_hash(cur) != content_hash(wf):
                     out["upgraded"].append(store.save_workflow(ALL, wf, publish=True, actor=owner)["id"])
+    from . import workspace
+    out["workspaces"] = workspace.ensure_starters(store)
     return out

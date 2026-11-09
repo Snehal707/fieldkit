@@ -378,6 +378,27 @@ def _label(store: Any, uid: str, rows: list[dict], key: str) -> None:
         r["subject"] = _subject(defs[(wid, ver)], answers or {})
 
 
+@router.get("/workspaces")
+def list_workspaces(request: Request):
+    """Published workspaces (instance-wide, like published workflows). Starter workspaces are labelled."""
+    _uid(request)
+    return {"workspaces": get_store().list_workspaces(published_only=True)}
+
+
+@router.get("/workspaces/{wid}")
+def get_workspace(wid: str, request: Request, version: Optional[int] = None):
+    _uid(request)
+    try:
+        rec = get_store().get_workspace_version(wid, version)
+    except Exception as exc:
+        _err(exc)
+    from fieldkit_core import workspace as ws_mod
+    return {"workspace_id": wid, "version": rec["version"], "status": rec["status"], "published_version": rec["published_version"],
+            "starter": rec["starter"], "manifest_pack": ws_mod.pack_ids(wid)["workspace"], "changelog": rec["changelog"],
+            "summary": rec["validation"].get("summary", {}), "title": rec["bundle"].get("title"),
+            "profile": rec["bundle"].get("profile", {}), "gaps": rec["bundle"].get("gaps", [])}
+
+
 @router.get("/devices")
 def list_devices(request: Request):
     """The signed-in user's devices (each browser / Home Screen app has its own on-device storage and id)."""

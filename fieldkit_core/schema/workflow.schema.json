@@ -126,24 +126,24 @@
       "properties": {
         "rules": {"type": "array", "maxItems": 200, "items": {
           "type": "object", "required": ["id", "label", "when"], "additionalProperties": false,
-          "properties": {"id": {"type": "string"}, "label": {"$ref": "#/$defs/label"}, "when": {"$ref": "#/$defs/condition"},
+          "properties": {"id": {"type": "string"}, "evidence_ids": {"type": "array", "maxItems": 20, "items": {"type": "string", "maxLength": 64}}, "label": {"$ref": "#/$defs/label"}, "when": {"$ref": "#/$defs/condition"},
                          "severity": {"$ref": "#/$defs/severity"}, "finding": {"$ref": "#/$defs/label"}}}},
         "keywords": {"type": "array", "maxItems": 100, "items": {
           "type": "object", "required": ["id", "label", "fields", "keywords"], "additionalProperties": false,
-          "properties": {"id": {"type": "string"}, "label": {"$ref": "#/$defs/label"},
+          "properties": {"id": {"type": "string"}, "evidence_ids": {"type": "array", "maxItems": 20, "items": {"type": "string", "maxLength": 64}}, "label": {"$ref": "#/$defs/label"},
                          "fields": {"type": "array", "items": {"type": "string"}},
                          "keywords": {"type": "array", "items": {"type": "string", "minLength": 1}, "maxItems": 500},
                          "min_hits": {"type": "integer", "minimum": 1}, "severity": {"$ref": "#/$defs/severity"}}}},
         "scores": {"type": "array", "maxItems": 50, "items": {
           "type": "object", "required": ["id", "label", "items"], "additionalProperties": false,
-          "properties": {"id": {"type": "string"}, "label": {"$ref": "#/$defs/label"},
+          "properties": {"id": {"type": "string"}, "evidence_ids": {"type": "array", "maxItems": 20, "items": {"type": "string", "maxLength": 64}}, "label": {"$ref": "#/$defs/label"},
                          "items": {"type": "array", "items": {"type": "object", "required": ["when", "points"], "additionalProperties": false,
                                                               "properties": {"when": {"$ref": "#/$defs/condition"}, "points": {"type": "number"}}}},
                          "bands": {"type": "array", "items": {"type": "object", "required": ["min", "label"], "additionalProperties": false,
                                                               "properties": {"min": {"type": "number"}, "label": {"$ref": "#/$defs/label"}, "severity": {"$ref": "#/$defs/severity"}}}}}}},
         "decision_trees": {"type": "array", "maxItems": 20, "items": {
           "type": "object", "required": ["id", "label", "root"], "additionalProperties": false,
-          "properties": {"id": {"type": "string"}, "label": {"$ref": "#/$defs/label"}, "root": {"$ref": "#/$defs/tree_node"}}}}
+          "properties": {"id": {"type": "string"}, "evidence_ids": {"type": "array", "maxItems": 20, "items": {"type": "string", "maxLength": 64}}, "label": {"$ref": "#/$defs/label"}, "root": {"$ref": "#/$defs/tree_node"}}}}
       }
     }
   }

@@ -353,3 +353,19 @@ local score was inconsistent with the evidence.
   states a reason (conflicting evidence, a decisive gap, a required sign-off). The reasons are stored as `review_triggers`.
   A routine leak inspection with a clear repair action is no longer flagged.
 - Results: pytest 129 passed, vitest 112 passed, Chromium E2E 28 passed / 3 skipped (model downloads).
+
+### Phase B: workspace model, evidence rules and publishing (0.2.5)
+`fieldkit_core/workspace.py`, DB migration v4 (additive), `tests/python/test_workspace_model.py` (19 tests, fixture
+`tests/python/workspace_fixtures.py`, whose quotes are illustrative test text, not real regulation wording).
+- Source tiers come from the declared type **checked against the domain**: a forum is excluded even if it claims to be a
+  government source; a "government" page on a non-government domain is downgraded to tier 2.
+- Evidence status is **computed by FieldKit**, never taken from the model: verified (tier-1 quote that applies, or two
+  independent tier-2 publishers), supported, conflicting, user_procedure, unverified.
+- Unverified model knowledge cannot become a decision-guide action, a rule threshold, or a procedure/troubleshooting
+  entry (rejected); it may only be labelled background. Conflicting evidence must name an escalation.
+- Decision guides are validated as executable graphs (start, reachability, cycles, dead ends, unknown fields/slots,
+  decisions on the report policy's scale). Every stated responsibility must be served by a workflow, guide or entry.
+- Publishing creates normal workflows plus `ws-<id>` (workspace), `ws-<id>-knowledge` and `ws-<id>-dictionary` packs, so
+  existing sync, SHA-256 checks and update detection apply. Invalid drafts are stored but cannot be published.
+- The three bundled examples are now also starter workspaces, labelled synthetic. Existing workflows, records and phones
+  are unchanged. Results: pytest 148 passed; Chromium E2E 27 passed / 4 skipped.

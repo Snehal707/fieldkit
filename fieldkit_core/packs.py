@@ -20,7 +20,7 @@ from typing import Any, Iterable
 
 from .engine import text
 
-PACK_KINDS = ("knowledge", "dictionary", "classification", "model")
+PACK_KINDS = ("knowledge", "dictionary", "classification", "model", "workspace")
 ENTRY_TYPES = ("explanation", "procedure", "faq", "troubleshooting", "term", "reference")
 MODEL_CAPABILITIES = ("translation", "ocr", "stt")
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
@@ -86,6 +86,11 @@ def validate_pack(pack: Any) -> list[str]:
                     errs.append(f"files[{i}].url must be https upstream")
         if not pack.get("license"):
             errs.append("model pack must declare its license")
+    elif kind == "workspace":
+        if not isinstance(pack.get("workspace_id"), str) or not isinstance(pack.get("guides", []), list):
+            errs.append("workspace pack needs workspace_id and a guides list")
+        if not isinstance(pack.get("workflows"), list):
+            errs.append("workspace pack needs a workflows list")
     elif kind == "classification":
         if not isinstance(pack.get("classification"), dict):
             errs.append("classification pack needs a classification object")
