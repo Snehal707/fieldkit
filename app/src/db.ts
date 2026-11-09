@@ -60,7 +60,7 @@ export interface OutboxOp {
 }
 
 export interface InstalledPack {
-  id: string; kind: "knowledge" | "dictionary" | "classification"; version: number; sha256: string; size: number;
+  id: string; kind: "knowledge" | "dictionary" | "classification" | "workspace"; version: number; sha256: string; size: number;
   title: string; languages: string[]; domain: string; installed_at: string; content: any;
 }
 

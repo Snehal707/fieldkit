@@ -369,3 +369,20 @@ local score was inconsistent with the evidence.
   existing sync, SHA-256 checks and update detection apply. Invalid drafts are stored but cannot be published.
 - The three bundled examples are now also starter workspaces, labelled synthetic. Existing workflows, records and phones
   are unchanged. Results: pytest 148 passed; Chromium E2E 27 passed / 4 skipped.
+
+### Phase C: Hermes builds the workspace (0.2.5)
+- **Onboarding:** `ctx.register_system_prompt_section("fieldkit.workspace")` tells every new Hermes session whether the
+  user has a workspace yet (offer to build one) or summarises the built ones (verified / conflicting / gaps).
+- **Skill** `fieldkit-workspace-builder`: interview (responsibilities and the decisions each needs, tools, procedures,
+  region, languages, escalation) → confirmed brief → research with Hermes' own `web_search` and `web_extract`, quoting the
+  exact clause with its location → build → research report → publish only with the user's approval.
+- **Tools (6 new, 29 total):** `fieldkit_workspace_format`, `fieldkit_save_workspace_brief` (incomplete briefs cannot be
+  confirmed), `fieldkit_build_workspace` (refuses an unconfirmed brief; **re-fetches web pages and drops quotes that are not
+  on the page**; PDFs marked not checked; private/loopback/metadata addresses are never fetched), `fieldkit_publish_workspace`
+  (requires `user_approved`), `fieldkit_get_workspace`, `fieldkit_list_workspaces`.
+- **Phone:** `#/workspace/<id>` (the link Hermes returns) shows the role, responsibilities, workflows, decision guides,
+  evidence summary, sources and gaps, with **Download everything for offline**; Home shows "Your workspace".
+- Tests: `tests/python/test_plugin.py` (builder flow through the tools, excerpt check, unsafe URLs), `tests/e2e/workspace.spec.ts`
+  (publish → link → one-tap download → offline cold restart). pytest 151 passed; Chromium E2E 28 passed / 4 skipped;
+  `hermes plugins validate` passed; `doctor --ci`: 29 tools, 1 hook.
+- Not verifiable here: a real Hermes conversation that runs the interview and live web research (needs the hosted Hermes).

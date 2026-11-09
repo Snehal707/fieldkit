@@ -121,6 +121,14 @@ export const homeView: View = async (main) => {
   const copiesWithReports = (await accountCopies()).filter((c) => c.report).length;
   const wfTitles = new Map((await installedWorkflows()).map((w) => [w.id, text(w.definition.title, "en")]));
   if (!(await installedWorkflows()).length) main.append(getStartedCard(sync.auth_required));
+  // Workspaces built by Hermes for this user's job (0.2.5).
+  const wsPacks = (await installedPacks()).filter((p) => (p.kind as string) === "workspace");
+  const own = wsPacks.filter((p) => !p.content?.starter);
+  main.append(h("div", { class: "card", id: "home-workspaces" }, h("h2", null, "Your workspace"),
+    own.length ? h("ul", { class: "clean" }, ...own.map((p) => h("li", null, h("a", { href: `#/workspace/${p.content.workspace_id}` },
+      h("strong", null, text(p.content.title, "en")), h("div", { class: "muted" }, [p.content.profile?.role, p.content.profile?.region, p.content.profile?.country].filter(Boolean).join(" · "))))))
+      : h("p", { class: "muted" }, "Ask Hermes: “Set up FieldKit for my work.” It interviews you, researches your rules and procedures, and builds a workspace for your job."),
+    h("a", { class: "btn", href: "#/workspaces" }, own.length ? "All workspaces" : "Browse workspaces")));
   main.append(
     h("div", { class: `banner ${ready ? "hermes" : "warn"}` },
       h("strong", null, ready ? "Ready to work offline" : "Not ready for offline use yet"),

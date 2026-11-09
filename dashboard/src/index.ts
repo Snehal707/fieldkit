@@ -106,7 +106,7 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
     const input = (k: string, ph: string) => h("input", { value: (form as any)[k], onChange: set(k), placeholder: ph, style: { flex: 1, minWidth: 140 } });
     return h("div", null,
       h(Section, { title: "Knowledge & dictionary packs" }, h(Err, { msg: err }),
-        (data?.packs ?? []).filter((p: any) => p.kind !== "model").map((p: any) => h("div", { key: p.id, style: { ...box, ...row } },
+        (data?.packs ?? []).filter((p: any) => p.kind !== "model" && p.kind !== "workspace").map((p: any) => h("div", { key: p.id, style: { ...box, ...row } },
           h("div", { style: { flex: 1 } }, h("b", null, p.title), ` · ${p.kind} v${p.version} · ${p.domain || "general"} · ${(p.size / 1024).toFixed(1)} KiB · sha256 ${p.sha256.slice(0, 10)}…`),
           h(Button, { onClick: () => del(`packs/${p.id}`).then(reload, (e: any) => setMsg(String(e))) }, "Delete")))),
       h(Section, { title: "Import a document as a knowledge pack" },

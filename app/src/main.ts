@@ -9,10 +9,13 @@ import {
   authBanner, homeView, recordsView, remoteView, reportsView, resultsView, runView, syncView, workflowLinkView, workflowsView, whoAmI, type View,
 } from "./views_core";
 import { assistantView, diagnosticsView, dictionaryView, knowledgeView, ocrView, packsView, settingsView, translateView } from "./views_tools";
+import { workspacesView, workspaceView } from "./views_workspace";
 
 const routes: [RegExp, View, string][] = [
   [/^#?\/?$/, homeView, "Home"],
   [/^#\/workflows$/, workflowsView, "My Workflows"],
+  [/^#\/workspaces/, workspacesView, "Workspaces"],
+  [/^#\/workspace\/(?<id>[^/?]+)/, workspaceView, "Workspace"],
   [/^#\/workflow\/(?<id>[^/?]+)/, workflowLinkView, "Workflow"],
   [/^#\/run\/(?<id>[^/?]+)/, runView, "Workflow"],
   [/^#\/results\/(?<id>[^/?]+)/, resultsView, "Results"],

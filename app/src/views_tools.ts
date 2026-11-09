@@ -203,7 +203,7 @@ export const packsView: View = async (main) => {
       h("span", { class: "grow" }, `${text(w.definition.title, l)} · v${w.version}`),
       h("button", { class: "danger", onclick: async () => { try { await removeWorkflow(w.id); go(`#/packs?r=${Date.now()}`); } catch (e) { toast((e as Error).message, "error"); } } }, "Remove"))))
       : h("p", { class: "muted" }, "None"),
-    h("h3", null, "Knowledge, dictionaries"), packs.length ? h("ul", { class: "clean" }, ...packs.map((p) => h("li", { class: "row" },
+    h("h3", null, "Knowledge, dictionaries"), packs.length ? h("ul", { class: "clean" }, ...packs.filter((p) => (p.kind as string) !== "workspace").map((p) => h("li", { class: "row" },
       h("span", { class: "grow" }, `${p.title} · ${p.kind} v${p.version} · ${fmtBytes(p.size)}`, h("div", { class: "muted" }, `sha256 ${p.sha256.slice(0, 12)}… verified`)),
       h("button", { class: "danger", onclick: async () => { await removePack(p.id); go(`#/packs?r=${Date.now()}`); } }, "Remove"))))
       : h("p", { class: "muted" }, "None"),
@@ -241,7 +241,7 @@ export const packsView: View = async (main) => {
     } }, have ? (upd.workflows.includes(w.id) ? "Update" : "Re-download") : "Download for offline");
     return h("li", { class: "row" }, h("span", { class: "grow" }, h("strong", null, w.title), h("div", { class: "muted" }, `${w.domain || "general"} · v${w.published_version}`)), b);
   })));
-  avail.append(h("h3", null, "Knowledge & dictionary packs"), h("ul", { class: "clean" }, ...cat.packs.filter((p: any) => p.kind !== "model").map((p: any) => {
+  avail.append(h("h3", null, "Knowledge & dictionary packs"), h("ul", { class: "clean" }, ...cat.packs.filter((p: any) => p.kind !== "model" && p.kind !== "workspace").map((p: any) => {
     const have = packs.find((x) => x.id === p.id);
     const b = h("button", { onclick: async () => { try { await installPack(p.id); toast("Installed", "ok"); } catch (e) { toast((e as Error).message, "error"); } go(`#/packs?r=${Date.now()}`); } },
       have ? (upd.packs.includes(p.id) ? "Update" : "Re-download") : "Install");

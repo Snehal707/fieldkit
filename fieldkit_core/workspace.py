@@ -80,10 +80,10 @@ def evidence_status(ev: dict, sources: dict[str, dict]) -> tuple[str, list[str]]
     """Compute verified / user_procedure / supported / conflicting / unverified from the recorded evidence."""
     notes: list[str] = []
     excerpts = [x for x in ev.get("excerpts", []) if isinstance(x, dict) and len(str(x.get("quote", "")).strip()) >= MIN_EXCERPT
-                and x.get("source_id") in sources]
+                and x.get("source_id") in sources and x.get("check") != "not_found"]
     dropped = len(ev.get("excerpts", [])) - len(excerpts)
     if dropped:
-        notes.append(f"{dropped} excerpt(s) ignored: empty, too short, or citing an unrecorded source")
+        notes.append(f"{dropped} excerpt(s) ignored: empty, too short, citing an unrecorded source, or not found on the page")
     tiers = {}
     for x in excerpts:
         t, _ = source_tier(sources[x["source_id"]])
@@ -462,3 +462,159 @@ def ensure_starters(store: Any) -> list[str]:
             publish(store, sid, d["version"])
             made.append(sid)
     return made
+
+
+# ----------------------------------------------------------------------------- brief (interview result)
+def validate_brief(brief: Any) -> dict:
+    """The interview must establish the user's actual job before any research. Returns missing items and a summary
+    the user confirms in their own words."""
+    if not isinstance(brief, dict):
+        return {"ok": False, "missing": ["brief must be an object"], "summary": ""}
+    missing = []
+    if not str(brief.get("role") or "").strip():
+        missing.append("role (what the user does)")
+    resp = brief.get("responsibilities") or []
+    if not resp or not all(isinstance(r, dict) and r.get("description") for r in resp):
+        missing.append("responsibilities (each with a description)")
+    elif not all(r.get("decisions") for r in resp):
+        missing.append("the decisions each responsibility requires")
+    if not brief.get("country"):
+        missing.append("country (and region if rules differ by region)")
+    langs = brief.get("languages") or {}
+    if not (langs.get("content") if isinstance(langs, dict) else langs):
+        missing.append("languages (reading; speaking and photo text if different)")
+    for k, label in (("tools_and_instruments", "tools and instruments used (or an empty list)"),
+                     ("procedures_in_use", "procedures/SOPs already followed (or an empty list)"),
+                     ("escalation", "who to escalate to (roles)")):
+        if k not in brief:
+            missing.append(label)
+    lines = [f"Role: {brief.get('role', '?')}" + (f" ({brief.get('industry')})" if brief.get("industry") else ""),
+             "Where: " + ", ".join(str(x) for x in (brief.get("region"), brief.get("country")) if x)]
+    for r in resp if isinstance(resp, list) else []:
+        if isinstance(r, dict):
+            dec = r.get("decisions") or []
+            lines.append(f"- {r.get('description')}" + (f" (decides: {', '.join(map(str, dec))})" if dec else ""))
+    if brief.get("tools_and_instruments"):
+        lines.append("Tools: " + ", ".join(str(t.get("name") if isinstance(t, dict) else t) for t in brief["tools_and_instruments"]))
+    if brief.get("procedures_in_use"):
+        lines.append("Procedures: " + ", ".join(str(x.get("title") if isinstance(x, dict) else x) for x in brief["procedures_in_use"]))
+    lg = langs if isinstance(langs, dict) else {"content": langs}
+    lines.append("Languages: " + ", ".join(lg.get("content") or []))
+    esc = brief.get("escalation")
+    if esc:
+        lines.append("Escalate to: " + ", ".join(map(str, esc if isinstance(esc, list) else [esc])))
+    return {"ok": not missing, "missing": missing, "summary": "\n".join(lines)}
+
+
+# ----------------------------------------------------------------------------- Hermes onboarding prompt
+def prompt_section(store: Any) -> str:
+    """Bounded text added to each new Hermes session (ctx.register_system_prompt_section)."""
+    try:
+        built = [w for w in store.list_workspaces(published_only=True) if not w["starter"]]
+    except Exception:
+        return ""
+    if not built:
+        return ("FieldKit (offline field-work plugin) is installed, but no workspace has been built for this user yet. "
+                "When the user talks about their field work, inspections, surveys or FieldKit, offer once to build a "
+                "FieldKit workspace for their actual job, following the fieldkit-workspace-builder skill: interview, "
+                "confirm the brief (fieldkit_save_workspace_brief), research with web_search and web_extract quoting the "
+                "exact source text, fieldkit_build_workspace, show the research report, and publish only after the user approves.")
+    parts = []
+    for w in built[:6]:
+        try:
+            rec = store.get_workspace_version(w["id"])
+            sm = (rec.get("validation") or {}).get("summary", {})
+            parts.append(f"{w['title']} (id {w['id']}, v{w['published_version']}; {sm.get('verified', 0)} verified, "
+                         f"{sm.get('conflicting', 0)} conflicting, {sm.get('gaps', 0)} gaps)")
+        except Exception:
+            parts.append(f"{w['title']} (id {w['id']})")
+    return ("FieldKit workspaces built for this user: " + "; ".join(parts) + ". Use the fieldkit-workspace-builder skill "
+            "to update them (new responsibilities, gaps, conflicting evidence, learning candidates).")[:1500]
+
+
+# ----------------------------------------------------------------------------- excerpt check
+import ipaddress  # noqa: E402
+import socket  # noqa: E402
+import unicodedata  # noqa: E402
+
+MAX_FETCH = 2_000_000
+
+
+def _norm(t: str) -> str:
+    t = unicodedata.normalize("NFKC", t or "").lower()
+    t = re.sub(r"<script.*?</script>|<style.*?</style>", " ", t, flags=re.S)
+    t = re.sub(r"<[^>]+>", " ", t)
+    t = re.sub(r"[^\w\s]", " ", t, flags=re.U)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _public_host(host: str) -> bool:
+    try:
+        for info in socket.getaddrinfo(host, None):
+            ip = ipaddress.ip_address(info[4][0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                return False
+        return True
+    except Exception:
+        return False
+
+
+def default_fetch(url: str) -> tuple:
+    """(content_type, text). Only public http(s) hosts; size and time limited."""
+    import urllib.request
+    u = urlparse(url)
+    if u.scheme not in ("http", "https") or not u.hostname or not _public_host(u.hostname):
+        raise ValueError("not a public http(s) URL")
+    req = urllib.request.Request(url, headers={"User-Agent": "FieldKit-excerpt-check/0.2.5"})
+    with urllib.request.urlopen(req, timeout=8) as r:  # noqa: S310 (scheme and host checked above)
+        ctype = r.headers.get("content-type", "")
+        body = r.read(MAX_FETCH)
+    return ctype, body.decode("utf-8", errors="replace")
+
+
+def check_excerpts(bundle: dict, fetch: Any = None, limit: int = 40) -> dict:
+    """Confirm each quoted excerpt appears on its source page. Marks excerpts in place with check = found /
+    not_found / not_checked (+ check_note). PDFs and user documents are not checked automatically. A not_found
+    excerpt no longer counts as evidence."""
+    fetch = fetch or default_fetch
+    sources = {x.get("id"): x for x in bundle.get("sources") or [] if isinstance(x, dict)}
+    pages: dict = {}
+    counts = {"found": 0, "not_found": 0, "not_checked": 0}
+    for ev in bundle.get("evidence") or []:
+        if not isinstance(ev, dict):
+            continue
+        for x in ev.get("excerpts") or []:
+            if not isinstance(x, dict):
+                continue
+            src = sources.get(x.get("source_id"))
+            url = (src or {}).get("url", "")
+            why = ""
+            if not src or src.get("type") == "user_document" or not url:
+                why = "user document or no URL"
+            elif url.lower().split("?")[0].endswith(".pdf"):
+                why = "PDF: not checked automatically"
+            elif url not in pages and len(pages) >= limit:
+                why = "check limit reached"
+            if why:
+                x["check"], x["check_note"] = "not_checked", why
+                counts["not_checked"] += 1
+                continue
+            if url not in pages:
+                try:
+                    ctype, body = fetch(url)
+                    pages[url] = None if "pdf" in str(ctype).lower() else _norm(body)
+                except Exception as exc:
+                    pages[url] = "!" + type(exc).__name__
+            page = pages[url]
+            if page is None or page.startswith("!"):
+                x["check"], x["check_note"] = "not_checked", ("PDF" if page is None else "could not fetch (" + page[1:] + ")")
+                counts["not_checked"] += 1
+                continue
+            q = _norm(str(x.get("quote", "")))[:160]
+            if q and q in page:
+                x["check"] = "found"
+                counts["found"] += 1
+            else:
+                x["check"], x["check_note"] = "not_found", "quote not found on the page"
+                counts["not_found"] += 1
+    return counts

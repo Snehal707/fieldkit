@@ -1807,7 +1807,7 @@
           Section,
           { title: "Knowledge & dictionary packs" },
           h(Err, { msg: err }),
-          ((_a2 = data == null ? void 0 : data.packs) != null ? _a2 : []).filter((p) => p.kind !== "model").map((p) => h(
+          ((_a2 = data == null ? void 0 : data.packs) != null ? _a2 : []).filter((p) => p.kind !== "model" && p.kind !== "workspace").map((p) => h(
             "div",
             { key: p.id, style: { ...box, ...row } },
             h("div", { style: { flex: 1 } }, h("b", null, p.title), ` \xB7 ${p.kind} v${p.version} \xB7 ${p.domain || "general"} \xB7 ${(p.size / 1024).toFixed(1)} KiB \xB7 sha256 ${p.sha256.slice(0, 10)}\u2026`),

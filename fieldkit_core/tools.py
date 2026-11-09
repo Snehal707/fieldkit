@@ -338,6 +338,12 @@ TOOLS: list[tuple[dict, Callable[[dict], str]]] = [
 TOOL_NAMES = [schema["name"] for schema, _ in TOOLS]
 
 
+from . import workspace_tools as _wst  # noqa: E402
+
+TOOLS += _wst.TOOLS
+TOOL_NAMES = [schema["name"] for schema, _ in TOOLS]
+
+
 def register_all(ctx: Any) -> list[str]:
     names = []
     for schema, fn in TOOLS:

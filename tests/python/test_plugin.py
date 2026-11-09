@@ -34,6 +34,10 @@ class FakeCtx:
     def get_config(self, key, default=None):
         return self._config.get(key, default)
 
+    def register_system_prompt_section(self, id, content, position="after_memory", max_chars=4000):
+        self.prompt_sections = getattr(self, "prompt_sections", {})
+        self.prompt_sections[id] = (content, max_chars)
+
 
 def _load_plugin():
     spec = importlib.util.spec_from_file_location("hermes_plugins.fieldkit", ROOT / "__init__.py",
@@ -138,3 +142,77 @@ def test_process_pending_without_llm_reports_clearly(ctx, monkeypatch):
     monkeypatch.setattr(runtime, "llm", None)
     r = call(ctx, "fieldkit_process_pending_jobs")
     assert r["ok"] and r["processed"][0]["status"] == "pending" and "not available" in r["processed"][0]["error"]
+
+
+# ----------------------------------------------------------------------------- phase C: workspace builder via tools
+def _ws_fixture():
+    sys.path.insert(0, str(Path(__file__).parent))
+    from workspace_fixtures import BUNDLE, bundle
+    return BUNDLE, bundle
+
+
+def test_builder_skill_and_onboarding_prompt_are_registered(ctx):
+    assert "fieldkit-workspace-builder" in ctx.skills
+    text = ctx.skills["fieldkit-workspace-builder"].read_text(encoding="utf-8")
+    assert "web_extract" in text and "Never present model knowledge as verified guidance" in text
+    content, max_chars = ctx.prompt_sections["fieldkit.workspace"]
+    assert max_chars <= 1500
+    first = content({})
+    assert "no workspace has been built" in first and "fieldkit-workspace-builder" in first
+
+
+def test_workspace_builder_flow_through_tools(ctx, monkeypatch):
+    from fieldkit_core import workspace as ws
+    BUNDLE, bundle = _ws_fixture()
+    fmt = call(ctx, "fieldkit_workspace_format")
+    assert fmt["ok"] and "verified" in fmt["format"]["evidence_rules"]
+    # Interview: incomplete brief cannot be confirmed.
+    r = call(ctx, "fieldkit_save_workspace_brief", brief={"role": "Milk collection checker"}, confirmed=True)
+    assert r["ok"] is False and "country" in " ".join(r["missing"])
+    brief = {**BUNDLE["profile"], "languages": BUNDLE["languages"], "escalation": ["centre manager"]}
+    r = call(ctx, "fieldkit_save_workspace_brief", brief=brief)
+    assert r["ok"] and r["confirmed"] is False and "Maharashtra" in r["summary"] and r["missing"] == []
+    bid = r["brief_id"]
+    # Research/build cannot happen before the user confirms.
+    assert "not confirmed" in call(ctx, "fieldkit_build_workspace", brief_id=bid, bundle=bundle())["error"]
+    assert call(ctx, "fieldkit_save_workspace_brief", brief=brief, brief_id=bid, confirmed=True)["confirmed"] is True
+    # Build: quotes are checked against pages (fake fetch); a quote missing from its page stops counting.
+    pages = {"https://www.nddb.coop/information/milk-testing": "<p>ILLUSTRATIVE TEST TEXT: re-test borderline samples once.</p>",
+             "https://icar.org.in/dairy-quality": "<html>nothing relevant here</html>"}
+    monkeypatch.setattr(ws, "default_fetch", lambda url: ("text/html", pages.get(url, "")))
+    out = call(ctx, "fieldkit_build_workspace", brief_id=bid, bundle=bundle())
+    assert out["workspace_id"] == "dairy-collection-mh" and out["version"] == 1
+    assert out["research_report"]["excerpt_check"]["not_found"] >= 1        # the ICAR quote is not on its page
+    # ev_two_t2 now has only one found tier-2 quote (NDDB) → supported, not verified.
+    got = call(ctx, "fieldkit_get_workspace", workspace_id="dairy-collection-mh", include_bundle=True)
+    assert got["ok"] and got["status"] == "draft"
+    st = {e["id"] for e in got["research_report"]["evidence"]["supported"]}
+    assert "ev_two_t2" in st
+    assert out["valid"] is True, out["errors"]
+    assert [s["id"] for s in out["research_report"]["excluded_sources"]] == ["s_forum"]
+    assert out["research_report"]["gaps"][0]["topic"] == "Ammonium sulphate limit"
+    # Publish needs the user's approval.
+    assert "user_approved" in call(ctx, "fieldkit_publish_workspace", workspace_id="dairy-collection-mh", user_approved=False)["error"]
+    pub = call(ctx, "fieldkit_publish_workspace", workspace_id="dairy-collection-mh", user_approved=True)
+    assert pub["ok"] and pub["app_link"]["url"].endswith("#/workspace/dairy-collection-mh")
+    lst = call(ctx, "fieldkit_list_workspaces")
+    assert [w["id"] for w in lst["workspaces"]] == ["dairy-collection-mh"]
+    assert len(call(ctx, "fieldkit_list_workspaces", include_drafts=True)["workspaces"]) == 1
+    # The next session's prompt now summarises the workspace instead of onboarding.
+    content, _ = ctx.prompt_sections["fieldkit.workspace"]
+    assert "Dairy collection QA" in content({}) and "no workspace" not in content({})
+
+
+def test_invalid_build_reports_errors_and_unsafe_urls_are_never_fetched(ctx):
+    from fieldkit_core import workspace as ws
+    BUNDLE, bundle = _ws_fixture()
+    brief = {**BUNDLE["profile"], "languages": BUNDLE["languages"], "escalation": ["manager"]}
+    bid = call(ctx, "fieldkit_save_workspace_brief", brief=brief, confirmed=True)["brief_id"]
+    b = bundle()
+    b["guides"][0]["nodes"]["o_accept"]["outcome"]["actions"][0]["evidence_ids"] = ["ev_model_only"]
+    out = call(ctx, "fieldkit_build_workspace", brief_id=bid, bundle=b, check_excerpts=False)
+    assert out["valid"] is False and any("no supporting evidence" in e for e in out["errors"])
+    assert "find and quote a qualifying source" in out["next"]
+    for url in ("http://127.0.0.1/x", "http://localhost:9300/api", "file:///etc/passwd", "http://169.254.169.254/latest"):
+        with pytest.raises(ValueError):
+            ws.default_fetch(url)
