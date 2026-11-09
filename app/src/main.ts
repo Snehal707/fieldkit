@@ -35,8 +35,20 @@ const main = h("main");
 const navItems: [string, string, string][] = [["#/", "⌂", "Home"], ["#/workflows", "☑", "Workflows"], ["#/assistant", "?", "Assistant"], ["#/sync", "⇅", "Sync"], ["#/settings", "⚙", "Settings"]];
 const nav = h("nav", { class: "bottom" }, ...navItems.map(([href, icon, label]) => h("a", { href }, h("span", null, icon), label)));
 const authSlot = h("div", { style: "max-width:720px;margin:0 auto;padding:0 1rem" });
+// Update notice: one compact, opaque line directly under the header, IN the page flow. Not position:fixed —
+// fixed bars overlapped the bottom navigation (hard-coded offset ignored the iPhone safe area), let content
+// show through (translucent banner style) and jump over inputs when the iOS keyboard opened.
+const updateSlot = h("div", { class: "update-slot" });
+document.addEventListener("fieldkit:update-ready", (ev) => {
+  if (updateSlot.firstChild) return;  // never stack duplicates
+  const activate = (ev as CustomEvent).detail?.activate as (() => void) | undefined;
+  updateSlot.append(h("div", { class: "update-bar", role: "status", "aria-live": "polite" },
+    h("span", { class: "update-text" }, "Update ready"),
+    h("button", { class: "primary", onclick: () => { activate ? activate() : location.reload(); } }, "Reload"),
+    h("button", { class: "update-close", "aria-label": "Dismiss update notice", onclick: () => clear(updateSlot) }, "✕")));
+});
 clear(app);
-app.append(h("header", { class: "top" }, title, queue, net), authSlot, main, nav);
+app.append(h("header", { class: "top" }, title, queue, net), updateSlot, authSlot, main, nav);
 let authShown = false;
 onSyncState((s) => {
   // App-wide: the moment a protected request returns 401, show sign-in — on whatever screen is open.
@@ -113,9 +125,7 @@ async function registerSw() {
       const w = reg.installing;
       w?.addEventListener("statechange", () => {
         if (w.state === "installed" && navigator.serviceWorker.controller) {
-          const bar = h("div", { class: "banner hermes", style: "position:fixed;left:1rem;right:1rem;bottom:76px;z-index:20" },
-            "A new FieldKit version is ready. ", h("button", { class: "primary", onclick: () => { w.postMessage({ type: "skip-waiting" }); } }, "Reload"));
-          document.body.appendChild(bar);
+          document.dispatchEvent(new CustomEvent("fieldkit:update-ready", { detail: { activate: () => w.postMessage({ type: "skip-waiting" }) } }));
         }
       });
     });

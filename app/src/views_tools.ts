@@ -180,6 +180,7 @@ export const ocrView: View = async (main) => {
 export const packsView: View = async (main) => {
   const [wfs, packs, models] = await Promise.all([installedWorkflows(), installedPacks(), installedModels()]);
   const l = await lang();
+  const onDevice = h("div");
   main.append(h("div", { class: "card" }, h("h2", null, "On this device"),
     h("h3", null, "Workflows"), wfs.length ? h("ul", { class: "clean" }, ...wfs.map((w) => h("li", { class: "row" },
       h("span", { class: "grow" }, `${text(w.definition.title, l)} · v${w.version}`),
@@ -189,10 +190,18 @@ export const packsView: View = async (main) => {
       h("span", { class: "grow" }, `${p.title} · ${p.kind} v${p.version} · ${fmtBytes(p.size)}`, h("div", { class: "muted" }, `sha256 ${p.sha256.slice(0, 12)}… verified`)),
       h("button", { class: "danger", onclick: async () => { await removePack(p.id); go(`#/packs?r=${Date.now()}`); } }, "Remove"))))
       : h("p", { class: "muted" }, "None"),
-    h("h3", null, "On-device models"), models.length ? h("ul", { class: "clean" }, ...models.map((m) => h("li", { class: "row" },
+    h("h3", null, "On-device models"), onDevice));
+  const paintOnDevice = (list: typeof models) => {
+    clear(onDevice);
+    onDevice.append(list.length ? h("ul", { class: "clean" }, ...list.map((m) => h("li", { class: "row", "data-on-device": m.id },
       h("span", { class: "grow" }, `${m.title}`, h("div", { class: "muted" }, `${m.verified ? "✔" : "⚠"} ${m.verify_detail ?? ""} · installed ${fmtTime(m.installed_at)}`)),
       h("button", { class: "danger", onclick: async () => { await removeModel(m.id); go(`#/packs?r=${Date.now()}`); } }, "Remove"))))
-      : h("p", { class: "muted" }, "None")));
+      : h("p", { class: "muted" }, "None"));
+  };
+  paintOnDevice(models);
+  const onInstalled = async () => paintOnDevice(await installedModels());
+  document.addEventListener("fieldkit:model-installed", onInstalled);
+  window.addEventListener("hashchange", () => document.removeEventListener("fieldkit:model-installed", onInstalled), { once: true });
 
   const avail = h("div", { class: "card" }, h("h2", null, "Available from Hermes"));
   main.append(avail);
@@ -242,10 +251,18 @@ function modelRow(m: any, installed: boolean) {
       const fn = m.capability === "translation" ? installTranslation : m.capability === "stt" ? installStt : installOcr;
       const r = await fn(m, onProgress);
       status.textContent = `Installed and self-tested on this device · ${r.verify_detail}`;
+      // The label used to be computed only when the screen was drawn, so a model installed while the
+      // screen stayed open kept saying "Install". Reflect the new (already persisted) state right away.
+      b.textContent = "Reinstall";
+      b.className = "";
+      b.setAttribute("data-installed", "true");
+      document.dispatchEvent(new CustomEvent("fieldkit:model-installed", { detail: { id: m.id } }));
       toast(`${m.title} ready offline`, "ok");
     } catch (e) { status.textContent = `Install failed: ${(e as Error).message}`; }
     b.disabled = false;
   } }, installed ? "Reinstall" : "Install");
+  b.setAttribute("data-model", m.id);
+  if (installed) b.setAttribute("data-installed", "true");
   return h("li", null, h("div", { class: "row" }, h("strong", { class: "grow" }, m.title), b), status, prog);
 }
 

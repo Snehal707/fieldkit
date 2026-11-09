@@ -60,3 +60,12 @@ nav.bottom a span { display: block; font-size: 1.15rem; }
 progress { width: 100%; }
 pre.wrap { white-space: pre-wrap; word-break: break-word; background: var(--bg); padding: .6rem; border-radius: 8px; border: 1px solid var(--line); }
 dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .8rem; margin: 0; } dl.kv dt { color: var(--muted); } dl.kv dd { margin: 0; word-break: break-word; }
+
+/* Update notice: in normal flow under the header (never overlaps content, the bottom nav or the keyboard). */
+.update-slot { max-width: 720px; margin: 0 auto; padding: 0 1rem; }
+.update-bar { display: flex; align-items: center; gap: .5rem; margin-top: .6rem; padding: .35rem .4rem .35rem .75rem;
+  background: var(--card); border: 1px solid var(--hermes); border-radius: 999px; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  font-size: .88rem; min-height: 44px; }
+.update-bar .update-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.update-bar button { padding: .35rem .8rem; min-height: 32px; flex: none; }
+.update-bar .update-close { border: 0; background: transparent; color: var(--muted); padding: .35rem .5rem; }
