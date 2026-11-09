@@ -24,6 +24,8 @@ written for the real-iPhone findings in [docs/TESTING.md](../../docs/TESTING.md)
 | `ocr_run.mjs` | Opens the bundled harness in Chromium or WebKit (Playwright), runs each photo through each mode, and prints the character error rate (CER). |
 | `translation_set.json` | 16 general and 7 dictionary-term sentence pairs (English↔Hindi). One hand-written reference each. |
 | `translation_eval.mjs` | Runs OPUS-MT (Transformers.js in Node) on the set and scores it with chrF. Mode `plain` is the plain model. Mode `fieldkit` uses `app/src/translate_prep.ts` (dictionary terminology from `examples/*/dictionary.json`, Hindi punctuation, and a plain retranslation when a term placeholder is lost). |
+| `assistant_set.json` | Synthetic assistant questions in English and Hindi, written by the maintainers. Each question has its expected intent or entry. Some are held out, and the `fresh_*` sets were written after the intent cues were tuned. |
+| `assistant_eval.mjs` | Scores the offline assistant's retrieval and intent matching for each embedding model you pass, using Transformers.js in Node. It also measures how well the off-topic threshold (0.29) separates in-scope from off-topic questions. |
 
 ## How to run
 
@@ -52,6 +54,13 @@ node tests/eval/ocr_run.mjs <dir> <dir>/bundle.js chromium|webkit [modes] [varia
 node tests/eval/translation_eval.mjs <cacheDir> '[{"dir":"en-hi","mode":"plain"},{"dir":"en-hi","mode":"fieldkit"}]'
 ```
 `dtype` defaults to `q8`. Add `"dir":"hi-en"` for Hindi to English.
+
+### Assistant (0.2.5)
+`assistant_eval.mjs` imports the app's TypeScript, so bundle it first, then run it with a cache directory and the model ids to compare:
+```bash
+npx esbuild tests/eval/assistant_eval.mjs --bundle --platform=node --format=esm --external:@huggingface/transformers --external:minisearch --outfile=tests/eval/.assistant_eval.bundle.mjs && node tests/eval/.assistant_eval.bundle.mjs <cacheDir> Xenova/paraphrase-multilingual-MiniLM-L12-v2
+```
+Without model ids, the script compares `Xenova/multilingual-e5-small` and `Xenova/paraphrase-multilingual-MiniLM-L12-v2`.
 
 ## Results (0.2.4, synthetic material, desktop)
 
@@ -87,3 +96,18 @@ Whisper tiny cannot write Hindi. It romanises or translates it, or repeats phras
 Other measurements: fp32 en→hi scored 44.6 against 41.5 for q8, at four times the download. NLLB-600M (895 MB) and
 M2M100 (632 MB) are too large for a phone web app, so OPUS-MT stays. Transformers.js 4.3.1 beam search is effectively
 greedy.
+
+## Results (0.2.5, assistant, synthetic material, desktop)
+
+| Method | Retrieval top-1 en / hi | Intent top-1 en / hi |
+|---|---|---|
+| Keyword search (the 0.2.4 assistant) | 47% / 0% | – |
+| `Xenova/multilingual-e5-small` | 74% / 92% | 76% / 91% |
+| `Xenova/paraphrase-multilingual-MiniLM-L12-v2` (chosen, Apache-2.0, 118 MB) | 89% / 92% (top-3: 100% / 100%) | 81% / 82% |
+
+- With word cues added to the meaning match, intent was 90.5% (en) / 90.9% (hi) on the set the cues were tuned on, and
+  91% / 89% on fresh questions written afterwards. Fresh retrieval top-1 was 80% / 67% (8 questions).
+- Off-topic separation: every in-scope question scored at least 0.36 similarity, and every off-topic question at most
+  0.22. The threshold is 0.29.
+
+The set is small and was written by the maintainers. Treat these numbers as a guide. None of them were measured on a phone.

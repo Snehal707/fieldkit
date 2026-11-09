@@ -132,6 +132,32 @@ def list_all(a: dict) -> str:
     return _ok(workspaces=get_store().list_workspaces(published_only=not a.get("include_drafts")))
 
 
+def propose_changes(a: dict) -> str:
+    from . import learning
+    new = learning.propose(get_store(), a["workspace_id"], int(a.get("min_outcomes") or learning.MIN_OUTCOMES))
+    return _ok(new=new, open=learning.list_candidates(get_store(), a["workspace_id"], "open"),
+               summary=learning.summary(get_store(), a["workspace_id"]),
+               next="For research_gap: research it (skill), update and rebuild the workspace, then accept the candidate with a note. "
+                    "For local_practice: show the outcome evidence; accept to create a draft version. For review_content: check "
+                    "the content. Ask the user before accepting or rejecting.")
+
+
+def list_learning(a: dict) -> str:
+    from . import learning
+    wid = a.get("workspace_id")
+    ev = learning.events(get_store(), wid, a.get("kind"))[-50:]
+    return _ok(summary=learning.summary(get_store(), wid), events=ev, candidates=learning.list_candidates(get_store(), wid, a.get("status")))
+
+
+def decide_candidate(a: dict) -> str:
+    from . import learning
+    if a.get("decision") not in ("accept", "reject"):
+        return _fail("decision must be accept or reject")
+    if not a.get("user_confirmed"):
+        return _fail("ask the user first; then call again with user_confirmed=true")
+    return _ok(**learning.decide(get_store(), a["candidate_id"], a["decision"] == "accept", a.get("note", ""), ALL))
+
+
 def _s(name: str, description: str, props: dict, required: list | None = None) -> dict:
     return {"name": name, "description": description, "parameters": {"type": "object", "properties": props, "required": required or []}}
 
@@ -155,4 +181,14 @@ TOOLS = [
         "conflicts, gaps).", {"workspace_id": STR, "version": INT, "include_bundle": BOOL}, ["workspace_id"]), get),
     (_s("fieldkit_list_workspaces", "List FieldKit workspaces (published; include_drafts for drafts too).",
         {"include_drafts": BOOL}), list_all),
+    (_s("fieldkit_propose_workspace_changes", "Turn a workspace's learning events into improvement candidates: questions the "
+        "phone could not answer (research_gap), actions that verified follow-up outcomes show working (local_practice, needs "
+        "enough consistent outcomes), and answers users marked unhelpful (review_content). AI suggestions and feedback alone "
+        "never become guidance.", {"workspace_id": STR, "min_outcomes": INT}, ["workspace_id"]), propose_changes),
+    (_s("fieldkit_list_learning", "Learning events (knowledge gaps, feedback, verified outcomes) and improvement candidates "
+        "for a workspace.", {"workspace_id": STR, "kind": STR, "status": STR}), list_learning),
+    (_s("fieldkit_decide_candidate", "Accept or reject an improvement candidate after asking the user. Accepting a "
+        "local_practice creates a new draft workspace version; publish it with fieldkit_publish_workspace. Rejected "
+        "candidates are never proposed again.", {"candidate_id": STR, "decision": STR, "note": STR, "user_confirmed": BOOL},
+        ["candidate_id", "decision", "user_confirmed"]), decide_candidate),
 ]

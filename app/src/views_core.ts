@@ -847,6 +847,23 @@ function reportV2(box: HTMLElement, r: any, tr: any, lg: string): void {
   if (r.quality?.problems?.length) box.append(h("div", { class: "banner warn" }, h("strong", null, "This report did not pass every quality check"),
     h("ul", null, ...r.quality.problems.map((q: string) => h("li", null, q)))));
   if (r.references?.length) box.append(h("h3", null, "Supporting references"), h("ul", null, ...r.references.map((x: any) => h("li", null, `${x.title}${x.source ? ` — ${x.source}` : ""}`))));
+  box.append(reportFeedback(r));
+}
+
+/** "Did this help you decide?" Feedback goes to Hermes as a user opinion: it can flag a report, never certify it. */
+function reportFeedback(r: any): HTMLElement {
+  const note = h("input", { placeholder: "What did you decide or do? (optional)", maxlength: 300 }) as HTMLInputElement;
+  const box = h("div", { class: "card report-feedback", id: "report-feedback" }, h("strong", null, "Did this report help you decide?"));
+  const send = async (helpful: boolean) => {
+    const { logEvent } = await import("./learning");
+    await logEvent("user_feedback", { report_id: r.report_id, record_id: r.record_id, helpful, note: note.value.trim(),
+      question: `report:${r.decision?.outcome ?? ""}`, answer: String(r.summary ?? "").slice(0, 300) },
+      { workspace_id: r.workspace?.id, ref_type: "report", ref_id: r.report_id });
+    clear(box);
+    box.append(h("div", { class: "muted", "data-sent": "true" }, "Thanks. Hermes uses this to improve your workspace (it never treats opinions as verified)."));
+  };
+  box.append(note, h("div", { class: "row" }, h("button", { onclick: () => send(true) }, "Yes, it helped"), h("button", { onclick: () => send(false) }, "No")));
+  return box;
 }
 
 function reportV1(box: HTMLElement, r: any): void {

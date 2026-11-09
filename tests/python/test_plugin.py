@@ -216,3 +216,78 @@ def test_invalid_build_reports_errors_and_unsafe_urls_are_never_fetched(ctx):
     for url in ("http://127.0.0.1/x", "http://localhost:9300/api", "file:///etc/passwd", "http://169.254.169.254/latest"):
         with pytest.raises(ValueError):
             ws.default_fetch(url)
+
+
+# ----------------------------------------------------------------------------- phase F: learning loop via tools
+def _milk_record(store, rid, checks=None, answers=None):
+    store.sync_record("alice", f"k-{rid}", "dev", {"id": rid, "workflow_id": "milk-collection-check", "workflow_version": 1,
+                                                   "base_revision": 0, "answers": answers or {"farmer_code": "F-7", "milk_type": "cow",
+                                                                                              "fat_pct": 3.5, "snf_pct": 8.3},
+                                                   "local_results": {"followup_checks": checks or []}}, auto_analyze=False)
+
+
+def test_learning_loop_through_tools(ctx):
+    from fieldkit_core import learning, workspace as ws
+    BUNDLE, _ = _ws_fixture()
+    store = db.get_store()
+    d = ws.build_draft(store, db.ALL, BUNDLE)
+    ws.publish(store, BUNDLE["id"], d["version"])
+    # An AI suggestion alone (a report action) creates nothing.
+    _milk_record(store, "rec_learn_00000")
+    store.save_report_direct("rec_learn_00000", {"summary": "x", "next_actions": [{"action": "Re-test the sample", "verify_by": "2nd reading",
+                                                                                   "origin": "ai_suggestion"}]}, False, generated_by="test")
+    assert call(ctx, "fieldkit_propose_workspace_changes", workspace_id="dairy-collection-mh")["new"] == []
+    # Two verified outcomes: still not enough. A "can't check" never counts.
+    chk = lambda i, result: [{"id": f"fc_{i}", "what": "Re-test the sample", "how": "2nd reading recorded", "result": result,
+                              "value": "8.4", "report_id": "rep_1", "record_id": "rec_learn_00000"}]
+    for i, res in enumerate(["done", "done", "cannot_check"]):
+        _milk_record(store, f"rec_learn_0000{i + 1}", chk(i, res))
+        learning.record_outcomes(store, "alice", f"rec_learn_0000{i + 1}")
+    assert learning.record_outcomes(store, "alice", "rec_learn_00001") == 0          # idempotent
+    assert [c["kind"] for c in call(ctx, "fieldkit_propose_workspace_changes", workspace_id="dairy-collection-mh")["new"]] == []
+    # A third verified success → a local-practice candidate labelled with its evidence.
+    _milk_record(store, "rec_learn_00004", chk(4, "done"))
+    learning.record_outcomes(store, "alice", "rec_learn_00004")
+    # Feedback and gaps from the phone (as the API stores them).
+    learning.save_events(store, "alice", "dev", [
+        {"kind": "knowledge_gap", "idempotency_key": "g1", "workspace_id": "dairy-collection-mh", "payload": {"question": "How do I clean the milk analyser?", "lang": "en"}},
+        {"kind": "knowledge_gap", "idempotency_key": "g2", "workspace_id": "dairy-collection-mh", "payload": {"question": "how to clean the analyser", "lang": "en"}},
+        {"kind": "user_feedback", "idempotency_key": "f1", "workspace_id": "dairy-collection-mh", "payload": {"question": "What is SNF?", "answer": "...", "helpful": False}},
+        {"kind": "user_feedback", "idempotency_key": "f2", "workspace_id": "dairy-collection-mh", "payload": {"question": "Accept or reject?", "answer": "...", "helpful": True}}])
+    r = call(ctx, "fieldkit_propose_workspace_changes", workspace_id="dairy-collection-mh")
+    kinds = sorted(c["kind"] for c in r["new"])
+    assert kinds == ["local_practice", "research_gap", "review_content"]               # helpful feedback creates nothing
+    by = {c["kind"]: c for c in r["new"]}
+    assert by["local_practice"]["basis"]["n"] == 3 and by["local_practice"]["basis"]["done"] == 3
+    assert "verified outcomes" in by["local_practice"]["payload"]["label"]
+    assert by["research_gap"]["payload"]["asked"] == 2                                   # similar questions clustered
+    assert call(ctx, "fieldkit_propose_workspace_changes", workspace_id="dairy-collection-mh")["new"] == []   # no duplicates
+    # Decisions need the user's confirmation; a rejection is remembered.
+    assert "ask the user" in call(ctx, "fieldkit_decide_candidate", candidate_id=by["review_content"]["id"], decision="reject")["error"]
+    assert call(ctx, "fieldkit_decide_candidate", candidate_id=by["review_content"]["id"], decision="reject", user_confirmed=True)["status"] == "rejected"
+    learning.save_events(store, "alice", "dev", [{"kind": "user_feedback", "idempotency_key": "f3", "workspace_id": "dairy-collection-mh",
+                                                  "payload": {"question": "What is SNF?", "answer": "...", "helpful": False}}])
+    assert call(ctx, "fieldkit_propose_workspace_changes", workspace_id="dairy-collection-mh")["new"] == []   # not re-proposed
+    # Accepting the practice makes a valid new draft; the entry is labelled as learned, with status local_practice.
+    acc = call(ctx, "fieldkit_decide_candidate", candidate_id=by["local_practice"]["id"], decision="accept", user_confirmed=True)
+    assert acc["status"] == "accepted" and acc["draft"]["valid"] is True and acc["draft"]["version"] == 2
+    got = call(ctx, "fieldkit_get_workspace", workspace_id="dairy-collection-mh", version=2)
+    assert any(e["id"].startswith("ev_outcomes_") for e in got["research_report"]["evidence"]["local_practice"])
+    assert "local practice" in " ".join(got["changelog"]).lower()
+    pub = call(ctx, "fieldkit_publish_workspace", workspace_id="dairy-collection-mh", version=2, user_approved=True)
+    assert pub["ok"] and pub["version"] == 2
+    lst = call(ctx, "fieldkit_list_learning", workspace_id="dairy-collection-mh")
+    assert lst["summary"]["verified_outcome"] == 4 and lst["summary"]["knowledge_gap"] == 2
+    content, _ = ctx.prompt_sections["fieldkit.workspace"]
+    assert "improvement candidate(s)" in content({})
+
+
+def test_local_practice_needs_real_outcomes():
+    from fieldkit_core import workspace as ws
+    src = {"s": {"id": "s", "type": "user_document"}}
+    weak = {"id": "e", "claim": "x", "local_practice": True, "outcomes": {"n": 2, "done": 2, "records": ["a", "b"]}}
+    assert ws.evidence_status(weak, src)[0] == "unverified"
+    fake = {"id": "e", "claim": "x", "local_practice": True, "outcomes": {"n": 5, "done": 5, "records": ["a"]}}   # claims more than it has
+    assert ws.evidence_status(fake, src)[0] == "unverified"
+    ok = {"id": "e", "claim": "x", "local_practice": True, "outcomes": {"n": 3, "done": 3, "records": ["a", "b", "c"]}}
+    assert ws.evidence_status(ok, src)[0] == "local_practice"

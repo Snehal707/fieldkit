@@ -433,3 +433,38 @@ local score was inconsistent with the evidence.
   paraphrase starts the right guide, typed answers, evidenced outcome, Hindi understood, off-topic refused and queued,
   no network requests) — **passed in Chromium and WebKit**. vitest 124, pytest 166, Chromium 29 passed / 5 skipped,
   WebKit 23 passed / 11 skipped.
+
+### Phase F: learning that tells suggestions, feedback and verified outcomes apart (0.2.5)
+- **Inputs kept apart** (`fieldkit_core/learning.py`): AI suggestions (report actions) are never evidence; user feedback
+  (👍/👎 on answers, "Did this report help you decide?") can only flag content for review; **verified outcomes** come only
+  from follow-up checks answered on a later inspection and are derived on Hermes from the synced record (a phone cannot
+  submit them directly); unanswered offline questions are knowledge gaps.
+- **Candidates:** gaps are clustered into research candidates; ≥3 consistent verified outcomes (≥80% worked, distinct
+  records) propose a "local practice", labelled "Learned from your team's verified outcomes (worked in k of n)"; negative
+  feedback proposes a review. Each needs the user's confirmation; accepting a practice creates a validated new workspace
+  version with a changelog; rejected candidates are never proposed again. The evidence status `local_practice` is
+  recomputed by FieldKit and refused if the outcomes don't add up.
+- **Tools (3 new, 32 total):** `fieldkit_propose_workspace_changes`, `fieldkit_list_learning`, `fieldkit_decide_candidate`
+  (`user_confirmed`). The onboarding prompt mentions open candidates and unanswered questions. Schedule it with a Hermes
+  cron job if wanted: `hermes cron create "every 24h" "Call fieldkit_propose_workspace_changes for my FieldKit workspaces
+  and tell me what needs a decision." --skill fieldkit-workspace-builder` (not verified here).
+- **Phone:** queued events upload after each sync (`POST learning/events`, idempotent); the workspace page shows
+  "Update available" with the changelog.
+- Tests: `tests/python/test_plugin.py::test_learning_loop_through_tools` (AI suggestion alone → nothing; 2 outcomes → nothing;
+  can't-check never counts; 3 → candidate; helpful feedback → nothing; clustering; confirmation required; rejection
+  remembered; accept → valid v2 → publish), `test_local_practice_needs_real_outcomes`, `test_learning_events_api`
+  (phones can't submit outcomes; idempotent; outcomes extracted on sync), `tests/app/sync.test.ts` (upload once),
+  `tests/e2e/learning.spec.ts` (offline gap + 👎 → Hermes after sync → candidates → practice published as v2 → phone
+  update labelled) — passed in Chromium and WebKit. pytest 170, vitest 126, Chromium E2E 30 passed / 5 skipped.
+
+### 0.2.5 final run (all phases)
+- pytest **170 passed**; vitest **126 passed**; typecheck clean; `hermes plugins validate` passed; `hermes plugins doctor . --ci`:
+  32 tools, 1 hook; `npm audit`: 0 vulnerabilities.
+- Playwright (35 tests in 20 files) against the local Hermes v0.23.0: **Chromium 30 passed / 5 skipped, WebKit 24 passed / 11
+  skipped, no failures.** Skipped: the model-download tests (`FIELDKIT_E2E_MODELS=1`; the assistant one was run separately and
+  passed in both engines), the spoken-audio test (needs a WAV), and tests WebKit cannot run (fake microphone, `route()` with a
+  service worker).
+- Found while running: after hundreds of runs the throwaway test instance held 504 records, and two tests failed in WebKit
+  because Saved Records loads at most **500 records per account** and lost-record detection pauses when the list is not
+  complete (behaviour since 0.2.2). The full suite passed on a fresh test database (the old one was kept, renamed). This
+  is a real limit for very large accounts and is listed in the README's known limitations.

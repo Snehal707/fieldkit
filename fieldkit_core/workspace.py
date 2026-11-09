@@ -21,8 +21,9 @@ from urllib.parse import urlparse
 from . import engine
 
 SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{1,47}$")
-STATUSES = ("verified", "user_procedure", "supported", "conflicting", "unverified")
-STATUS_RANK = {"verified": 4, "user_procedure": 4, "supported": 3, "conflicting": 2, "unverified": 1}
+STATUSES = ("verified", "user_procedure", "supported", "local_practice", "conflicting", "unverified")
+STATUS_RANK = {"verified": 4, "user_procedure": 4, "supported": 3, "local_practice": 3, "conflicting": 2, "unverified": 1}
+MIN_PRACTICE_OUTCOMES = 3   # a "local practice" needs this many verified follow-up outcomes, ≥80% successful
 SOURCE_TYPES = {
     "regulator": 1, "government": 1, "standards_body": 1, "manufacturer": 1, "user_document": 1,
     "academic": 2, "extension_or_ngo": 2, "international_body": 2,
@@ -91,6 +92,13 @@ def evidence_status(ev: dict, sources: dict[str, dict]) -> tuple[str, list[str]]
             tiers[x["source_id"]] = t
     if not tiers and any(sources[x["source_id"]].get("type") == "user_document" for x in excerpts):
         tiers = {x["source_id"]: 1 for x in excerpts}
+    if ev.get("local_practice"):
+        o = ev.get("outcomes") or {}
+        n, done = int(o.get("n") or 0), int(o.get("done") or 0)
+        if n >= MIN_PRACTICE_OUTCOMES and done / max(1, n) >= 0.8 and len(o.get("records") or []) >= n:
+            return "local_practice", notes + [f"learned from {done} of {n} verified follow-up outcomes (not a standard)"]
+        notes.append("local practice without enough verified outcomes")
+        return "unverified", notes
     if ev.get("user_procedure"):
         if any(sources[s].get("type") == "user_document" for s in tiers):
             return "user_procedure", notes
@@ -524,8 +532,14 @@ def prompt_section(store: Any) -> str:
         try:
             rec = store.get_workspace_version(w["id"])
             sm = (rec.get("validation") or {}).get("summary", {})
+            try:
+                from . import learning
+                ls = learning.summary(store, w["id"])
+                extra = f", {ls['open_candidates']} improvement candidate(s), {ls['knowledge_gap']} unanswered offline question(s)"
+            except Exception:
+                extra = ""
             parts.append(f"{w['title']} (id {w['id']}, v{w['published_version']}; {sm.get('verified', 0)} verified, "
-                         f"{sm.get('conflicting', 0)} conflicting, {sm.get('gaps', 0)} gaps)")
+                         f"{sm.get('conflicting', 0)} conflicting, {sm.get('gaps', 0)} gaps{extra})")
         except Exception:
             parts.append(f"{w['title']} (id {w['id']})")
     return ("FieldKit workspaces built for this user: " + "; ".join(parts) + ". Use the fieldkit-workspace-builder skill "

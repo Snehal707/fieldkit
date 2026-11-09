@@ -108,6 +108,31 @@ or exercised by a test in this repository.
 - **Verified:** a local Hermes v0.23.0 transcribed a synthetic English voice note exactly, and the transcript appeared in the analysis prompt.
 - **Verified by the owner (0.2.4, hosted Hermes + iPhone):** voice notes reach the reports. Which STT provider the hosted instance uses (local or cloud) is the operator's configuration and is not recorded here.
 
+## Hermes facilities used for workspaces (0.2.5)
+
+| Facility | Used for | Verification |
+|---|---|---|
+| `web_search` and `web_extract` (Hermes' own tools) | Research for a workspace. Hermes quotes the exact clause and its location. FieldKit re-fetches each cited web page and drops quotes it cannot find there | The tools are named in `fieldkit_core/workspace_tools.py` and in `skills/fieldkit-workspace-builder/SKILL.md`. The re-fetch and unsafe-address rules are tested in `tests/python/test_plugin.py`. A live research run in a Hermes conversation is **not verified**. The search backends are configured in Hermes; which one the hosted instance uses is not recorded here |
+| `delegate` | The builder skill suggests it for parallel research on a broad job | Named in the skill only. **Not verified** |
+| `cronjob` (`hermes cron create … --skill fieldkit-workspace-builder`) | Optional daily run of `fieldkit_propose_workspace_changes` | The command is in [docs/INSTALL.md](docs/INSTALL.md). **Not verified** |
+| `ctx.register_system_prompt_section("fieldkit.workspace", …)` | Each new Hermes session is told whether the user has a workspace (offer to build one) or summarises the built ones, including open candidates | Registered in `__init__.py` with a bounded text (`fieldkit_core/workspace.py`). Its effect in a live session is **not verified** |
+| Skills (`ctx.register_skill`) | `fieldkit-workspace-builder`, next to the `fieldkit` skill, which resolves as `fieldkit:fieldkit` | Registered in `__init__.py`. `hermes plugins validate` passed at phase C |
+| `ctx.register_tool` | 9 new tools (32 in total) | Tool count: `hermes plugins doctor . --ci` reported 29 tools at phase C. The final count is not recorded |
+
+## Offline assistant model evaluation (0.2.5)
+
+The offline assistant understands questions by meaning, which needs an on-device embedding model. Three methods were
+compared on a synthetic question set written by the maintainers: keyword search, `Xenova/multilingual-e5-small`, and
+`Xenova/paraphrase-multilingual-MiniLM-L12-v2`.
+
+- **Chosen:** `Xenova/paraphrase-multilingual-MiniLM-L12-v2` (Apache-2.0, 118 MB, pinned revision `2c4055b1…`). On the
+  synthetic set, retrieval top-1 was 89% in English and 92% in Hindi, against 74% and 92% for e5-small and 47% and 0%
+  for keyword search. Intent top-1 was 81% and 82%.
+- After word cues were added, intent was 91% (English) and 89% (Hindi) on fresh questions written afterwards. The
+  sample is small, and the cues were tuned on an earlier set.
+- The set is synthetic and small, and no result was measured on a phone. Method, numbers and the command are in
+  [docs/TESTING.md](docs/TESTING.md) (Phase E) and [tests/eval/README.md](tests/eval/README.md).
+
 ## Hackathon
 
 - Deadline reported as **2026-11-11 17:00 ET** in a news article (coinfomania). I found no official Nous announcement, so **verify before submitting**.

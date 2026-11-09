@@ -1,5 +1,5 @@
 // Workspace screens: list (installed + available on Hermes) and one workspace (profile, evidence, gaps, download).
-import { HttpError } from "./api";
+import { api, HttpError } from "./api";
 import { text } from "./engine";
 import { clear, fmtTime, h, isOnline, toast } from "./util";
 import { go, lang, type View } from "./views_core";
@@ -31,6 +31,7 @@ export const workspacesView: View = async (main) => {
 function evidenceBlock(m: WorkspaceManifest) {
   const s = m.summary ?? {};
   const rows: [string, number][] = [["verified", s.verified ?? 0], ["user_procedure", s.user_procedure ?? 0], ["supported", s.supported ?? 0],
+    ["local_practice", s.local_practice ?? 0],
     ["conflicting", s.conflicting ?? 0], ["unverified", s.unverified ?? 0]];
   return h("div", { class: "card", id: "ws-evidence" }, h("h3", null, "How this workspace is evidenced"),
     h("ul", { class: "clean" }, ...rows.filter(([, n]) => n).map(([k, n]) => h("li", { "data-status": k }, `${STATUS_LABEL[k]}: ${n}`))),
@@ -73,6 +74,20 @@ export const workspaceView: View = async (main, p) => {
     (prof.responsibilities ?? []).length ? h("div", null, h("h3", null, "Your responsibilities"),
       h("ul", null, ...prof.responsibilities.map((r: any) => h("li", null, r.description, (r.decisions ?? []).length ? h("div", { class: "muted" }, `Decides: ${r.decisions.join(", ")}`) : null)))) : null,
     h("div", { class: "row" }, isOnline() ? btn : null), status));
+  if (isOnline()) {
+    void (async () => {
+      try {
+        const live = await api<any>(`workspaces/${encodeURIComponent(wid)}`);
+        const have = m!.version_of_workspace ?? 1;
+        if ((live.published_version ?? 0) > have) {
+          const note = h("div", { class: "banner warn", id: "ws-update", "data-version": String(live.published_version) },
+            h("strong", null, `Update available: version ${live.published_version}`),
+            ...(live.changelog ?? []).map((c: string) => h("div", null, c)));
+          document.getElementById("ws-home")?.prepend(note);
+        }
+      } catch { /* offline or older server: nothing to show */ }
+    })();
+  }
   main.append(h("div", { class: "card" }, h("h3", null, "Workflows"),
     h("ul", { class: "clean" }, ...(m.workflows ?? []).map((w) => h("li", { class: "row" }, h("span", { class: "grow" }, w.id),
       h("a", { class: "btn", href: `#/workflow/${encodeURIComponent(w.id)}` }, "Open"))))));

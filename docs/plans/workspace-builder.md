@@ -1,6 +1,6 @@
 # FieldKit Workspaces: architecture and implementation plan (draft for approval)
 
-Status: **proposal, not implemented.** Written 2026-11-10 against FieldKit 0.2.4 (commit 98804e9) and Hermes v0.23.0.
+Status: **implemented in 0.2.5 (phases A–F); see docs/TESTING.md.** Written 2026-11-10 against FieldKit 0.2.4 (commit 98804e9) and Hermes v0.23.0.
 
 ## 0. Goal
 

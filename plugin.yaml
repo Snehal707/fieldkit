@@ -41,6 +41,9 @@ provides_tools:
   - fieldkit_publish_workspace
   - fieldkit_get_workspace
   - fieldkit_list_workspaces
+  - fieldkit_propose_workspace_changes
+  - fieldkit_list_learning
+  - fieldkit_decide_candidate
 provides_hooks:
   - on_session_start
 python_dependencies:

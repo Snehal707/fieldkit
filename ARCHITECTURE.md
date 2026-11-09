@@ -4,7 +4,7 @@ One Hermes plugin repository, three integrated components, one database.
 
 ```text
  Hermes Mobile app ──conversation──▶ Hermes Agent ──tools──▶ FieldKit plugin (Python)
-                                          │                    │  register(ctx): 23 tools, skill, hook
+                                          │                    │  register(ctx): 32 tools, 2 skills, hook
                                           │ ctx.llm            │  fieldkit_core: engine, db, packs, analysis
                                           ▼                    ▼
                               Hermes dashboard ── /api/plugins/fieldkit/ (FastAPI router, auth-gated)
@@ -21,9 +21,10 @@ and FieldKit tools, the PWA through the authenticated plugin API.
 ## Components
 
 ### A. Native plugin (`__init__.py`, `fieldkit_core/`)
-- `register(ctx)` binds `ctx.llm` and plugin config into `fieldkit_core.runtime`, registers the 23 tools
-  (`tools.py`) and the bundled skill (`skills/fieldkit/SKILL.md`), and adds an `on_session_start` hook.
-  It does no I/O.
+- `register(ctx)` binds `ctx.llm` and plugin config into `fieldkit_core.runtime`, registers the 32 tools
+  (`tools.py` and `workspace_tools.py`), the bundled skills (`skills/fieldkit/SKILL.md` and
+  `skills/fieldkit-workspace-builder/SKILL.md`), a system prompt section (`fieldkit.workspace`), and adds an
+  `on_session_start` hook. It does no I/O.
 - `engine.py` is the deterministic workflow engine: JSON-Schema validation, condition AST, visibility and
   requiredness, field validation and classification (rules, keywords, scores, decision trees). Nothing is
   evaluated as code.
@@ -94,8 +95,53 @@ the report as `local_findings`.
    - the `fieldkit_process_pending_jobs` tool, called by Hermes or by a Hermes cron job;
    - `fieldkit_analyze_record` on demand.
 5. The report is stored, follow-ups are created, and the record's `analysis_status` becomes `completed` or `requires_review`.
-   - `requires_review` is set when the model says so, or when the workflow has `review_required` and there
-     is any high or critical issue.
+   - `requires_review` is set only when there is a review trigger (`review_triggers`): a high or critical finding
+     (from Hermes or the phone's local rules), Hermes' own flag with a stated reason, a critical decision, or a
+     report that still fails a quality check after the repair pass.
+
+## Workspaces, evidence and learning (0.2.5)
+
+A workspace is the user's job turned into an offline kit: workflows, decision guides, knowledge, vocabulary and a
+report policy. Hermes builds it. FieldKit validates it, computes its evidence status and runs it on the phone.
+
+```text
+Interview (Hermes, skill fieldkit-workspace-builder)
+  → fieldkit_save_workspace_brief (the user confirms the brief; incomplete briefs are refused)
+  → research (Hermes' web_search and web_extract; quotes copied with their location)
+  → fieldkit_build_workspace: bundle validated, source tiers checked against domains,
+    web pages re-fetched and quotes dropped if not found, evidence status computed by FieldKit
+  → review of the research report → fieldkit_publish_workspace (requires user_approved)
+  → normal workflows + packs ws-<id>, ws-<id>-knowledge, ws-<id>-dictionary (SHA-256, update detection)
+  → phone: #/workspace/<id> → download everything for offline → decision guides, assistant, inspections
+  → records with follow-up checks → sync → Hermes analysis → decision-focused report (v2)
+  → learning events from the phone (knowledge gaps, feedback); verified outcomes derived on Hermes
+    from follow-up checks in synced records
+  → fieldkit_propose_workspace_changes → candidates → user confirms (fieldkit_decide_candidate, user_confirmed)
+  → accepted candidate = new validated workspace version with a changelog → phone shows "Update available"
+```
+
+| Module | Role |
+|---|---|
+| `fieldkit_core/workspace.py` | Bundle and brief validation, source tiers, evidence status, decision guide graph checks, excerpt checks, publishing as workflows and packs, starter workspaces, the onboarding prompt text |
+| `fieldkit_core/workspace_tools.py` | The 9 workspace and learning tools (schemas and handlers) |
+| `fieldkit_core/decision.py` | Decision scale, report v2 schema additions, deterministic report checks, follow-ups from next actions |
+| `fieldkit_core/learning.py` | Learning events (idempotent per key), verified outcomes from follow-up checks, candidate clustering, confirmation rules |
+| `app/src/workspace.ts` | Installs and lists workspaces on the phone, with SHA-256 checked packs |
+| `app/src/guides.ts` | Runs decision guides offline (typed answers, outcome with each action's evidence status) |
+| `app/src/assistant.ts`, `assistant_core.ts`, `assistant_intents.ts`, `views_assistant.ts` | Grounded assistant: intent by meaning and cues, dialogue state, retrieval, answers with citations, knowledge gaps |
+| `app/src/followups.ts` | Follow-up checks asked by the next inspection of the same subject |
+| `app/src/learning.ts` | Queue of learning events, uploaded after each sync |
+
+Rules that do not depend on the model:
+- The evidence status (verified, supported, conflicting, your procedure, learned local practice, unverified) is
+  computed by FieldKit. Unverified model knowledge cannot become a decision-guide action, a rule threshold or a
+  procedure.
+- Learning inputs stay apart. AI suggestions are never evidence. User feedback can only flag content for review.
+  Only follow-up checks answered on a later inspection count as verified outcomes, and a phone cannot submit them.
+- Accepting a candidate requires the user's confirmation. Rejected candidates are not proposed again.
+
+The phone and Hermes exchange only through the plugin API: `GET workspaces`, `GET workspaces/{id}` and
+`POST learning/events` (see [docs/API.md](docs/API.md)).
 
 ## Security
 

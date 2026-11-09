@@ -24,6 +24,7 @@ build if any ELF, Mach-O, PE or WASM file would ship.
 | OPUS-MT hi→en (ONNX) | `huggingface.co/Xenova/opus-mt-hi-en` @ `99853100ed9d932987a6816e8cf7b1b6742a6116` | Apache-2.0 | SHA-256 verified |
 | Whisper tiny (ONNX, English; fp32 `encoder_model.onnx`, 8-bit `decoder_model_merged_quantized.onnx`) | `huggingface.co/Xenova/whisper-tiny` @ `5332fcc35e32a33b86612b9a57a89be7906102b1` | Apache-2.0 (OpenAI) | SHA-256 verified |
 | Whisper small (ONNX, Hindi and English; 8-bit) | `huggingface.co/Xenova/whisper-small` @ `2d67713f236afa48a18992566e7647f6ca848e13` | Apache-2.0 (OpenAI) | SHA-256 verified |
+| Question understanding (ONNX, English and Hindi; 8-bit `model_quantized.onnx`, 118 MB) | `huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2` @ `2c4055b12046f11709e9df2c122e59ffbdc2f900` (upstream: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`) | Apache-2.0 (sentence-transformers) | SHA-256 `66fc00f5…4ebc` pinned in `fieldkit_core/models.json` |
 
 **Network calls (disclosed per catalog rules):**
 - The PWA contacts `huggingface.co` (and its CDN `*.hf.co`) and `cdn.jsdelivr.net` **only** when the user installs an on-device model pack.
@@ -32,6 +33,9 @@ build if any ELF, Mach-O, PE or WASM file would ship.
 
 ## Demo content
 `examples/*` are synthetic workflows, knowledge and glossaries written for FieldKit (CC0-1.0). They are illustrative only: not safety, medical or agronomic advice.
+The three starter workspaces built from these examples are also synthetic.
+
+`tests/eval/assistant_set.json` (assistant questions in English and Hindi, each with its expected intent or entry) is **synthetic**. It was written by the FieldKit maintainers for `tests/eval/assistant_eval.mjs`. It is not third-party data, and no real user questions are used.
 
 ## Evaluation tools (`tests/eval`, not shipped)
 - Windows' built-in voices (en-US, en-IN, hi-IN) are used by `tests/eval/tts.ps1` only to generate local test audio. The audio is not distributed.

@@ -26,7 +26,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from fieldkit_core import __version__, engine, media, packs as packs_mod, runtime  # noqa: E402
+from fieldkit_core import __version__, engine, learning, media, packs as packs_mod, runtime  # noqa: E402
 from fieldkit_core.db import ALL, Conflict, Invalid, NotFound, data_dir, get_store  # noqa: E402
 
 router = APIRouter()
@@ -261,7 +261,20 @@ def sync_record(request: Request, payload: dict = Body(...)):
     except Exception as exc:
         _err(exc)
     _ensure_worker()
+    try:   # follow-up checks answered in this record become verified-outcome events (learning loop)
+        learning.record_outcomes(store, uid, resp.get("record_id") or "")
+    except Exception:
+        pass
     return resp
+
+
+@router.post("/learning/events")
+def post_learning_events(request: Request, events: list = Body(..., embed=True), device_id: str = Body("unknown")):
+    """Knowledge gaps and feedback from the phone (idempotent). Verified outcomes are derived from synced records."""
+    try:
+        return learning.save_events(get_store(), _uid(request), str(device_id), events)
+    except Exception as exc:
+        _err(exc)
 
 
 @router.put("/attachments/{aid}")

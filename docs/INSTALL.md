@@ -6,7 +6,7 @@ Requires **Hermes Agent ≥ 0.23.0** with the web dashboard.
 ```bash
 hermes plugins install Snehal707/fieldkit        # or: copy this repo to $HERMES_HOME/plugins/fieldkit
 hermes plugins enable fieldkit
-hermes plugins show fieldkit                  # 23 tools, 1 hook, dashboard tab, api: plugin_api.py
+hermes plugins show fieldkit                  # 32 tools, 1 hook, dashboard tab, api: plugin_api.py
 ```
 The repo ships its built front-ends (`dashboard/dist/`, `dashboard/app_dist/`), so no Node.js is needed on the host.
 Building yourself is covered in [Building from source](#building-from-source).
@@ -41,7 +41,7 @@ plugins:
 1. The phone must reach the dashboard over **HTTPS**, because service workers need a secure context.
 2. Open the dashboard → **FieldKit** tab → **Mobile Access**. Scan the QR code, or open `https://<host>/dashboard-plugins/fieldkit/app_dist/index.html`.
 3. Sign in to Hermes. If your session has expired later, the app still opens and offers **Sign in**.
-4. In **Offline Packs**, download workflows, then optional models (translation about 110 MB per direction, speech about 41 MB, OCR 1–3 MB per language).
+4. In **Offline Packs**, download workflows, then optional models (translation about 110 MB per direction, English speech about 64 MB, OCR 1–3 MB per language, and the **Question understanding — English and Hindi** pack, about 118 MB).
 5. Install the app:
    - Android Chrome: menu → **Install app**.
    - iPhone Safari: Share → **Add to Home Screen**.
@@ -62,6 +62,21 @@ After a sync, FieldKit queues a durable `analyze` job.
   hermes cron create "every 15m" "Call fieldkit_process_pending_jobs and report any FieldKit record that requires review." --name fieldkit-analysis --skill fieldkit
   ```
   Deferred mode and the cron job are not yet verified end to end.
+
+## 6. Build your workspace
+A workspace is your job turned into an offline kit: workflows, decision guides, knowledge and sources. Hermes builds it.
+1. In Hermes (Mobile, chat or dashboard), ask: "Set up FieldKit for my work."
+2. Hermes interviews you, shows you a brief to confirm, researches the rules and procedures for your region and country, and builds the workspace. Research needs web search configured in Hermes, because the research step uses Hermes' own `web_search` and `web_extract` tools.
+3. Hermes publishes the workspace only after you approve it. It then returns an app link.
+4. Open the link on your phone (it opens `#/workspace/<id>`) and tap **Download everything for offline**.
+5. In **Offline Packs**, install the optional **Question understanding — English and Hindi** pack (about 118 MB). Without it, the assistant uses basic word search.
+
+The bundled examples are starter workspaces, labelled synthetic.
+
+To have Hermes check each day for workspace changes that need a decision (not verified; the interview and live research are not yet verified on the hosted Hermes):
+```bash
+hermes cron create "every 24h" "Call fieldkit_propose_workspace_changes for my FieldKit workspaces and tell me what needs a decision." --skill fieldkit-workspace-builder
+```
 
 ## Photo analysis with a vision model
 If your default model can't read images, FieldKit analyses records **text-only** and marks the report "Photos not analysed". To analyse photos with a separate vision model, without changing the gateway's default model, set FieldKit's own model slot. These settings are read live, so no restart is needed:

@@ -64,6 +64,8 @@ export const assistantView: View = async (main, p) => {
     return b;
   };
 
+  /** The workspace a question belongs to: the open report's, else the built (non-starter) workspace on this device. */
+  const wsId = (): string | undefined => ctx.report?.workspace?.id ?? corpus?.workspaces.find((w) => !w.id.startsWith("starter-"))?.id;
   const show = (q: string, r: Reply) => {
     const body = h("div", { class: "msg-text" }, r.text);
     const box = bubble("bot", body);
@@ -82,8 +84,8 @@ export const assistantView: View = async (main, p) => {
         try { const t = await translate(r.text, state.lang, other); body.textContent = t.text; } catch (e) { toast((e as Error).message, "error"); }
       } }, "Translate"),
       h("button", { onclick: () => { const s = speak(body.textContent ?? "", state.lang); if (!s.ok) toast(s.reason!, "error"); } }, "🔊"),
-      h("button", { "aria-label": "Helpful", onclick: async () => { await logEvent("user_feedback", { question: q, answer: r.text.slice(0, 500), helpful: true, intent: r.intent }); toast("Thanks — noted for Hermes", "ok"); } }, "👍"),
-      h("button", { "aria-label": "Not helpful", onclick: async () => { await logEvent("user_feedback", { question: q, answer: r.text.slice(0, 500), helpful: false, intent: r.intent }); toast("Noted — Hermes will look at it", "ok"); } }, "👎"));
+      h("button", { "aria-label": "Helpful", onclick: async () => { await logEvent("user_feedback", { question: q, answer: r.text.slice(0, 500), helpful: true, intent: r.intent }, { workspace_id: wsId() }); toast("Thanks — noted for Hermes", "ok"); } }, "👍"),
+      h("button", { "aria-label": "Not helpful", onclick: async () => { await logEvent("user_feedback", { question: q, answer: r.text.slice(0, 500), helpful: false, intent: r.intent }, { workspace_id: wsId() }); toast("Noted — Hermes will look at it", "ok"); } }, "👎"));
     box.append(tools);
   };
 
@@ -97,7 +99,7 @@ export const assistantView: View = async (main, p) => {
     show(q, res.reply);
     if (res.reply.gap) {
       await logEvent("knowledge_gap", { question: q, lang: state.lang, best_score: res.reply.score ?? 0, record_id: ctx.record?.id ?? null,
-        workflow_id: ctx.record?.workflow_id ?? null }, { workspace_id: corpus.workspaces.find((w) => !w.id.startsWith("starter-"))?.id });
+        workflow_id: ctx.record?.workflow_id ?? null }, { workspace_id: wsId() });
     }
   };
 

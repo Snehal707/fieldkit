@@ -1,16 +1,21 @@
 # FieldKit for Hermes Agent
 
-**Create a workflow by talking to Hermes, run it on a phone with no internet, get local results immediately,
-sync when you're back online, and have Hermes analyse it. You can discuss the result in Hermes Mobile and keep
-the report readable offline.**
+**Hermes builds a researched, evidence-labelled offline workspace for your job. Your phone helps you decide with no
+internet, using decision guides and a grounded assistant. Hermes analyses your records into decision-focused reports,
+and the workspace improves from verified outcomes.**
+
+Hermes does the parts that need internet access and judgement. It interviews you about your work, researches the
+rules and procedures from reliable sources, and builds the workspace. FieldKit stores the workspace, checks it,
+computes how well each item is evidenced, and runs it on the phone. Workflows, records and reports still work the
+same way: create a workflow, run it offline, sync, and read the analysis.
 
 FieldKit is one Hermes plugin with three parts:
 
 | Part | What it is |
 |---|---|
-| **Native plugin** | 23 Hermes tools plus a bundled skill. It creates, validates and publishes workflows; turns documents into knowledge packs; builds dictionaries; retrieves, analyses, compares and reports on synchronised records; and manages follow-ups, sync status and conflicts. |
+| **Native plugin** | 32 Hermes tools plus two bundled skills (`fieldkit`, `fieldkit-workspace-builder`). It creates, validates and publishes workflows and workspaces; turns documents into knowledge packs; builds dictionaries; retrieves, analyses, compares and reports on synchronised records; and manages follow-ups, learning candidates, sync status and conflicts. |
 | **Dashboard tab** | A *FieldKit* tab in the Hermes dashboard: workflows, knowledge, records (with photos and audio), reports and follow-ups, synchronisation, offline packs, and a phone QR code. |
-| **Offline PWA** | An installable mobile app served by the plugin at `/dashboard-plugins/fieldkit/app_dist/index.html`. It handles workflows with branching, validation, photos, GPS, audio and signatures; local findings; an offline assistant over knowledge packs; dictionaries; sentence translation; OCR; speech-to-text; read-aloud; a durable sync queue; downloaded Hermes reports; connection diagnostics. |
+| **Offline PWA** | An installable mobile app served by the plugin at `/dashboard-plugins/fieldkit/app_dist/index.html`. It handles workflows with branching, validation, photos, GPS, audio and signatures; local findings; decision guides; a grounded offline assistant over workspace content, records and reports; your workspace; dictionaries; sentence translation; OCR; speech-to-text; read-aloud; a durable sync queue; downloaded Hermes reports; connection diagnostics. |
 
 It is **domain-independent**. Workflows, knowledge, dictionaries and classification rules are data, so a new
 domain needs no code changes. The demo ships three unrelated domains with equal weight:
@@ -36,6 +41,27 @@ the first time the dashboard tab or the app is opened over https. Open the link 
 **Download for offline**, and add the app to your home screen.
 Full instructions are in [docs/INSTALL.md](docs/INSTALL.md).
 
+## Workspaces (0.2.5)
+To set up FieldKit for your job, ask Hermes:
+
+> "Set up FieldKit for my work."
+
+Hermes interviews you about your job: your responsibilities and the decisions each one needs, your tools,
+instruments and procedures, your region and country, your languages, and who to escalate to. It shows you a brief
+to confirm. Then it researches with its own web search and page reader, and quotes the exact clause with where it
+appears. FieldKit re-fetches each cited web page and drops any quote it cannot find there. PDF sources are not
+checked automatically.
+
+Every item is labelled by how well it is evidenced: **verified**, **supported**, **conflicting** (with a named
+escalation), **your procedure**, **learned local practice**, or **unverified**. Unverified model knowledge can never
+become a decision action, a threshold or a procedure. Hermes publishes the workspace only after you approve it, and
+returns a link. Open the link on your phone and tap **Download everything for offline**. The three bundled examples
+are starter workspaces, labelled synthetic.
+
+The workspace improves from your team's verified outcomes: a follow-up check answered on a later inspection counts
+as evidence. Hermes proposes changes, and nothing changes until you confirm. An accepted change creates a new,
+validated workspace version with a changelog, and the phone shows **Update available**.
+
 ## What works offline (on the phone)
 - Opening the app from the home screen after the browser is fully closed. A service worker caches the shell. The app is launched from Hermes' public plugin-asset address, so even with an expired Hermes session (or no service worker) it opens normally and offers **Sign in**, returning to FieldKit afterwards; on-device data never needs a login.
 - Running workflows with:
@@ -44,7 +70,11 @@ Full instructions are in [docs/INSTALL.md](docs/INSTALL.md).
 - An immediate Results page:
   - validation, answers, local findings (rules, keywords, scores, decision trees), relevant references, explanations, media and GPS;
   - a clear *"Saved locally. Pending synchronization."* label. Local findings are never presented as Hermes analysis.
-- The offline assistant and knowledge browser. Retrieval answers come with a source, and the assistant says when a question isn't covered.
+- Your workspace (once downloaded): profile, workflows, decision guides, evidence summary, sources and gaps.
+- Decision guides, which run offline. They ask only for what is missing and show the outcome with the evidence status of each action.
+- The offline assistant answers only from workspace content, records and reports, with citations and evidence status. It says when a question isn't covered and keeps that question for Hermes. Nothing is generated. It understands questions by meaning in English and Hindi when the optional "Question understanding" pack is installed (118 MB); without it, the assistant uses basic word search.
+- Follow-up checks. The next inspection of the same subject asks the previous report's checks (Done, Not done or Can't check).
+- A knowledge browser. Retrieval answers come with a source.
 - Dictionary search (exact, translation, prefix and fuzzy matches).
 - Sentence translation English→Hindi and Hindi→English (OPUS-MT, on device). Terms from installed dictionary packs are used in the translation, and the Translate screen lists the dictionary terms it used.
 - OCR in English and Hindi (tesseract.js). Photos keep their orientation (EXIF) and are read at high resolution with lighting correction. Each result gets a reliability verdict (good, check or poor). When the text is poor, the app says so and asks you to retake the photo closer, in good light.
@@ -59,7 +89,8 @@ Full instructions are in [docs/INSTALL.md](docs/INSTALL.md).
   - The server acknowledges each step, and revisions use optimistic concurrency.
   - Conflicts are shown for you to decide; nothing is silently overwritten.
 - An expired Hermes session pauses the queue (nothing is lost) and asks you to sign in. The queue resumes afterwards.
-- The server queues a durable analysis job. Hermes' own LLM (`ctx.llm`) produces a schema-validated report with issues, missing information, references, actions and follow-ups.
+- The server queues a durable analysis job. Hermes' own LLM (`ctx.llm`) produces a decision-focused report: a decision with its rationale, confidence and deadline; issues that cite the record's evidence; ordered next actions, each with a way to verify it; what is uncertain; and checks for the next inspection. FieldKit checks the report after the model answers and asks for one repair. Any problem left is shown on the report and sends it for review.
+- Unanswered offline questions and your feedback are uploaded as learning events. They are never treated as evidence.
 - Photos are analysed through a separate vision model when one is configured (the `fieldkit_vision` slot). With a text-only default model, the report says "Photos not analysed".
 - The report is stored centrally. It is visible in the PWA (and downloadable for offline use), in the dashboard, and to Hermes Mobile through FieldKit tools.
 
@@ -120,11 +151,24 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 | Update notice | Compact, never overlaps content (320 px screen, keyboard open) |
 | Saved Records across devices (two isolated profiles, same Hermes account) | One list with no duplicates, readable device names, badges, Download all, offline cold start, offline-saved record auto-syncs on reconnect and appears on the other client, same Account ID on both, Device ID only under Advanced, another account on the same browser sees no copies |
 
+### Verified locally for 0.2.5 (throwaway Hermes v0.23.0, not the owner's iPhone or hosted Hermes)
+
+Details and commands for each phase are in [docs/TESTING.md](docs/TESTING.md) (Phase A to Phase F).
+
+| Area | Status |
+|---|---|
+| Example rules, safe upgrades and calibrated review (Phase A) | Verified on the local Hermes: `equipment-inspection` and `crop-health-survey` published as v2 |
+| Workspace model, evidence rules and publishing (Phase B) | Covered by tests (pytest) and the Chromium E2E run |
+| Hermes builds the workspace (Phase C) | Chromium E2E: publish, link, one-tap download, offline cold restart. `hermes plugins validate` passed. A real Hermes interview with live web research is **not verified** |
+| Decision-focused reports (Phase D) | Covered by pytest and Chromium E2E (`decision.spec.ts`) |
+| Offline assistant understands (Phase E) | Verified with the real model after a cold restart with no network, in Chromium and WebKit (`assistant.spec.ts`) |
+| Learning from verified outcomes (Phase F) | Verified in Chromium and WebKit (`learning.spec.ts`): offline question and a "not helpful" vote, sent to Hermes after sync, candidates, practice published as v2, phone update labelled |
+
 ### Automated tests and security checks
 
 | Area | Status |
 |---|---|
-| Tests | 114 Python tests, 110 TypeScript tests, 16 Playwright E2E spec files; every one of the 23 Hermes tools has a test |
+| Tests | 170 Python tests, 126 TypeScript tests, 20 Playwright E2E spec files (per-browser results in [docs/TESTING.md](docs/TESTING.md)). Every one of the 32 Hermes tools has a test (guard: `test_every_registered_tool_is_exercised_by_tests`) |
 | Simulated Hermes Mobile conversation | Covered by a test: create, publish, app link, sync, process jobs, get record and report, compare and save report, follow-up, sync status, conflict resolution. The real conversation was also checked on the owner's iPhone (see above) |
 | Security | `hermes plugins validate` security scan: safe. `npm audit`: 0 vulnerabilities. `pip-audit`: 0 known vulnerabilities |
 | Access control | Every API route checks the signed-in user; the app page is public and contains no data. v0.1.7 fixed a cross-user leak where `GET /jobs` listed other users' jobs |
@@ -135,15 +179,21 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 |---|---|
 | Android Chrome | Pending |
 | Scheduled analysis via a Hermes cron job | Pending |
-| `hermes plugins doctor . --ci` | Pass (v0.2.4: 23 tools, 1 hook) |
+| `hermes plugins doctor . --ci` | Pass (0.2.5 final build: 32 tools, 1 hook; `hermes plugins validate` passed; `npm audit` 0 vulnerabilities) |
+| 0.2.5 workspaces, reports, assistant and learning on iPhone and the hosted Hermes | Pending |
+| A full builder conversation with live web research on the hosted Hermes | Pending |
 
 ### Known limitations
+- Saved Records loads the newest 500 records per account; with more, older ones are not listed and the "Hermes doesn't have these records" check pauses.
 - The small OPUS-MT model mistranslates some technical terms (for example "bearing" → "bear"). Dictionary terms help when an installed dictionary has the term, but general quality is still limited.
 - Whisper tiny is English-only; Hindi needs the 250 MB Whisper small pack (about 18–31% character errors on synthetic speech).
 - OCR cannot read blurred or dark photos. It says so and asks for a retake. Handwriting is not supported.
 - iOS PWAs have separate storage from Safari. Sign in once inside the installed app.
 - Uploads run while the app is open. There is no background upload from a closed app.
 - Hermes OAuth sessions last 15 minutes. Sync pauses and asks you to sign in; nothing is lost.
+- The offline assistant answers only from workspace content, records and reports. It never generates an answer, and it refuses off-topic questions.
+- The "Question understanding" pack is 118 MB. Without it, the assistant uses basic word search.
+- Local-practice learning needs at least 3 consistent verified outcomes (at least 80% worked, from distinct records). Until then, no practice is proposed.
 
 ## Docs
 [ARCHITECTURE.md](ARCHITECTURE.md) · [RESEARCH.md](RESEARCH.md) · [docs/API.md](docs/API.md) · [docs/INSTALL.md](docs/INSTALL.md) ·

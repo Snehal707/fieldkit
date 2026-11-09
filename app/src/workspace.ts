@@ -47,13 +47,14 @@ export async function availableWorkspaces(): Promise<any[]> {
 
 /** Evidence status of the strongest evidence behind a set of ids (for labels). */
 export function bestStatus(m: WorkspaceManifest, ids: string[] = []): string {
-  const rank: Record<string, number> = { verified: 4, user_procedure: 4, supported: 3, conflicting: 2, unverified: 1 };
+  const rank: Record<string, number> = { verified: 4, user_procedure: 4, supported: 3, local_practice: 3, conflicting: 2, unverified: 1 };
   const st = (m.evidence ?? []).filter((e: any) => ids.includes(e.id)).map((e: any) => e.status as string);
   return st.sort((a, b) => (rank[b] ?? 0) - (rank[a] ?? 0))[0] ?? "unverified";
 }
 
 export const STATUS_LABEL: Record<string, string> = {
   verified: "Verified source", user_procedure: "Your procedure", supported: "Supported by a source",
+  local_practice: "Learned from your team's verified outcomes",
   conflicting: "Sources disagree", unverified: "Not verified",
 };
 

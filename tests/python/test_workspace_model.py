@@ -178,3 +178,49 @@ def test_workspace_api_lists_and_reads(store):
     assert one["manifest_pack"] == "ws-dairy-collection-mh" and one["summary"]["gaps"] == 1
     got = c.get("/api/plugins/fieldkit/packs/ws-dairy-collection-mh")
     assert got.status_code == 200 and got.json()["kind"] == "workspace"
+
+
+def test_learning_events_api(store):
+    import importlib.util
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from fieldkit_core import learning
+    spec = importlib.util.spec_from_file_location("fk_api_learn", Path(__file__).parents[2] / "dashboard" / "plugin_api.py")
+    api = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(api)
+    app = FastAPI()
+
+    @app.middleware("http")
+    async def fake(request, call_next):
+        request.state.session = type("S", (), {"user_id": request.headers.get("x-user", "alice")})()
+        return await call_next(request)
+
+    app.include_router(api.router, prefix="/api/plugins/fieldkit")
+    c = TestClient(app)
+    evs = [{"kind": "knowledge_gap", "idempotency_key": "k1", "payload": {"question": "q?"}},
+           {"kind": "verified_outcome", "idempotency_key": "k2", "payload": {"result": "done"}}]     # phones can't claim outcomes
+    r = c.post("/api/plugins/fieldkit/learning/events", json={"events": evs, "device_id": "dev1"}).json()
+    assert r["saved"] == 1 and r["rejected"]
+    assert c.post("/api/plugins/fieldkit/learning/events", json={"events": evs[:1]}).json()["duplicates"] == 1
+    assert [e["owner_user_id"] for e in learning.events(store)] == ["alice"]
+    # A record synced through the API with answered follow-up checks yields verified outcomes for its owner.
+    ws.build_draft(store, db.ALL, BUNDLE)
+    ws.publish(store, "dairy-collection-mh")
+    rec = {"id": "rec_api_learn_01", "workflow_id": "milk-collection-check", "workflow_version": 1, "base_revision": 0,
+           "answers": {"farmer_code": "F-1"}, "local_results": {"followup_checks": [
+               {"id": "fc_1", "what": "Re-test the sample", "how": "2nd reading", "result": "done", "report_id": "rep_x", "record_id": "rec_prev"}]}}
+    assert c.post("/api/plugins/fieldkit/sync/records", json={"idempotency_key": "ik1", "device_id": "dev1", "record": rec}).status_code == 200
+    vo = learning.events(store, kind="verified_outcome")
+    assert len(vo) == 1 and vo[0]["workspace_id"] == "dairy-collection-mh" and vo[0]["payload"]["verified_in_record"] == "rec_api_learn_01"
+
+
+def test_unattributed_events_never_become_a_workspace_candidate(store):
+    from fieldkit_core import learning
+    ws.build_draft(store, db.ALL, BUNDLE)
+    ws.publish(store, "dairy-collection-mh")
+    learning.save_events(store, "alice", "dev", [
+        {"kind": "knowledge_gap", "idempotency_key": "u1", "payload": {"question": "What is the capital of Peru?"}},
+        {"kind": "knowledge_gap", "idempotency_key": "u2", "workspace_id": "dairy-collection-mh", "payload": {"question": "How to clean the analyser?"}}])
+    new = learning.propose(store, "dairy-collection-mh")
+    assert [c["payload"]["questions"] for c in new] == [["How to clean the analyser?"]]
+    assert len(learning.events(store)) == 2                         # still listed overall

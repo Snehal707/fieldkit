@@ -31,6 +31,29 @@ Base path: `/api/plugins/fieldkit/`.
 | DELETE | `packs/{id}` | Owner only |
 | GET | `models` | Pinned upstream on-device model manifests and runtimes (metadata only) |
 
+## Workspaces (0.2.5)
+| Method | Path | Notes |
+|---|---|---|
+| GET | `workspaces` | Published workspaces. Instance-wide, like published workflows. `{workspaces:[…]}`. Starter workspaces are labelled `starter` |
+| GET | `workspaces/{id}` | Optional `version` query. Returns `workspace_id`, `version`, `status`, `published_version`, `starter`, `manifest_pack`, `changelog`, `summary`, `title`, `profile`, `gaps`. An unknown id returns an error (the exact status code is not checked here) |
+
+Workspaces are built and published by Hermes through the workspace tools (see [Hermes tools](#hermes-tools)).
+The phone opens them at `#/workspace/<id>`, the link Hermes returns.
+
+## Learning (0.2.5)
+`POST learning/events`
+```json
+{"device_id": "dev_…",
+ "events": [{"kind": "knowledge_gap", "idempotency_key": "lev_…", "workspace_id": "ws-…", "ref_type": "question",
+             "ref_id": "…", "payload": {"text": "…"}, "created_at": "2026-11-10T09:00:00"}]}
+```
+- `kind` is `knowledge_gap` or `user_feedback` only. A phone cannot send `verified_outcome` or AI suggestions.
+  Verified outcomes are derived on Hermes from follow-up checks in synced records.
+- `idempotency_key` is required and makes each event idempotent. `workspace_id`, `ref_type`, `ref_id` and `created_at` are optional.
+- Up to 200 events per request. Each payload is limited to 8000 characters of JSON.
+
+**Response:** `{"saved": n, "duplicates": n, "rejected": [ids]}`. `rejected` lists events that were invalid (unknown kind, no idempotency key, or too large).
+
 ## Sync
 `POST sync/records`
 ```json
@@ -76,6 +99,12 @@ The same `idempotency_key` returns the stored response with `duplicate: true`. I
 | GET | `jobs` | Recent jobs, counts and analysis mode |
 | POST | `examples/install` | Synthetic demo workflows and packs. Idempotent |
 
+**Follow-up checks in records (0.2.5).** A record made for a subject that has a previous report carries
+`local_results.followup_checks`: a list of `{id, what, how, result, value?}`, where `result` is `done`, `not_done` or
+`cannot_check`, and `value` is the reading if one was given. Answers travel with the record. Only `done` and
+`not_done` count toward a verified outcome; `cannot_check` is stored but never counts. Hermes turns the answers into
+verified-outcome events when it syncs the record.
+
 ## PWA
 The app is served publicly at `/dashboard-plugins/fieldkit/app_dist/index.html`, outside Hermes' `/api` login gate. The page contains no data; every data call below still requires sign-in.
 
@@ -100,6 +129,22 @@ The app is served publicly at `/dashboard-plugins/fieldkit/app_dist/index.html`,
 
 Photos are sent to the vision model only; signatures are never sent as photos.
 
+**Report v2 (0.2.5).** `schema_version: 2` is set on new reports. Report v1 fields (`suggested_actions`, `followups`)
+are still written for older readers. The v2 fields are:
+- `decision`: `{outcome, rationale, confidence (high | medium | low), deadline_days?, escalate_to?}`. `outcome` is an id
+  from the workspace's decision scale (default: `stop`, `act_soon`, `monitor`, `no_action`).
+- `issues[]`: as in v1, plus `interpretation` and `evidence_refs[{kind, ref, quote?}]`. `kind` is one of `answer`,
+  `photo`, `photo_text`, `voice_quote`, `measurement`, `local_finding`, `previous_record`, `followup_check`, `reference`.
+  Also `guidance_refs[]`.
+- `next_actions[]`: `{order, action, who, by_when_days, guide_id?, entry_id?, verify_by, origin}`. `origin` is `guide`,
+  `knowledge` or `ai_suggestion`.
+- `uncertainty[]`: `{unknown, impact?, how_to_resolve}`.
+- `differences_from_local_findings[]`: `{local, hermes, why}`.
+- `follow_up_verification[]`: `{what, how, due_in_days?}`. These checks are asked on the next inspection.
+- `translations`: keyed by language code, each with `summary`, `rationale`, `next_actions[]`, `issues[]`.
+- `quality`: `{problems[], repaired}`, from the deterministic checks run after the model answers.
+- `review_triggers[]`: why the report needs review. Empty means it does not.
+
 ## Hermes tools
 `fieldkit_create_workflow`, `fieldkit_validate_workflow`, `fieldkit_publish_workflow`, `fieldkit_list_workflows`,
 `fieldkit_get_workflow`, `fieldkit_get_app_link`, `fieldkit_create_knowledge_pack`, `fieldkit_create_dictionary_pack`,
@@ -107,6 +152,18 @@ Photos are sent to the vision model only; signatures are never sent as photos.
 `fieldkit_analyze_record`, `fieldkit_generate_report`, `fieldkit_save_report`, `fieldkit_get_report`, `fieldkit_list_reports`,
 `fieldkit_create_followup`, `fieldkit_list_followups`, `fieldkit_get_sync_status`, `fieldkit_resolve_conflict`,
 `fieldkit_process_pending_jobs`, `fieldkit_install_examples`.
+
+Workspaces and learning (0.2.5, 9 tools):
+- `fieldkit_workspace_format`: the bundle format and the evidence rules FieldKit enforces.
+- `fieldkit_save_workspace_brief`: saves the interview result. An incomplete brief cannot be confirmed.
+- `fieldkit_build_workspace`: validates and stores a draft for a confirmed brief. Re-fetches cited web pages and drops quotes that are not on them. PDFs are marked not checked. Private, loopback and metadata addresses are never fetched.
+- `fieldkit_publish_workspace`: publishes a valid draft. Requires `user_approved`.
+- `fieldkit_get_workspace`, `fieldkit_list_workspaces`: read workspace versions and their research report.
+- `fieldkit_propose_workspace_changes`: turns learning events into candidates (research gaps, local practices, reviews).
+- `fieldkit_list_learning`: learning events and candidates.
+- `fieldkit_decide_candidate`: accepts or rejects a candidate. Requires `user_confirmed`. An accepted candidate creates a validated new workspace version with a changelog.
+
+With these, FieldKit has 32 Hermes tools (23 before 0.2.5).
 
 All tools return a JSON string `{ok: true, …}` or `{ok: false, error}`. They act as the instance owner.
 
