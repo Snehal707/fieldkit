@@ -48,6 +48,8 @@ plugins:
    - On iOS the installed app has its own storage, separate from Safari. Open it and sign in once from inside it.
 6. Check that **Home → Offline readiness** shows ✔ for the first three checks.
 
+**Storage on iPhone.** Browsers keep FieldKit's records on the device, but by default they may clear data of sites unused for a long time or when the device is almost full ([WebKit storage policy](https://webkit.org/?p=14403)). FieldKit asks for protection; Safari decides by itself and often says no, even for Home Screen apps. That is normal. **Settings → Storage on this device** shows *Protected*, *Standard storage (not protected)* or *Standard storage* (no protection API). Records stay on the phone until Hermes confirms them, so open FieldKit and sync regularly, and use **Export** for an extra backup.
+
 The app header shows the device network, Hermes reachability, records awaiting confirmation and "N not submitted" drafts. Tap the status pill to open **Connection diagnostics**, which runs a live connection test and shows evidence of every request.
 
 ## 5. Automatic analysis

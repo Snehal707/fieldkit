@@ -10,12 +10,13 @@ import {
 import { KnowledgeIndex, lookup } from "./knowledge";
 import { VoiceRecorder } from "./media";
 import {
-  fetchCatalog, installedPacks, installedWorkflows, installPack, installWorkflow, removePack, removeWorkflow, requestPersistence,
+  fetchCatalog, installedPacks, installedWorkflows, installPack, installWorkflow, removePack, removeWorkflow,
   storageInfo, updatesAvailable,
 } from "./packs";
 import { getSyncState } from "./sync";
 import { clear, fmtBytes, fmtTime, h, isOnline, toast } from "./util";
 import { authBanner, go, lang, readiness, whoAmI, type View } from "./views_core";
+import { languageLabel, requestOutcome, requestProtection, storageMessage, storageState, summarizeVoices } from "./storage";
 
 // ------------------------------------------------------------------ assistant
 export const assistantView: View = async (main) => {
@@ -278,15 +279,47 @@ export const settingsView: View = async (main) => {
     h("dl", { class: "kv", style: "margin-top:.8rem" },
       h("dt", null, "Account"), h("dd", null, me ? `${me.display_name || me.user_id}` : getSyncState().auth_required ? "Session expired" : isOnline() ? "Not signed in" : "Offline"),
       h("dt", null, "Device"), h("dd", null, dev), h("dt", null, "App version"), h("dd", null, APP_VERSION),
-      h("dt", null, "Storage used"), h("dd", null, st.supported ? `${fmtBytes(st.usage)} of ${fmtBytes(st.quota)}` : "unknown"),
-      h("dt", null, "Persistent storage"), h("dd", null, st.persisted === null ? "not supported" : st.persisted ? "granted" : "not granted"),
-      h("dt", null, "Local voices"), h("dd", null, localVoices().map((v) => v.lang).join(", ") || "none on this device"),
-      h("dt", null, "Native on-device speech"), h("dd", null, caps.nativeLocalStt),
       h("dt", null, "Offline ready"), h("dd", null, checks.slice(0, 3).every((c) => c.ok !== false) ? "yes" : "no")),
     h("div", { class: "row", style: "margin-top:.8rem" },
-      h("button", { onclick: async () => { const r = await requestPersistence(); toast(r ? "Persistent storage granted" : "The browser declined; data may be evicted under storage pressure.", r ? "ok" : "error"); go(`#/settings?r=${Date.now()}`); } }, "Request persistent storage"),
       h("button", { onclick: () => signIn("#/settings") }, "Sign in to Hermes"),
       h("a", { class: "btn", href: "#/diagnostics" }, "Connection diagnostics"))));
+
+  // ---- Storage: three clearly different states, calm wording, no false promises (see storage.ts)
+  const ss = await storageState();
+  const sm = storageMessage(ss);
+  main.append(h("div", { class: "card", id: "storage-card" }, h("h2", null, "Storage on this device"),
+    h("div", { class: `banner ${sm.tone === "ok" ? "hermes" : "local"}`, "data-storage-kind": ss.kind },
+      h("strong", null, sm.label), h("div", null, sm.detail)),
+    ss.usage !== undefined ? h("p", { class: "muted" }, `Using ${fmtBytes(ss.usage)}${ss.quota ? ` of up to ${fmtBytes(ss.quota)} available to FieldKit` : ""}.`) : null,
+    sm.canRequest ? h("button", { onclick: async () => {
+      const r = requestOutcome(await requestProtection());
+      toast(r.text, r.tone);
+      go(`#/settings?r=${Date.now()}`);
+    } }, "Ask the browser to protect storage") : null));
+
+  // ---- Home Screen app: real benefits, no permanent-storage promise
+  main.append(h("div", { class: "card", id: "install-card" }, h("h2", null, "Use FieldKit as an app"),
+    ss.standalone
+      ? h("p", null, "✔ You're using FieldKit from the Home Screen.")
+      : h("p", null, "Add FieldKit to your Home Screen (iPhone: Share → Add to Home Screen; Android: menu → Install app)."),
+    h("ul", null,
+      h("li", null, "Opens full-screen from its own icon, and starts offline from the Home Screen."),
+      h("li", null, "On iPhone, the browser is more likely to protect its storage when it's used as a Home Screen app — but this isn't guaranteed."),
+      h("li", null, "On iPhone the installed app keeps its own data, separate from Safari: sign in once inside it, and download workflows and packs there.")),
+    h("p", { class: "muted" }, "Installing doesn't make storage permanent. Records stay on the device until they sync, so sync regularly and use Export for an extra backup.")));
+
+  // ---- Read-aloud voices: compact summary + expandable list (only on-device voices are ever used)
+  const vs = summarizeVoices(localVoices(), l);
+  const want = ["en", "hi"].map((code) => ({ code, has: vs.languages.some((x) => x.code.toLowerCase().startsWith(code)) }));
+  main.append(h("div", { class: "card", id: "voices-card" }, h("h2", null, "Read-aloud voices"),
+    h("p", null, vs.total
+      ? `${vs.total} on-device voice${vs.total === 1 ? "" : "s"} in ${vs.languages.length} language${vs.languages.length === 1 ? "" : "s"}. `
+        + want.map((w) => `${languageLabel(w.code, l)}: ${w.has ? "available" : "not on this device"}`).join(" · ")
+      : "No on-device voices found. Read-aloud is unavailable; FieldKit never uses online voices."),
+    vs.total ? h("details", null, h("summary", null, "Show all voices"),
+      h("ul", { class: "clean" }, ...vs.languages.map((g) => h("li", null, h("strong", null, g.label), h("span", { class: "muted" }, ` (${g.code})`),
+        h("div", { class: "muted" }, g.voices.join(", ")))))) : null,
+    h("p", { class: "muted" }, "Voice notes are transcribed offline by FieldKit's own Speech to text pack (install it in Offline Packs).")));
 
   main.append(h("div", { class: "card" }, h("h2", null, "Backup & recovery"),
     h("p", { class: "muted" }, "Export everything on this device (records, media, reports, drafts) to a file you can keep or move to another device."),

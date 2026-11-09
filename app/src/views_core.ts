@@ -45,7 +45,8 @@ export async function readiness(): Promise<Check[]> {
     { label: "Offline translation", ok: models.some((m) => m.capability === "translation") || null, detail: models.filter((m) => m.capability === "translation").map((m) => m.manifest.direction.join("→")).join(", ") || "optional — install in Offline Packs" },
     { label: "Offline OCR", ok: models.some((m) => m.capability === "ocr") || null, detail: models.filter((m) => m.capability === "ocr").map((m) => m.manifest.lang_code).join(", ") || "optional" },
     { label: "Offline speech-to-text", ok: models.some((m) => m.capability === "stt") || null, detail: models.some((m) => m.capability === "stt") ? "Whisper tiny on device" : "optional" },
-    { label: "Persistent storage", ok: st.persisted, detail: st.persisted ? "browser will not evict FieldKit data" : "not granted — request it in Settings" },
+    { label: "Storage protection", ok: st.persisted ? true : null,
+      detail: st.persisted ? "the browser won't clear FieldKit data automatically" : "standard storage (normal on iPhone) — records are kept until they sync; see Settings" },
   ];
 }
 

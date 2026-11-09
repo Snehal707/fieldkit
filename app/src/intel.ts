@@ -271,12 +271,10 @@ export interface Caps { mediaRecorder: boolean; tts: boolean; camera: boolean; g
   nativeLocalStt: "available" | "downloadable" | "unavailable" | "unknown" }
 
 export async function capabilities(): Promise<Caps> {
-  let nativeLocalStt: Caps["nativeLocalStt"] = "unknown";
-  const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-  try {
-    if (SR?.available) nativeLocalStt = await SR.available({ langs: ["en-US"], processLocally: true });
-    else nativeLocalStt = "unavailable";
-  } catch { nativeLocalStt = "unavailable"; }
+  // Deliberately NOT probing SpeechRecognition.available({processLocally}) — calling it crashes the Chromium
+  // renderer (reproduced with Playwright Chromium 156: "Target crashed"). FieldKit never uses the browser's
+  // speech recognition anyway; offline transcription runs on its own Whisper pack.
+  const nativeLocalStt: Caps["nativeLocalStt"] = "unknown";
   return {
     mediaRecorder: typeof MediaRecorder !== "undefined", tts: typeof speechSynthesis !== "undefined",
     camera: true /* file input with capture= works on every target browser */, geolocation: "geolocation" in navigator,
