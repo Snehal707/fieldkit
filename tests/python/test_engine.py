@@ -72,7 +72,7 @@ def test_schema_rejects_code_like_fields():
 
 def test_multilingual_text():
     assert engine.text({"en": "Hi", "hi": "नमस्ते"}, "hi") == "नमस्ते"
-    assert engine.text({"en": "Hi"}, "mr") == "Hi"
+    assert engine.text({"en": "Hi"}, "xx") == "Hi"
     assert engine.text("plain", "hi") == "plain"
 
 
@@ -83,3 +83,12 @@ def test_decision_tree_depth_guard():
     wf = {"fields": [{"id": "a", "type": "text", "label": "A"}],
           "classification": {"decision_trees": [{"id": "t", "label": "T", "root": node}]}}
     assert engine.classify(wf, {}) == []
+
+
+def test_model_catalog_has_no_placeholders():
+    """Only installable packs are offered; no 'unavailable' language placeholders (owner decision 2026-11-09)."""
+    catalog = json.loads((ROOT / "fieldkit_core" / "models.json").read_text(encoding="utf-8"))
+    assert "unavailable" not in catalog
+    assert [p["id"] for p in catalog["packs"]] == ["translate-en-hi", "translate-hi-en", "stt-whisper-tiny", "ocr-eng", "ocr-hin"]
+    langs = {lang for p in catalog["packs"] for lang in p["languages"]}
+    assert langs == {"en", "hi"}

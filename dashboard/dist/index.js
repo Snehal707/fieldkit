@@ -2012,7 +2012,6 @@
       );
     }
     function OfflinePacks() {
-      var _a2;
       const [data, err] = useLoad(() => get("models"));
       if (!data) return h(Err, { msg: err }) || h("div", null, "Loading\u2026");
       return h(
@@ -2023,16 +2022,15 @@
           { title: "On-device model packs" },
           h("p", { style: { fontSize: 13, opacity: 0.8 } }, data.description),
           data.packs.map((m) => {
-            var _a3;
+            var _a2;
             return h(
               "div",
               { key: m.id, style: box },
               h("b", null, m.title),
               ` \xB7 ${m.capability} \xB7 ${(m.download_size / 1e6).toFixed(1)} MB \xB7 ${m.license}`,
-              h("div", { style: { fontSize: 12, opacity: 0.75 } }, m.model ? `${m.model}@${(_a3 = m.revision) == null ? void 0 : _a3.slice(0, 10)}` : m.engine, " \xB7 ", m.files.map((f) => f.url.split("/").pop()).join(", "))
+              h("div", { style: { fontSize: 12, opacity: 0.75 } }, m.model ? `${m.model}@${(_a2 = m.revision) == null ? void 0 : _a2.slice(0, 10)}` : m.engine, " \xB7 ", m.files.map((f) => f.url.split("/").pop()).join(", "))
             );
-          }),
-          ((_a2 = data.unavailable) != null ? _a2 : []).map((u, i) => h("div", { key: i, style: { ...box, borderColor: "#d97706" } }, h("b", null, `Unavailable: ${u.capability} ${u.languages.join("\u2194")}`), h("div", null, u.reason)))
+          })
         ),
         h(Section, { title: "Pinned runtimes" }, data.runtimes.map((r) => h("div", { key: r.id }, `${r.id}@${r.version} \xB7 ${r.license} \xB7 ${r.fetched_from}`)))
       );

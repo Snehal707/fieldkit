@@ -116,4 +116,3 @@ the report as `local_findings`.
 - **Background Sync** (Chromium) only wakes an open window. FieldKit never claims uploads from a fully closed app.
 - **Hermes OAuth sessions last 15 minutes with no refresh token.** Expiry pauses the queue and never drops data;
   the user taps Sign in.
-- **Marathi translation** has no verified browser model yet.

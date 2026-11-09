@@ -222,8 +222,7 @@ export const packsView: View = async (main) => {
   })));
   avail.append(h("h3", null, "On-device models (downloaded from pinned upstream sources)"),
     h("p", { class: "muted" }, "Large one-time downloads. Use Wi-Fi. After installation they work with no connection."),
-    h("ul", { class: "clean" }, ...cat.models.packs.map((m: any) => modelRow(m, models.some((x) => x.id === m.id)))),
-    ...(cat.models.unavailable ?? []).map((u: any) => h("div", { class: "banner warn" }, h("strong", null, `Not yet available: ${u.capability} ${u.languages.join("↔")}`), h("div", { class: "muted" }, u.reason))));
+    h("ul", { class: "clean" }, ...cat.models.packs.map((m: any) => modelRow(m, models.some((x) => x.id === m.id)))));
 };
 
 function modelRow(m: any, installed: boolean) {
@@ -258,7 +257,7 @@ export const settingsView: View = async (main) => {
   main.append(h("div", { class: "card" }, h("h2", null, "Settings"),
     h("label", { class: "q" }, "Workflow language"),
     h("select", { onchange: async (e: Event) => { await setSetting("lang", (e.target as HTMLSelectElement).value); toast("Saved"); } },
-      ...[["en", "English"], ["hi", "हिंदी"], ["mr", "मराठी"]].map(([v, n]) => h("option", { value: v, selected: v === l }, n))),
+      ...[["en", "English"], ["hi", "हिंदी"]].map(([v, n]) => h("option", { value: v, selected: v === l }, n))),
     h("dl", { class: "kv", style: "margin-top:.8rem" },
       h("dt", null, "Account"), h("dd", null, me ? `${me.display_name || me.user_id}` : getSyncState().auth_required ? "Session expired" : isOnline() ? "Not signed in" : "Offline"),
       h("dt", null, "Device"), h("dd", null, dev), h("dt", null, "App version"), h("dd", null, APP_VERSION),

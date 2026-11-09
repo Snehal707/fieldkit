@@ -74,7 +74,6 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results.
 | A real model-generated report | ⏳ needs the hosted instance (not yet authorised) |
 | Hermes Mobile conversation calling FieldKit tools | ⏳ needs the hosted instance |
 | Android Chrome / iOS Safari devices | ⏳ needs your phones over HTTPS ([device checklist](docs/TESTING.md#device-checklist)) |
-| Marathi translation | ❌ no verified browser model exists yet ([RESEARCH.md](RESEARCH.md)) |
 
 ## Docs
 [ARCHITECTURE.md](ARCHITECTURE.md) · [RESEARCH.md](RESEARCH.md) · [docs/API.md](docs/API.md) · [docs/INSTALL.md](docs/INSTALL.md) ·

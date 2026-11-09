@@ -24,6 +24,8 @@ test("offline translation (en→hi) and OCR after cold restart with no network",
   if (await reload.isVisible().catch(() => false)) { await reload.click(); await page.waitForLoadState("load"); }
   await page.goto(`${APP}#/packs`);
   console.log("phase: install", new Date().toISOString());
+  await expect(page.locator("li", { hasText: "English → Hindi translation" }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator("text=Not yet available")).toHaveCount(0);   // no placeholder packs
   for (const title of ["English → Hindi translation", "OCR — English"]) {
     const item = page.locator("li", { hasText: title }).filter({ has: page.getByRole("button", { name: /install/i }) });
     if (process.env.FIELDKIT_E2E_SKIP_INSTALL) break;

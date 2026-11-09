@@ -44,8 +44,5 @@
      "engine": "tesseract.js 7.0.0", "lang_code": "hin", "license": "Apache-2.0 (tessdata_fast)", "upstream": "https://github.com/naptha/tessdata",
      "download_size": 1389692,
      "files": [{"url": "https://cdn.jsdelivr.net/npm/@tesseract.js-data/hin@1.0.0/4.0.0_best_int/hin.traineddata.gz"}]}
-  ],
-  "unavailable": [
-    {"capability": "translation", "languages": ["en", "mr"], "reason": "No browser-ready (ONNX) OPUS-MT en↔mr conversion from a trusted publisher was found (only PyTorch/CTranslate2 at Helsinki-NLP/opus-mt-en-mr and -mr-en). The pack system supports it once a conversion is built reproducibly in CI."}
   ]
 }

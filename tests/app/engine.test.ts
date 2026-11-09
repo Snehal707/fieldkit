@@ -36,5 +36,5 @@ describe("workflow vectors (shared with Python)", () => {
 
 it("multilingual labels fall back", () => {
   expect(text({ en: "Hi", hi: "नमस्ते" }, "hi")).toBe("नमस्ते");
-  expect(text({ en: "Hi" }, "mr")).toBe("Hi");
+  expect(text({ en: "Hi" }, "xx")).toBe("Hi");
 });

@@ -157,7 +157,7 @@ export async function transcribe(blob: Blob, lang: string): Promise<{ text: stri
   if (!m) throw new Error("No offline speech-to-text pack installed");
   const pipe = await pipelineFor(m.manifest);
   const audio = await decodeTo16k(blob);
-  const language = { en: "english", hi: "hindi", mr: "marathi" }[lang] ?? "english";
+  const language = { en: "english", hi: "hindi" }[lang] ?? "english";
   const out = await pipe(audio, { language, task: "transcribe", chunk_length_s: 30, stride_length_s: 5 });
   return { text: (Array.isArray(out) ? out[0].text : out.text).trim(), engine: `${m.manifest.model} (on device)` };
 }

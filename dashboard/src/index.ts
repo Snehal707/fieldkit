@@ -223,8 +223,7 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
       h(Section, { title: "On-device model packs" },
         h("p", { style: { fontSize: 13, opacity: .8 } }, data.description),
         data.packs.map((m: any) => h("div", { key: m.id, style: box }, h("b", null, m.title), ` · ${m.capability} · ${(m.download_size / 1e6).toFixed(1)} MB · ${m.license}`,
-          h("div", { style: { fontSize: 12, opacity: .75 } }, m.model ? `${m.model}@${m.revision?.slice(0, 10)}` : m.engine, " · ", m.files.map((f: any) => f.url.split("/").pop()).join(", ")))),
-        (data.unavailable ?? []).map((u: any, i: number) => h("div", { key: i, style: { ...box, borderColor: "#d97706" } }, h("b", null, `Unavailable: ${u.capability} ${u.languages.join("↔")}`), h("div", null, u.reason)))),
+          h("div", { style: { fontSize: 12, opacity: .75 } }, m.model ? `${m.model}@${m.revision?.slice(0, 10)}` : m.engine, " · ", m.files.map((f: any) => f.url.split("/").pop()).join(", "))))),
       h(Section, { title: "Pinned runtimes" }, data.runtimes.map((r: any) => h("div", { key: r.id }, `${r.id}@${r.version} · ${r.license} · ${r.fetched_from}`))));
   }
 
