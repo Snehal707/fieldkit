@@ -10,7 +10,7 @@ FieldKit is one Hermes plugin with three parts:
 |---|---|
 | **Native plugin** | 23 Hermes tools plus a bundled skill. It creates, validates and publishes workflows; turns documents into knowledge packs; builds dictionaries; retrieves, analyses, compares and reports on synchronised records; and manages follow-ups, sync status and conflicts. |
 | **Dashboard tab** | A *FieldKit* tab in the Hermes dashboard: workflows, knowledge, records (with photos and audio), reports and follow-ups, synchronisation, offline packs, and a phone QR code. |
-| **Offline PWA** | An installable mobile app served by the plugin at `/api/plugins/fieldkit/app/`. It handles workflows with branching, validation, photos, GPS, audio and signatures; local findings; an offline assistant over knowledge packs; dictionaries; sentence translation; OCR; speech-to-text; read-aloud; a durable sync queue; downloaded Hermes reports; connection diagnostics. |
+| **Offline PWA** | An installable mobile app served by the plugin at `/dashboard-plugins/fieldkit/app_dist/index.html`. It handles workflows with branching, validation, photos, GPS, audio and signatures; local findings; an offline assistant over knowledge packs; dictionaries; sentence translation; OCR; speech-to-text; read-aloud; a durable sync queue; downloaded Hermes reports; connection diagnostics. |
 
 It is **domain-independent**. Workflows, knowledge, dictionaries and classification rules are data, so a new
 domain needs no code changes. The demo ships three unrelated domains with equal weight:
@@ -37,7 +37,7 @@ the first time the dashboard tab or the app is opened over https. Open the link 
 Full instructions are in [docs/INSTALL.md](docs/INSTALL.md).
 
 ## What works offline (on the phone)
-- Opening the app from the home screen after the browser is fully closed. A service worker caches the shell, and a 401 from an expired session still opens the cached app.
+- Opening the app from the home screen after the browser is fully closed. A service worker caches the shell. The app is launched from Hermes' public plugin-asset address, so even with an expired Hermes session (or no service worker) it opens normally and offers **Sign in**, returning to FieldKit afterwards; on-device data never needs a login.
 - Running workflows with:
   - every input type: text, number, date, time, yes/no, single and multiple choice, photos (compressed), GPS (with manual fallback), audio notes, signatures and instructions;
   - conditional questions, required-if rules, constraints and drafts that save as you type.
@@ -95,7 +95,7 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 | Tests | 98 Python tests, 77 TypeScript tests, 10 Playwright E2E suites; every one of the 23 Hermes tools has a test |
 | Simulated Hermes Mobile conversation | Covered by a test: create, publish, app link, sync, process jobs, get record and report, compare and save report, follow-up, sync status, conflict resolution (simulated, not a real device conversation) |
 | Security | `hermes plugins validate` security scan: safe. `npm audit`: 0 vulnerabilities. `pip-audit`: 0 known vulnerabilities |
-| Access control | Every API route checks the signed-in user; static app files stay behind Hermes' login. v0.1.7 fixed a cross-user leak where `GET /jobs` listed other users' jobs |
+| Access control | Every API route checks the signed-in user; the app page is public and contains no data. v0.1.7 fixed a cross-user leak where `GET /jobs` listed other users' jobs |
 
 ### Pending
 

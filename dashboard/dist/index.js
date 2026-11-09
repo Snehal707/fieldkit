@@ -1654,7 +1654,8 @@
     });
     const del = (p) => SDK.fetchJSON(`${API}/${p}`, { method: "DELETE" });
     const ts = (v) => v ? new Date(typeof v === "number" ? v * 1e3 : v).toLocaleString() : "\u2014";
-    const appUrl = () => `${window.location.origin}${API}/app/`;
+    const APP_PATH = "/dashboard-plugins/fieldkit/app_dist/index.html";
+    const appUrl = () => `${window.location.origin}${APP_PATH}`;
     const box = { border: "1px solid var(--border, #e5e7eb)", borderRadius: 10, padding: 12, marginBottom: 12 };
     const pre = { whiteSpace: "pre-wrap", fontSize: 12, maxHeight: 360, overflow: "auto", background: "rgba(127,127,127,.08)", padding: 8, borderRadius: 6 };
     const row = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" };
@@ -1774,7 +1775,7 @@
             h("div", { style: { flex: 1 } }, h("b", null, w.title), ` \xB7 ${w.domain || "general"} \xB7 latest v${w.latest_version} \xB7 published ${w.published_version ? `v${w.published_version}` : "no"}`),
             h(Button, { onClick: () => open(w.id) }, "View"),
             w.published_version !== w.latest_version && h(Button, { onClick: () => post(`workflows/${w.id}/publish`, {}).then(reload) }, "Publish latest"),
-            h("a", { href: `${API}/app/#/workflow/${encodeURIComponent(w.id)}`, target: "_blank", rel: "noopener" }, "Open in app")
+            h("a", { href: `${APP_PATH}#/workflow/${encodeURIComponent(w.id)}`, target: "_blank", rel: "noopener" }, "Open in app")
           ))
         ),
         sel && h(

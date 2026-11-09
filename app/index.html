@@ -8,8 +8,11 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="FieldKit">
   <title>FieldKit</title>
-  <!-- use-credentials: the manifest route sits behind the Hermes auth cookie -->
-  <link rel="manifest" href="./manifest.webmanifest" crossorigin="use-credentials">
+  <!-- manifest.json: Hermes' public plugin-asset route serves .json; use-credentials also covers the legacy
+       authenticated address -->
+  <link rel="manifest" href="./manifest.json" crossorigin="use-credentials">
+  <!-- The public asset route sends no CSP header, so the policy travels with the page. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net; worker-src 'self' blob:; connect-src 'self' https://huggingface.co https://*.hf.co https://cdn-lfs.hf.co https://cdn.jsdelivr.net https://tessdata.projectnaptha.com blob: data:; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'">
   <link rel="icon" href="./icons/icon-192.png">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
 </head>

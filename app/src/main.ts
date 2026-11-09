@@ -1,5 +1,6 @@
 import "./style.css";
-import { takeReturn } from "./config";
+import { PUBLIC_APP_URL, RUNNING_FROM_LEGACY_PATH, takeReturn } from "./config";
+import { isStandalone } from "./storage";
 import { refreshPending, onSyncState, restoreAuthFlag, startAutoSync, registerBackgroundSync, clearAuthRequired, getSyncState } from "./sync";
 import { clear, h, isOnline, toast } from "./util";
 import {
@@ -137,6 +138,24 @@ async function registerSw() {
     });
   } catch (e) {
     console.warn("Service worker registration failed", e);
+  }
+}
+
+// Moved from the legacy /api/plugins/fieldkit/app/ address (behind Hermes' auth gate) to the public address.
+// Same origin → same IndexedDB, so nothing is lost. A browser tab simply moves (when online, so the new
+// address can be fetched); an installed Home Screen app is asked once to re-add itself, because its icon
+// keeps launching the old address.
+if (RUNNING_FROM_LEGACY_PATH) {
+  if (!isStandalone() && isOnline()) {
+    location.replace(PUBLIC_APP_URL.toString() + (location.hash || "#/"));
+  } else if (isStandalone()) {
+    queueMicrotask(() => {
+      const note = h("div", { class: "update-bar", role: "status", "data-legacy-install": "true" },
+        h("span", { class: "update-text" }, "Please re-add FieldKit to your Home Screen"),
+        h("a", { class: "btn primary", href: "#/settings" }, "How"),
+        h("button", { class: "update-close", "aria-label": "Dismiss", onclick: () => note.remove() }, "✕"));
+      updateSlot.prepend(note);
+    });
   }
 }
 

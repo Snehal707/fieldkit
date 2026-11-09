@@ -20,7 +20,10 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
   });
   const del = (p: string): Promise<any> => SDK.fetchJSON(`${API}/${p}`, { method: "DELETE" });
   const ts = (v: any) => (v ? new Date(typeof v === "number" ? v * 1000 : v).toLocaleString() : "—");
-  const appUrl = () => `${window.location.origin}${API}/app/`;
+  // Public plugin-asset address: outside the /api auth gate, so launches with an expired session open the app
+  // (which offers sign-in) instead of a raw 401 JSON page.
+  const APP_PATH = "/dashboard-plugins/fieldkit/app_dist/index.html";
+  const appUrl = () => `${window.location.origin}${APP_PATH}`;
   const box = { border: "1px solid var(--border, #e5e7eb)", borderRadius: 10, padding: 12, marginBottom: 12 };
   const pre = { whiteSpace: "pre-wrap", fontSize: 12, maxHeight: 360, overflow: "auto", background: "rgba(127,127,127,.08)", padding: 8, borderRadius: 6 };
   const row = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" };
@@ -84,7 +87,7 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
           h("div", { style: { flex: 1 } }, h("b", null, w.title), ` · ${w.domain || "general"} · latest v${w.latest_version} · published ${w.published_version ? `v${w.published_version}` : "no"}`),
           h(Button, { onClick: () => open(w.id) }, "View"),
           w.published_version !== w.latest_version && h(Button, { onClick: () => post(`workflows/${w.id}/publish`, {}).then(reload) }, "Publish latest"),
-          h("a", { href: `${API}/app/#/workflow/${encodeURIComponent(w.id)}`, target: "_blank", rel: "noopener" }, "Open in app")))),
+          h("a", { href: `${APP_PATH}#/workflow/${encodeURIComponent(w.id)}`, target: "_blank", rel: "noopener" }, "Open in app")))),
       sel && h(Section, { title: `Definition: ${sel.id} v${sel.version} (${sel.status})`, actions: h(Button, { onClick: () => setSel(null) }, "Close") },
         h("pre", { style: pre }, JSON.stringify(sel, null, 2))),
       h(Section, { title: "Import / edit workflow JSON" },

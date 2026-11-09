@@ -74,7 +74,7 @@ def test_workflow_lifecycle_via_tools(ctx):
     r = call(ctx, "fieldkit_create_workflow", definition=wf, workflow_id="pump-check")
     assert r["ok"] and r["published"] is False and r["workflow"]["branching_fields"] >= 3
     r = call(ctx, "fieldkit_publish_workflow", workflow_id="pump-check")
-    assert r["app_link"]["url"] == "https://hermes.example.org/api/plugins/fieldkit/app/#/workflow/pump-check"
+    assert r["app_link"]["url"] == "https://hermes.example.org/dashboard-plugins/fieldkit/app_dist/index.html#/workflow/pump-check"
     assert [w["id"] for w in call(ctx, "fieldkit_list_workflows")["workflows"]] == ["pump-check"]
     bad = call(ctx, "fieldkit_create_workflow", definition={"id": "x", "title": "X", "fields": [{"id": "a", "type": "eval", "label": "A"}]})
     assert bad["ok"] is False and bad["problems"]

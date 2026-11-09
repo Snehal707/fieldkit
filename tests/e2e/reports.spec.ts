@@ -11,7 +11,7 @@ const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
 const PASS = process.env.FIELDKIT_E2E_PASS ?? "";
 const DATA_DIR = process.env.FIELDKIT_E2E_DATA_DIR ?? "";  // <HERMES_HOME>/plugin-data/fieldkit of the test instance
-const APP = `${BASE}/api/plugins/fieldkit/app/`;
+const APP = `${BASE}/dashboard-plugins/fieldkit/app_dist/index.html`;
 const PY = resolve(import.meta.dirname, "../../.venv/Scripts/python.exe");
 
 test("a downloaded Hermes report stays readable offline after a cold restart", async () => {

@@ -9,7 +9,7 @@ One Hermes plugin repository, three integrated components, one database.
                                           ▼                    ▼
                               Hermes dashboard ── /api/plugins/fieldkit/ (FastAPI router, auth-gated)
                                  │  FieldKit tab                │
-                                 │  (dashboard/dist IIFE)       ├── /app/  → FieldKit PWA (static, SW-scoped)
+                                 │  (dashboard/dist IIFE)       ├── /dashboard-plugins/fieldkit/app_dist/  → FieldKit PWA (public static, SW-scoped)
                                  │                              └── SQLite: <HERMES_HOME>/plugin-data/fieldkit/data.db
                                  ▼
                      Phone: FieldKit PWA (installed) ── IndexedDB + Cache API ── on-device models
@@ -41,11 +41,11 @@ and FieldKit tools, the PWA through the authenticated plugin API.
   `dist/index.js`, which uses `SDK.React`, `SDK.components` and `SDK.fetchJSON`.
 - Sections: Overview, Workflows, Knowledge, Records (with media), Reports and follow-ups,
   Synchronization (devices, conflicts, jobs), Offline Packs, and Mobile Access (link and QR code).
-- `plugin_api.py` is the REST API (see `docs/API.md`) and serves the PWA files under `/app/`.
+- `plugin_api.py` is the REST API (see `docs/API.md`) and serves the legacy authenticated PWA route under `/app/`.
 
 ### C. Offline PWA (`app/` → `dashboard/app_dist/`)
-- Vite build with relative URLs and hash routing, so the document path is always `…/fieldkit/app/`.
-- `public/sw.js`, the service worker, is scoped to `/api/plugins/fieldkit/app/`.
+- Vite build with relative URLs and hash routing, so the document path is always `…/fieldkit/app_dist/index.html`.
+- `public/sw.js`, the service worker, is scoped to `/dashboard-plugins/fieldkit/app_dist/`. The app is served from Hermes' public plugin-asset path, outside the `/api` login gate, so a launch with an expired session opens the cached app and offers Sign in instead of Hermes' raw 401 JSON.
   - It precaches the shell (`precache.json` is generated after the build).
   - Navigations are network-first with a 3.5 s timeout. A 401, a redirect or being offline returns the cached shell.
   - API traffic is never cached.
@@ -99,7 +99,7 @@ the report as `local_findings`.
 
 ## Security
 
-- Every route sits behind the Hermes auth gate. Records, attachments, reports, follow-ups and conflicts are
+- Every API route sits behind the Hermes auth gate. The PWA shell is public and contains no data. Records, attachments, reports, follow-ups and conflicts are
   filtered by `owner_user_id`. Another user's record id returns 404, never 403, so existence doesn't leak.
 - Published workflows and packs are shared across the instance. Only the owner (or the instance owner via
   Hermes tools) can modify them.

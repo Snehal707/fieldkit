@@ -1,10 +1,10 @@
 {
- "version": "18cede78a0a42a7c",
+ "version": "55dc2807e41de0f9",
  "files": [
-  "assets/config-B5jXpUxX.js",
+  "assets/config-CghDbpBo.js",
   "assets/esm-RsSwHY-K.js",
+  "assets/index-B4VuiPxT.js",
   "assets/index-CKOQUlIs.css",
-  "assets/index-CYxbnWWo.js",
   "assets/netlog-BLSxBJYa.js",
   "assets/rolldown-runtime-BHgR8jDT.js",
   "assets/src-CdItlmEZ.js",
@@ -13,8 +13,7 @@
   "icons/icon-512.png",
   "icons/icon-maskable-512.png",
   "index.html",
-  "manifest.webmanifest",
-  "vendor/tesseract/LICENSE.md",
+  "manifest.json",
   "vendor/tesseract/worker.min.js"
  ]
 }

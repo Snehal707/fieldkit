@@ -319,7 +319,7 @@ def test_app_link_detected_from_authenticated_traffic(env, monkeypatch):
     env.client.get(f"/hermes{PREFIX}/status".replace("/hermes", ""), headers={**H(), "X-Forwarded-Proto": "https",
                    "X-Forwarded-Host": "hermes.example.org"})
     link = tools.app_link("equipment-inspection")
-    assert link["url"] == "https://hermes.example.org/api/plugins/fieldkit/app/#/workflow/equipment-inspection"
+    assert link["url"] == "https://hermes.example.org/dashboard-plugins/fieldkit/app_dist/index.html#/workflow/equipment-inspection"
     assert link["source"] == "detected from dashboard/app traffic"
     # a later plain-http request never downgrades a recorded https origin; loopback is ignored
     env.client.get(f"{PREFIX}/status", headers={**H(), "Host": "10.0.0.5:9119"})
@@ -327,7 +327,7 @@ def test_app_link_detected_from_authenticated_traffic(env, monkeypatch):
     assert rt.observed_url() == "https://hermes.example.org"
     # explicit setting wins
     monkeypatch.setenv("FIELDKIT_PUBLIC_URL", "https://fk.example.com/")
-    assert tools.app_link()["url"] == "https://fk.example.com/api/plugins/fieldkit/app/"
+    assert tools.app_link()["url"] == "https://fk.example.com/dashboard-plugins/fieldkit/app_dist/index.html"
     assert tools.app_link()["source"] == "public_url setting"
 
 

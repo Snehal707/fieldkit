@@ -69,8 +69,10 @@ The same `idempotency_key` returns the stored response with `duplicate: true`. I
 | POST | `examples/install` | Synthetic demo workflows and packs. Idempotent |
 
 ## PWA
-`GET app/{path}` serves `dashboard/app_dist`:
-- `index.html`, `sw.js` and `manifest.webmanifest` are sent with `no-cache`; hashed assets are immutable.
+The app is served publicly at `/dashboard-plugins/fieldkit/app_dist/index.html`, outside Hermes' `/api` login gate. The page contains no data; every data call below still requires sign-in.
+
+`GET /api/plugins/fieldkit/app/{path}` remains as the legacy authenticated address. It serves `dashboard/app_dist`:
+- `index.html`, `sw.js` and `manifest.json` are sent with `no-cache`; hashed assets are immutable.
 - Unknown extension-less paths fall back to `index.html`.
 - Path traversal returns 404.
 

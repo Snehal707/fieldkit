@@ -12,7 +12,7 @@ const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
 const USER = process.env.FIELDKIT_E2E_USER ?? "demo";
 const PASS = process.env.FIELDKIT_E2E_PASS ?? "";
-const APP = `${BASE}/api/plugins/fieldkit/app/`;
+const APP = `${BASE}/dashboard-plugins/fieldkit/app_dist/index.html`;
 const API = `${BASE}/api/plugins/fieldkit`;
 const profile = mkdtempSync(join(tmpdir(), "fieldkit-e2e-"));
 

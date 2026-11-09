@@ -1,6 +1,6 @@
 // Offline Assistant, Knowledge, Dictionary, Translate, OCR, Offline Packs and Settings.
 import { AuthRequired } from "./api";
-import { APP_VERSION, signIn } from "./config";
+import { APP_VERSION, PUBLIC_APP_URL, RUNNING_FROM_LEGACY_PATH, signIn } from "./config";
 import { db, deleteRecord, deviceId, getSetting, setSetting } from "./db";
 import { text } from "./engine";
 import {
@@ -298,6 +298,15 @@ export const settingsView: View = async (main) => {
     } }, "Ask the browser to protect storage") : null));
 
   // ---- Home Screen app: real benefits, no permanent-storage promise
+  if (RUNNING_FROM_LEGACY_PATH && ss.standalone) {
+    const link = PUBLIC_APP_URL.toString();
+    main.append(h("div", { class: "card", id: "readd-card" }, h("h2", null, "Re-add FieldKit to your Home Screen"),
+      h("p", null, "This icon opens FieldKit's old address, which shows an error page instead of the app when your Hermes session has expired. Your records are safe and will appear in the new icon too."),
+      h("ol", null, h("li", null, "Copy the link below and open it in Safari."), h("li", null, "Tap Share → Add to Home Screen."),
+        h("li", null, "Open the new icon and sign in once, then remove the old icon.")),
+      h("pre", { class: "wrap" }, link),
+      h("button", { class: "primary", onclick: async () => { try { await navigator.clipboard.writeText(link); toast("Link copied", "ok"); } catch { toast("Select the link above and copy it", "info"); } } }, "Copy link")));
+  }
   main.append(h("div", { class: "card", id: "install-card" }, h("h2", null, "Use FieldKit as an app"),
     ss.standalone
       ? h("p", null, "✔ You're using FieldKit from the Home Screen.")

@@ -69,7 +69,7 @@ def test_demo_conversation(hermes, monkeypatch):
                   languages=["en", "hi"], workflow_id="pump-inspection")
     assert created["workflow"]["fields"] > 5 and created["published"] is False
     published = say(hermes, "fieldkit_publish_workflow", workflow_id="pump-inspection")
-    assert published["app_link"]["url"] == "https://hermes.example.org/api/plugins/fieldkit/app/#/workflow/pump-inspection"
+    assert published["app_link"]["url"] == "https://hermes.example.org/dashboard-plugins/fieldkit/app_dist/index.html#/workflow/pump-inspection"
     assert say(hermes, "fieldkit_get_app_link", workflow_id="pump-inspection")["absolute"] is True
     # "Make a knowledge pack from this guide."
     pack = say(hermes, "fieldkit_create_knowledge_pack", pack_id="pump-guide", title="Pump guide", use_llm=False,

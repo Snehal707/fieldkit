@@ -9,7 +9,7 @@ import { signIn } from "./auth";
 // FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
-const APP = `${BASE}/api/plugins/fieldkit/app/`;
+const APP = `${BASE}/dashboard-plugins/fieldkit/app_dist/index.html`;
 const profile = process.env.FIELDKIT_E2E_PROFILE ?? mkdtempSync(join(tmpdir(), "fieldkit-models-"));
 
 test("offline translation (en→hi) and OCR after cold restart with no network", async () => {

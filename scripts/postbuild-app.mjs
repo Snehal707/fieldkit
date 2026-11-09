@@ -62,7 +62,18 @@ for (const f of files.filter((x) => x.endsWith(".js"))) {
 }
 
 // 4. precache manifest + version stamp
-const rels = files.map((f) => relative(out, f).split("\\").join("/")).filter((r) => r !== "sw.js" && r !== "precache.json" && !r.endsWith(".map")).sort();
+// The app is launched from Hermes' public plugin-asset route, which serves only these types
+// (hermes_cli/web_routers/dashboard_ui.py _PLUGIN_ASSET_CONTENT_TYPES). Precache only what it can serve —
+// one 404 would fail the service worker install. Licence texts (.md) ship in the repo but aren't needed offline.
+const SERVABLE = new Set([".js", ".mjs", ".css", ".json", ".html", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff2", ".woff", ".ttf", ".otf"]);
+const ext = (r) => r.slice(r.lastIndexOf(".")).toLowerCase();
+const rels = files.map((f) => relative(out, f).split("\\").join("/"))
+  .filter((r) => r !== "sw.js" && r !== "precache.json" && !r.endsWith(".map") && !r.endsWith(".md")).sort();
+const unservable = rels.filter((r) => !SERVABLE.has(ext(r)));
+if (unservable.length) {
+  console.error("These app files cannot be served by Hermes' public plugin-asset route: " + unservable.join(", "));
+  process.exit(1);
+}
 const h = createHash("sha256");
 for (const r of rels) h.update(r).update(readFileSync(join(out, r)));
 const version = h.digest("hex").slice(0, 16);

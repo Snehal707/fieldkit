@@ -9,7 +9,7 @@ import { signIn } from "./auth";
 
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
 const PASS = process.env.FIELDKIT_E2E_PASS ?? "";
-const APP = `${BASE}/api/plugins/fieldkit/app/`;
+const APP = `${BASE}/dashboard-plugins/fieldkit/app_dist/index.html`;
 const profile = process.env.FIELDKIT_E2E_VOICE_PROFILE ?? mkdtempSync(join(tmpdir(), "fieldkit-voice-"));
 const opts = { viewport: { width: 390, height: 844 }, permissions: ["microphone"],
   args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"] };

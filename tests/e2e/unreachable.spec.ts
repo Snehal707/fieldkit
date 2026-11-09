@@ -10,7 +10,7 @@ import { signIn } from "./auth";
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
 const PASS = process.env.FIELDKIT_E2E_PASS ?? "";
-const APP = `${BASE}/api/plugins/fieldkit/app/`;
+const APP = `${BASE}/dashboard-plugins/fieldkit/app_dist/index.html`;
 const API = `${BASE}/api/plugins/fieldkit`;
 const isApi = (u: URL) => u.pathname.startsWith("/api/plugins/fieldkit/") && !u.pathname.startsWith("/api/plugins/fieldkit/app/");
 

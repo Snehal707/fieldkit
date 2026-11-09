@@ -39,14 +39,16 @@ plugins:
 
 ## 4. Phones
 1. The phone must reach the dashboard over **HTTPS**, because service workers need a secure context.
-2. Open the dashboard → **FieldKit** tab → **Mobile Access**. Scan the QR code, or open `https://<host>/api/plugins/fieldkit/app/`.
-3. Sign in to Hermes.
+2. Open the dashboard → **FieldKit** tab → **Mobile Access**. Scan the QR code, or open `https://<host>/dashboard-plugins/fieldkit/app_dist/index.html`.
+3. Sign in to Hermes. If your session has expired later, the app still opens and offers **Sign in**.
 4. In **Offline Packs**, download workflows, then optional models (translation about 110 MB per direction, speech about 41 MB, OCR 1–3 MB per language).
 5. Install the app:
    - Android Chrome: menu → **Install app**.
    - iPhone Safari: Share → **Add to Home Screen**.
    - On iOS the installed app has its own storage, separate from Safari. Open it and sign in once from inside it.
 6. Check that **Home → Offline readiness** shows ✔ for the first three checks.
+
+**Installed from the old address?** If you added FieldKit to your Home Screen from `/api/plugins/fieldkit/app/`, the app asks you to re-add it. Open the new address in Safari → Share → **Add to Home Screen**, sign in once inside the new icon, then remove the old icon. Records are not lost.
 
 **Storage on iPhone.** Browsers keep FieldKit's records on the device, but by default they may clear data of sites unused for a long time or when the device is almost full ([WebKit storage policy](https://webkit.org/?p=14403)). FieldKit asks for protection; Safari decides by itself and often says no, even for Home Screen apps. That is normal. **Settings → Storage on this device** shows *Protected*, *Standard storage (not protected)* or *Standard storage* (no protection API). Records stay on the phone until Hermes confirms them, so open FieldKit and sync regularly, and use **Export** for an extra backup.
 

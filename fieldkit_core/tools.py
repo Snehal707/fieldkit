@@ -45,7 +45,9 @@ def _guard(fn: Callable[[dict], str]) -> Callable[..., str]:
 
 
 def app_link(workflow_id: str | None = None) -> dict:
-    path = "/api/plugins/fieldkit/app/" + (f"#/workflow/{workflow_id}" if workflow_id else "")
+    # Public plugin-asset address: outside Hermes' /api auth gate, so an expired session opens the app
+    # (which offers sign-in) instead of a raw 401 JSON page.
+    path = "/dashboard-plugins/fieldkit/app_dist/index.html" + (f"#/workflow/{workflow_id}" if workflow_id else "")
     base = runtime.public_url()
     explicit = bool(str(runtime.setting("public_url", "") or "").strip())
     return {"url": f"{base}{path}" if base else path, "path": path, "absolute": bool(base),

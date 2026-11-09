@@ -8,7 +8,7 @@ const SHELL = `fieldkit-shell-${VERSION}`;
 const UPSTREAM = "fieldkit-upstream-v1";
 const UPSTREAM_HOSTS = new Set(["cdn.jsdelivr.net"]);
 const SCOPE = new URL(self.registration.scope);
-const INDEX = new URL("./", SCOPE).toString();
+const INDEX = new URL("index.html", SCOPE).toString();
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
