@@ -62,6 +62,7 @@ network_disclosure: "PWA downloads pinned on-device model files from huggingface
 - [ ] Run `hermes plugins validate .` and `hermes plugins doctor . --ci` on the final commit. Both pass on v0.2.4 (security scan safe; doctor: 23 tools, 1 hook). Re-run on the exact commit you submit.
 - [ ] Run `npm run build` and commit `dashboard/dist` and `dashboard/app_dist`.
 - [x] Real iPhone + hosted Hermes + Hermes mobile app: everything checked and working (owner, 0.2.4).
-- [ ] Optional: hosted dashboard tab click-through in a desktop browser; Android Chrome; scheduled analysis (cron).
+- [x] Hosted dashboard tab: all sections working (owner, 0.2.4).
+- [ ] Optional: Android Chrome; scheduled analysis (cron).
 - [ ] Record the demo video (3–4 minutes).
 - [ ] Open the catalog PR only with the owner's go-ahead.

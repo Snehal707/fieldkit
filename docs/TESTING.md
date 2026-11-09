@@ -312,7 +312,6 @@ offline reports and Saved Records across Safari and the Home Screen app.
 
 **Still open:**
 - Android Chrome.
-- The hosted dashboard tab clicked through in a desktop browser (verified on the local Hermes only).
 - Scheduled analysis through a Hermes cron job.
 - Measured error rates on real people's speech and real photos: the numbers above use synthetic voices and photos. Dim, shaky photos are still poor, and handwriting is not supported.
 

@@ -103,6 +103,7 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 | Photos, voice notes, signatures, Results and Evidence on iPhone (0.2.4, owner-reported, 2026-11-09) | The broken photo thumbnail and audio playback error are gone; signatures and voice notes reach Hermes and the reports |
 | Offline reports on iPhone (owner-reported, 2026-11-09) | Working |
 | Saved Records across Safari and the Home Screen app (owner-reported, 2026-11-09) | Working |
+| FieldKit dashboard tab on the hosted Hermes (owner-reported, 2026-11-09) | All 8 sections visible; analysis automatic with the LLM available; 7 records complete, 7 jobs completed, 0 conflicts; reports cite the photo and the inspector's voice note |
 
 ### Verified in Chromium + WebKit (WebKit is Safari's engine, not iOS itself; real Hermes v0.23.0)
 
@@ -132,7 +133,6 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 
 | Area | Status |
 |---|---|
-| Hosted dashboard tab click-through (desktop browser) | Pending (the dashboard tab is verified on the local Hermes) |
 | Android Chrome | Pending |
 | Scheduled analysis via a Hermes cron job | Pending |
 | `hermes plugins doctor . --ci` | Pass (v0.2.4: 23 tools, 1 hook) |
