@@ -1,11 +1,13 @@
 // End-to-end: real Hermes dashboard + real Chromium. Proves the PWA reopens with the network fully
 // disabled after the browser process is closed (not just an open tab), persists records/results,
 // recovers from an expired session without losing data, and synchronises without duplicates.
-import { chromium, expect, test, type BrowserContext } from "@playwright/test";
+import { chromium, webkit, expect, test, type BrowserContext } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
+const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
 const USER = process.env.FIELDKIT_E2E_USER ?? "demo";
 const PASS = process.env.FIELDKIT_E2E_PASS ?? "";
@@ -14,7 +16,7 @@ const API = `${BASE}/api/plugins/fieldkit`;
 const profile = mkdtempSync(join(tmpdir(), "fieldkit-e2e-"));
 
 async function launch(offline: boolean): Promise<BrowserContext> {
-  return chromium.launchPersistentContext(profile, { offline, viewport: { width: 390, height: 844 }, permissions: ["geolocation"],
+  return engine.launchPersistentContext(profile, { offline, viewport: { width: 390, height: 844 }, permissions: ["geolocation"],
     geolocation: { latitude: 18.5204, longitude: 73.8567, accuracy: 15 } });
 }
 

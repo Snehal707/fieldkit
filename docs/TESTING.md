@@ -124,6 +124,30 @@ Bugs found by these runs and fixed:
 - Vite emitted ONNX Runtime's 26 MB WASM file; the external-WASM build is now used and the binary guard enforces it.
 - The OCR core, loaded by `importScripts` in tesseract's worker, bypassed the service worker, so offline OCR silently depended on the browser's evictable HTTP cache. FieldKit now caches the pinned core itself and passes a `blob:` URL. The service worker also stores opaque responses for pinned URLs.
 
+## Feature audit (2026-11-09, v0.1.5)
+
+Real Hermes v0.23.0 (throwaway instance) + Playwright on **Chromium** and **WebKit** (Safari's engine, not iOS itself).
+
+| Feature | Chromium | WebKit | Real iPhone |
+|---|---|---|---|
+| Offline workflow, saved & queued, restart, auto-sync on reconnect (`strict-offline` A) | ✅ | ✅ | ✅ (rec_6b0da392e6284a70ae1bd33b, received 41 s after completion) |
+| Network "up" but nothing reachable (`strict-offline` B) | ✅ | n/a (Playwright cannot block SW traffic in WebKit) | ✅ (user test) |
+| Offline OCR (eng), pinned core from FieldKit cache (`models`) | ✅ | ✅ | ⏳ |
+| Offline translation en→hi, SHA-256 verified weights (`models`) | ✅ | ✅ | ⏳ |
+| Voice note record → save → offline Whisper transcription (`voice`) | ✅ (fake mic; accuracy not asserted) | n/a (no fake mic) | ⏳ |
+| Downloaded Hermes report readable offline after cold restart (`reports`) | ✅ | ✅ | ⏳ |
+| Dashboard tab in the real Hermes SPA, all 7 sections + definition view (`dashboard`) | ✅ | ✅ | ⏳ (hosted) |
+| Real AI report (text-only fallback, GLM 5.3) | — | — | ✅ (hosted) |
+| Hermes Mobile calling FieldKit tools | — | — | ⏳ |
+| hi→en translation, Hindi OCR | ⏳ (same code path, not run) | ⏳ | ⏳ |
+
+Run the extra suites:
+```bash
+FIELDKIT_E2E_PASS=<pw> FIELDKIT_E2E_DATA_DIR=<HERMES_HOME>/plugin-data/fieldkit npm run test:e2e -- reports.spec.ts dashboard.spec.ts
+FIELDKIT_E2E_MODELS=1 FIELDKIT_E2E_PASS=<pw> npm run test:e2e -- voice.spec.ts models.spec.ts
+FIELDKIT_E2E_BROWSER=webkit FIELDKIT_E2E_PASS=<pw> npm run test:e2e        # same suites on Safari's engine
+```
+
 ## 5. Not yet verified (needs your hardware or permission)
 - A real model-generated report (needs a provider; it would run on the hosted instance).
 - Hermes Mobile conversations invoking FieldKit tools against the hosted instance.

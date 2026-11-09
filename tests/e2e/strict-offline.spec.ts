@@ -4,11 +4,13 @@
 //      phone believes it has a network that cannot reach anything.
 // Every request (page + service worker) is recorded. The server is checked by a SEPARATE client that stays
 // online, so "the server has no record" is proven, not inferred. Reconnection must sync with no user action.
-import { chromium, expect, request, test, type BrowserContext, type Page } from "@playwright/test";
+import { chromium, webkit, expect, request, test, type BrowserContext, type Page } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
+const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
 const PASS = process.env.FIELDKIT_E2E_PASS ?? "";
 const APP = `${BASE}/api/plugins/fieldkit/app/`;
@@ -30,7 +32,7 @@ function recordTraffic(ctx: BrowserContext) {
 }
 
 async function setup(profile: string) {
-  const ctx = await chromium.launchPersistentContext(profile, { viewport: { width: 390, height: 844 } });
+  const ctx = await engine.launchPersistentContext(profile, { viewport: { width: 390, height: 844 } });
   await ctx.request.post(`${BASE}/auth/password-login`, { data: { provider: "basic", username: "demo", password: PASS, next: "/" } });
   await ctx.request.post(`${API}/examples/install`);
   const page = await ctx.newPage();
@@ -74,7 +76,7 @@ test("A: browser offline (page + service worker) → stays pending, survives res
   await setup(profile);
   const server = await serverClient();
 
-  let ctx = await chromium.launchPersistentContext(profile, { offline: true, viewport: { width: 390, height: 844 } });
+  let ctx = await engine.launchPersistentContext(profile, { offline: true, viewport: { width: 390, height: 844 } });
   let net = recordTraffic(ctx);
   let page = await ctx.newPage();
   await page.goto(APP);
@@ -117,7 +119,7 @@ test("A: browser offline (page + service worker) → stays pending, survives res
   await ctx.close();
 
   // 6. close + reopen offline: still there, still pending
-  ctx = await chromium.launchPersistentContext(profile, { offline: true, viewport: { width: 390, height: 844 } });
+  ctx = await engine.launchPersistentContext(profile, { offline: true, viewport: { width: 390, height: 844 } });
   net = recordTraffic(ctx);
   page = await ctx.newPage();
   await page.goto(`${APP}#/results/${id}`);
@@ -149,12 +151,16 @@ test("A: browser offline (page + service worker) → stays pending, survives res
 
 test("B: navigator.onLine=true but every request blocked (page + service worker) → never confirmed", async () => {
   test.skip(!PASS, "set FIELDKIT_E2E_PASS");
+  // Playwright's route() cannot intercept requests from a service-worker-controlled page in WebKit, so the
+  // network is NOT actually blocked there and this scenario cannot be simulated (verified: requests reached
+  // the server). Scenario A (true offline) runs on WebKit; B is covered on Chromium and on a real iPhone.
+  test.skip(process.env.FIELDKIT_E2E_BROWSER === "webkit", "route() cannot block SW-controlled traffic in WebKit");
   test.setTimeout(240_000);
   const profile = mkdtempSync(join(tmpdir(), "fieldkit-strictB-"));
   await setup(profile);
   const server = await serverClient();
 
-  const ctx = await chromium.launchPersistentContext(profile, { viewport: { width: 390, height: 844 } });
+  const ctx = await engine.launchPersistentContext(profile, { viewport: { width: 390, height: 844 } });
   // Warm the page first so cached "Hermes reachable" exists — then cut everything.
   const page = await ctx.newPage();
   await page.goto(APP);

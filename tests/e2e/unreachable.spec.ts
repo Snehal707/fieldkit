@@ -1,10 +1,12 @@
 // "Connected but no internet" (Wi-Fi without internet / captive portal): navigator.onLine is TRUE, yet Hermes
 // is unreachable. FieldKit must say so, keep the record awaiting confirmation, and never claim it synced.
-import { chromium, expect, test } from "@playwright/test";
+import { chromium, webkit, expect, test } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
+const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
 const PASS = process.env.FIELDKIT_E2E_PASS ?? "";
 const APP = `${BASE}/api/plugins/fieldkit/app/`;
@@ -13,7 +15,7 @@ const isApi = (u: URL) => u.pathname.startsWith("/api/plugins/fieldkit/") && !u.
 
 test("network up but Hermes unreachable or captive portal: honest status, nothing lost, then confirmed", async () => {
   test.skip(!PASS, "set FIELDKIT_E2E_PASS");
-  const ctx = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir(), "fieldkit-unreach-")), { viewport: { width: 390, height: 844 } });
+  const ctx = await engine.launchPersistentContext(mkdtempSync(join(tmpdir(), "fieldkit-unreach-")), { viewport: { width: 390, height: 844 } });
   await ctx.request.post(`${BASE}/auth/password-login`, { data: { provider: "basic", username: "demo", password: PASS, next: "/" } });
   await ctx.request.post(`${API}/examples/install`);
   const page = await ctx.newPage();

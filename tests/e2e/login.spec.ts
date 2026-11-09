@@ -1,10 +1,12 @@
 // Real sign-in round trip through Hermes' own login page: FieldKit → Hermes login → back to FieldKit
 // (not the dashboard), signed in, then first-run download of all published workflows → offline ready.
-import { chromium, expect, test } from "@playwright/test";
+import { chromium, webkit, expect, test } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
+const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
 const USER = process.env.FIELDKIT_E2E_USER ?? "demo";
 const PASS = process.env.FIELDKIT_E2E_PASS ?? "";
@@ -12,7 +14,7 @@ const APP = `${BASE}/api/plugins/fieldkit/app/`;
 
 test("Sign in returns to FieldKit and first-run download makes it offline-ready", async () => {
   test.skip(!PASS, "set FIELDKIT_E2E_PASS");
-  const ctx = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir(), "fieldkit-login-")), { viewport: { width: 390, height: 844 } });
+  const ctx = await engine.launchPersistentContext(mkdtempSync(join(tmpdir(), "fieldkit-login-")), { viewport: { width: 390, height: 844 } });
   // One-time: install the app shell while signed in, make sure examples are published, then lose the session.
   await ctx.request.post(`${BASE}/auth/password-login`, { data: { provider: "basic", username: USER, password: PASS, next: "/" } });
   await ctx.request.post(`${BASE}/api/plugins/fieldkit/examples/install`);

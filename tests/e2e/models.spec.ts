@@ -1,10 +1,12 @@
 // Real on-device intelligence: install pinned upstream models online, then translate and OCR with the
 // network disabled after a full browser restart. Large download (~115 MB) → opt-in via FIELDKIT_E2E_MODELS=1.
-import { chromium, expect, test } from "@playwright/test";
+import { chromium, webkit, expect, test } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
+const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
 const APP = `${BASE}/api/plugins/fieldkit/app/`;
 const profile = process.env.FIELDKIT_E2E_PROFILE ?? mkdtempSync(join(tmpdir(), "fieldkit-models-"));
@@ -12,7 +14,7 @@ const profile = process.env.FIELDKIT_E2E_PROFILE ?? mkdtempSync(join(tmpdir(), "
 test("offline translation (en→hi) and OCR after cold restart with no network", async () => {
   test.skip(!process.env.FIELDKIT_E2E_MODELS || !process.env.FIELDKIT_E2E_PASS, "set FIELDKIT_E2E_MODELS=1 and FIELDKIT_E2E_PASS");
   test.setTimeout(900_000);
-  let ctx = await chromium.launchPersistentContext(profile, { viewport: { width: 390, height: 844 } });
+  let ctx = await engine.launchPersistentContext(profile, { viewport: { width: 390, height: 844 } });
   const r = await ctx.request.post(`${BASE}/auth/password-login`, { data: { provider: "basic", username: process.env.FIELDKIT_E2E_USER ?? "demo", password: process.env.FIELDKIT_E2E_PASS, next: "/" } });
   expect(r.ok()).toBeTruthy();
   let page = await ctx.newPage();
@@ -32,7 +34,7 @@ test("offline translation (en→hi) and OCR after cold restart with no network",
   console.log("translation install:", verify.replace(/\s+/g, " ").slice(0, 300));
   await ctx.close();
 
-  ctx = await chromium.launchPersistentContext(profile, { offline: true, viewport: { width: 390, height: 844 } });
+  ctx = await engine.launchPersistentContext(profile, { offline: true, viewport: { width: 390, height: 844 } });
   // Offline proof: every off-origin request must be answered by FieldKit's service worker cache
   // (pinned runtime files) — none may reach or attempt the network.
   const leaked: string[] = [];
