@@ -3,7 +3,7 @@
   "label": "FieldKit",
   "description": "Offline field workflows, knowledge packs, synchronised records and Hermes reports.",
   "icon": "ClipboardCheck",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "tab": { "path": "/fieldkit", "position": "end" },
   "entry": "dist/index.js",
   "css": "dist/style.css",

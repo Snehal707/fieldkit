@@ -337,3 +337,19 @@ Run on each phone over HTTPS:
 11. After analysis, open Results and tap **Download report**. Turn airplane mode on again, and check the report is still readable.
 
 Record: device model, OS and browser version, which steps passed, timings for translation and OCR, and any memory errors.
+
+### Phase A: example rules and "needs review" calibration (0.2.5)
+Found on the hosted Hermes: all 7 real inspections were flagged "requires review", and for pump PMP-0045 (rust and a
+water leak written in the notes) the phone said "Low risk, continue routine monitoring" while Hermes' report said the
+local score was inconsistent with the evidence.
+- **Example rules:** the equipment inspection now reads rust, corrosion and leaks from the notes, the voice-note transcript
+  and photo text (English and Hindi keywords), scores them, and its recommended action has a "Repair within 7 days and
+  re-inspect" step. The PMP-0045 answers now give Medium risk and that action (`tests/python/test_phase_a.py`, and the
+  same case in `tests/app/engine.test.ts` for the phone's engine). The crop survey also flags spots, lesions, blight and rot.
+- **Safe upgrades:** an installed example moves to the new version only if it is unchanged from the old bundled version
+  (content hash); edited examples are never touched; old records keep their workflow version. Verified on the local Hermes
+  (`equipment-inspection` and `crop-health-survey` published v2).
+- **Calibration:** a report needs review only for a high/critical finding (from Hermes or the phone's rules) or when Hermes
+  states a reason (conflicting evidence, a decisive gap, a required sign-off). The reasons are stored as `review_triggers`.
+  A routine leak inspection with a clear repair action is no longer flagged.
+- Results: pytest 129 passed, vitest 112 passed, Chromium E2E 28 passed / 3 skipped (model downloads).

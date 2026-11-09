@@ -43,8 +43,12 @@ SYSTEM = (
     "You are FieldKit's analysis component inside Hermes Agent. You analyse one structured field record. "
     "Use ONLY the record, the workflow definition, the locally generated findings and the reference passages provided. "
     "Never invent measurements or facts. If information needed for a conclusion is absent, list it under "
-    "missing_information. Cite reference passages by title in references. Mark requires_review true for anything "
-    "safety-related, medical, legal, or uncertain. Keep the summary under 120 words."
+    "missing_information. Cite reference passages by title in references. Keep the summary under 120 words. "
+    "Set requires_review true ONLY when (a) a high or critical issue needs a qualified person's decision before work "
+    "continues, (b) evidence conflicts or a decisive measurement is missing so no safe conclusion is possible, or "
+    "(c) the decision legally or medically requires sign-off. A finding with clear evidence and a clear next action "
+    "(for example a leak to repair within a week) is NOT a review case: set requires_review false. When true, "
+    "review_reason must say which of (a), (b) or (c) applies and why."
 )
 
 
@@ -297,11 +301,28 @@ def analyze_record(store: Store, llm: Any, record_id: str, *, owner: Any = ALL, 
                         "stored": f.get("status") == "stored"} for f in files if f["kind"] == "signature"],
         "evidence": media.evidence(files),
     }
-    critical = any(i.get("severity") in ("high", "critical") for i in report["issues"]) or any(
-        f.get("severity") in ("high", "critical") for f in context["local_findings"])
-    requires_review = bool(report.get("requires_review")) or (context["workflow"]["review_required"] and critical)
+    report["review_triggers"] = review_triggers(report, context)
+    requires_review = bool(report["review_triggers"])
     report["requires_review"] = requires_review
+    if not requires_review:
+        report["review_reason"] = ""
     return report, requires_review, getattr(result, "provider", "") or "", getattr(result, "model", "") or ""
+
+
+def review_triggers(report: dict, context: dict) -> list[str]:
+    """Why a report needs human review; empty means it doesn't. Calibrated (0.2.5): before, the model flagged every
+    safety-related record, so 7 of 7 real inspections said "requires review" and the flag meant nothing.
+    Triggers: a high/critical issue (from Hermes or the phone's local rules), or the model's own flag *with* a stated
+    reason (conflicting evidence, a decisive gap, or a required sign-off)."""
+    out = []
+    sev = [i.get("severity") for i in report.get("issues", [])] + [f.get("severity") for f in context.get("local_findings", [])]
+    worst = "critical" if "critical" in sev else "high" if "high" in sev else ""
+    if worst:
+        out.append(f"{worst} severity finding")
+    reason = str(report.get("review_reason") or "").strip()
+    if report.get("requires_review") and reason:
+        out.append(f"Hermes: {reason[:300]}")
+    return out
 
 
 def _normalize_report(report: dict, context: dict) -> dict:

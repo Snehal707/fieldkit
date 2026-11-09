@@ -1,6 +1,6 @@
 {
   "id": "equipment-inspection",
-  "version": 1,
+  "version": 2,
   "status": "published",
   "title": {"en": "Equipment inspection", "hi": "उपकरण निरीक्षण"},
   "description": {"en": "Routine inspection of rotating equipment with troubleshooting guidance and photographs.", "hi": "समस्या निवारण मार्गदर्शन और तस्वीरों के साथ घूमने वाले उपकरणों का नियमित निरीक्षण।"},
@@ -68,7 +68,9 @@
     ],
     "keywords": [
       {"id": "noise_terms", "label": {"en": "Bearing wear indicators in notes", "hi": "टिप्पणियों में बेयरिंग घिसाव संकेत"}, "severity": "medium",
-       "fields": ["notes"], "keywords": ["grinding", "squeal", "knocking", "rumble", "clicking"]}
+       "fields": ["notes", "voice_note"], "keywords": ["grinding", "squeal", "knocking", "rumble", "clicking"]},
+      {"id": "corrosion_leak_terms", "label": {"en": "Corrosion or leak reported", "hi": "जंग या रिसाव की सूचना"}, "severity": "medium",
+       "fields": ["notes", "voice_note", "photos"], "keywords": ["rust", "corrosion", "corroded", "leak", "leaking", "seep", "drip", "pooling", "जंग", "रिसाव", "लीक", "टपक"]}
     ],
     "scores": [
       {"id": "risk", "label": {"en": "Risk score", "hi": "जोखिम अंक"},
@@ -77,7 +79,9 @@
          {"when": {"op": "eq", "field": "condition", "value": "fair"}, "points": 1},
          {"when": {"op": "contains", "field": "symptoms", "value": "vibration"}, "points": 2},
          {"when": {"op": "contains", "field": "symptoms", "value": "heat"}, "points": 2},
-         {"when": {"op": "contains", "field": "symptoms", "value": "leak"}, "points": 1},
+         {"when": {"op": "or", "any": [{"op": "contains", "field": "symptoms", "value": "leak"}, {"op": "contains", "field": "notes", "value": "leak"}, {"op": "contains", "field": "notes", "value": "रिसाव"}]}, "points": 2},
+         {"when": {"op": "eq", "field": "leak_fluid", "value": "oil"}, "points": 1},
+         {"when": {"op": "or", "any": [{"op": "contains", "field": "notes", "value": "rust"}, {"op": "contains", "field": "notes", "value": "corro"}, {"op": "contains", "field": "notes", "value": "जंग"}]}, "points": 2},
          {"when": {"op": "eq", "field": "guard_ok", "value": false}, "points": 5}
        ],
        "bands": [
@@ -92,7 +96,9 @@
                 "then": {"result": {"label": {"en": "Stop and tag out", "hi": "रोकें और टैग आउट करें"}, "severity": "critical"}},
                 "else": {"if": {"op": "eq", "field": "condition", "value": "poor"},
                          "then": {"result": {"label": {"en": "Schedule repair this week", "hi": "इस सप्ताह मरम्मत तय करें"}, "severity": "high"}},
-                         "else": {"result": {"label": {"en": "Continue routine monitoring", "hi": "नियमित निगरानी जारी रखें"}, "severity": "low"}}}}}
+                         "else": {"if": {"op": "or", "any": [{"op": "or", "any": [{"op": "contains", "field": "symptoms", "value": "leak"}, {"op": "contains", "field": "notes", "value": "leak"}, {"op": "contains", "field": "notes", "value": "रिसाव"}]}, {"op": "or", "any": [{"op": "contains", "field": "notes", "value": "rust"}, {"op": "contains", "field": "notes", "value": "corro"}, {"op": "contains", "field": "notes", "value": "जंग"}]}, {"op": "gt", "field": "vibration_level", "value": 7.1}, {"op": "gte", "field": "bearing_temp", "value": 80}]},
+                                  "then": {"result": {"label": {"en": "Repair within 7 days and re-inspect", "hi": "7 दिनों में मरम्मत करें और दोबारा जाँचें"}, "severity": "medium"}},
+                                  "else": {"result": {"label": {"en": "Continue routine monitoring", "hi": "नियमित निगरानी जारी रखें"}, "severity": "low"}}}}}}
     ]
   }
 }

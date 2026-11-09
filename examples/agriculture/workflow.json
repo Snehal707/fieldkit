@@ -1,6 +1,6 @@
 {
   "id": "crop-health-survey",
-  "version": 1,
+  "version": 2,
   "status": "published",
   "title": {"en": "Crop health survey", "hi": "फसल स्वास्थ्य सर्वेक्षण"},
   "description": {"en": "Record plot conditions, leaf symptoms and photographs for follow-up.", "hi": "आगे की कार्रवाई के लिए खेत की स्थिति, पत्ती के लक्षण और तस्वीरें दर्ज करें।"},
@@ -54,7 +54,9 @@
     ],
     "keywords": [
       {"id": "pest_terms", "label": {"en": "Possible pest activity mentioned", "hi": "संभावित कीट गतिविधि का उल्लेख"}, "severity": "medium",
-       "fields": ["observations"], "keywords": ["insect", "larvae", "holes", "webbing", "aphid", "कीट"]}
+       "fields": ["observations"], "keywords": ["insect", "larvae", "holes", "webbing", "aphid", "कीट"]},
+      {"id": "disease_terms", "label": {"en": "Possible disease symptoms mentioned", "hi": "संभावित रोग लक्षणों का उल्लेख"}, "severity": "medium",
+       "fields": ["observations"], "keywords": ["spot", "lesion", "blight", "mildew", "rot", "wilt", "धब्बे", "झुलसा", "फफूंद"]}
     ],
     "decision_trees": [
       {"id": "likely_cause", "label": {"en": "Possible cause (local rule, needs confirmation)", "hi": "संभावित कारण (स्थानीय नियम, पुष्टि आवश्यक)"},

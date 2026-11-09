@@ -38,3 +38,22 @@ it("multilingual labels fall back", () => {
   expect(text({ en: "Hi", hi: "नमस्ते" }, "hi")).toBe("नमस्ते");
   expect(text({ en: "Hi" }, "xx")).toBe("Hi");
 });
+
+describe("0.2.5 example rules: rust and leaks (same results as the Python engine)", () => {
+  const wf = load("examples/maintenance/workflow.json") as Workflow;
+  const decide = (a: Record<string, unknown>) => classify(wf, cleanAnswers(wf, a), "en").find((f) => f.kind === "decision_tree")?.detail;
+  it("the hosted PMP-0045 inspection (fair, rust and leak in notes) is no longer 'continue monitoring'", () => {
+    const a = { asset_id: "PMP-0045", running_hours: 1280, condition: "fair", symptoms: ["noise"], guard_ok: true,
+      notes: "Rust on the housing, water leaking near the pump casing" };
+    const f = classify(wf, cleanAnswers(wf, a), "en");
+    expect(f.find((x) => x.kind === "score")?.severity).toBe("medium");
+    expect(decide(a)).toBe("Repair within 7 days and re-inspect");
+  });
+  it("routine, Hindi notes, vibration, poor and guard paths", () => {
+    expect(decide({ condition: "good", symptoms: [], guard_ok: true, notes: "all normal" })).toBe("Continue routine monitoring");
+    expect(decide({ condition: "fair", guard_ok: true, notes: "जंग लगी है" })).toBe("Repair within 7 days and re-inspect");
+    expect(decide({ condition: "good", guard_ok: true, symptoms: ["vibration"], vibration_level: 8 })).toBe("Repair within 7 days and re-inspect");
+    expect(decide({ condition: "poor", guard_ok: true })).toBe("Schedule repair this week");
+    expect(decide({ condition: "good", guard_ok: false })).toBe("Stop and tag out");
+  });
+});
