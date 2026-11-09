@@ -90,12 +90,12 @@ def test_model_catalog_has_no_placeholders():
     catalog = json.loads((ROOT / "fieldkit_core" / "models.json").read_text(encoding="utf-8"))
     assert "unavailable" not in catalog
     assert [p["id"] for p in catalog["packs"]] == ["translate-en-hi", "translate-hi-en", "stt-whisper-tiny", "stt-whisper-small",
-                                                   "ocr-eng", "ocr-hin"]
+                                                   "understand-multilingual", "ocr-eng", "ocr-hin"]
     langs = {lang for p in catalog["packs"] for lang in p["languages"]}
     assert langs == {"en", "hi"}
     # Every Transformers.js model file is pinned to a commit and verified by size and SHA-256 after download.
     for p in catalog["packs"]:
-        if p["capability"] in ("stt", "translation"):
+        if p["capability"] in ("stt", "translation", "embedding"):
             assert len(p["revision"]) == 40
             for f in p["files"]:
                 assert f"/resolve/{p['revision']}/" in f["url"] and f["size"] > 0 and len(f["sha256"]) == 64

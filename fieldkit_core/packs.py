@@ -22,7 +22,7 @@ from .engine import text
 
 PACK_KINDS = ("knowledge", "dictionary", "classification", "model", "workspace")
 ENTRY_TYPES = ("explanation", "procedure", "faq", "troubleshooting", "term", "reference")
-MODEL_CAPABILITIES = ("translation", "ocr", "stt")
+MODEL_CAPABILITIES = ("translation", "ocr", "stt", "embedding")
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _WORD = re.compile(r"[\wऀ-ॿ]+", re.UNICODE)
 STOP = set("a an the of to in on for and or is are was were be by with at from as it this that what why how "

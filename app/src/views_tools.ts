@@ -4,7 +4,7 @@ import { APP_VERSION, PUBLIC_APP_URL, RUNNING_FROM_LEGACY_PATH, signIn } from ".
 import { db, deleteRecord, deviceId, getSetting, setSetting, type InstalledModel } from "./db";
 import { text } from "./engine";
 import {
-  capabilities, installedModels, installOcr, installStt, installTranslation, localVoices, ocr, ocrLanguages, removeModel,
+  capabilities, installedModels, installEmbedding, installOcr, installStt, installTranslation, localVoices, ocr, ocrLanguages, removeModel,
   speak, transcribe, translate, translationPairs, voicesReady,
 } from "./intel";
 import { KnowledgeIndex, lookup } from "./knowledge";
@@ -18,54 +18,6 @@ import { clear, fmtBytes, fmtTime, h, isOnline, toast } from "./util";
 import { go, lang, readiness, signInBanner, whoAmI, type View } from "./views_core";
 import { currentDeviceLabel, describeLoadProblem, registerDevice } from "./device";
 import { languageLabel, requestOutcome, requestProtection, storageMessage, storageState, summarizeVoices } from "./storage";
-
-// ------------------------------------------------------------------ assistant
-export const assistantView: View = async (main) => {
-  const l = await lang();
-  const packs = await installedPacks("knowledge");
-  const idx = new KnowledgeIndex(packs);
-  const out = h("div");
-  const q = h("input", { placeholder: "Ask a question, e.g. “Explain photosynthesis”", enterkeyhint: "search" }) as HTMLInputElement;
-  const ask = async (query: string) => {
-    q.value = query;
-    clear(out);
-    let a = idx.ask(query, { packs, lang: l });
-    let via = "";
-    // Multilingual: if a Devanagari question finds nothing, try the installed offline hi→en model.
-    if (!a.supported && /[ऀ-ॿ]/.test(query) && (await translationPairs()).some(([f, t]) => f === "hi" && t === "en")) {
-      try {
-        const tq = await translate(query, "hi", "en");
-        const b = idx.ask(tq.text, { packs, lang: l });
-        if (b.supported) { a = b; via = `Searched using offline translation: “${tq.text}”`; }
-      } catch { /* keep original answer */ }
-    }
-    if (!a.supported) {
-      out.append(h("div", { class: "banner warn" }, h("strong", null, "Not covered by your downloaded knowledge"), h("div", null, a.note ?? ""),
-        a.others.length ? h("div", null, "Closest topics: ", ...a.others.map((o) => h("button", { onclick: () => go(`#/knowledge/${encodeURIComponent(o.key)}`) }, o.title))) : null));
-      return;
-    }
-    const e = a.entry!;
-    out.append(h("div", { class: "card" }, h("h2", null, e.title), via ? h("div", { class: "muted" }, via) : null,
-      h("p", null, a.excerpt ?? e.text),
-      h("div", { class: "muted" }, `Source: ${e.source} · ${e.pack_title} · answered offline from downloaded knowledge (retrieval, not generated)`),
-      h("div", { class: "row", style: "margin-top:.5rem" },
-        h("a", { class: "btn", href: `#/knowledge/${encodeURIComponent(e.key)}` }, "Full explanation"),
-        h("button", { onclick: () => { const r = speak(a.excerpt ?? e.text, l); if (!r.ok) toast(r.reason!, "error"); } }, "🔊 Read aloud")),
-      a.followups.length ? h("div", null, h("h3", null, "Follow-up questions"), h("div", { class: "row" }, ...a.followups.map((f) => h("button", { onclick: () => ask(f) }, f)))) : null,
-      a.related.length ? h("div", null, h("h3", null, "Related topics"), h("div", { class: "row" }, ...a.related.map((r) => h("a", { class: "btn", href: `#/knowledge/${encodeURIComponent(r.key)}` }, r.title)))) : null));
-  };
-  if (!packs.length) {
-    main.append(h("div", { class: "card" }, h("h2", null, "Offline Assistant"),
-      h("p", null, "No knowledge packs on this device yet. The assistant answers only from downloaded knowledge."),
-      h("a", { class: "btn primary", href: "#/packs" }, "Download knowledge packs")));
-    return;
-  }
-  main.append(h("div", { class: "card" }, h("h2", null, "Offline Assistant"),
-    h("p", { class: "muted" }, `Answers come from ${idx.size} entries in your downloaded knowledge packs, with sources. It does not invent answers.`),
-    h("form", { class: "row", onsubmit: (e: Event) => { e.preventDefault(); void ask(q.value); } }, h("div", { class: "grow" }, q), h("button", { class: "primary" }, "Ask")),
-    h("div", { class: "row", style: "margin-top:.5rem" }, ...["Explain photosynthesis", "Common reasons for equipment vibration", "Causes of leaf discoloration"]
-      .map((s) => h("button", { onclick: () => ask(s) }, s)))), out);
-};
 
 // ------------------------------------------------------------------ knowledge
 export const knowledgeView: View = async (main, p) => {
@@ -269,7 +221,8 @@ function modelRow(m: any, have: InstalledModel | undefined) {
       status.textContent = p.status ? `${p.status}${p.file ? ` ${p.file}` : ""}` : status.textContent;
     };
     try {
-      const fn = m.capability === "translation" ? installTranslation : m.capability === "stt" ? installStt : installOcr;
+      const fn = m.capability === "translation" ? installTranslation : m.capability === "stt" ? installStt
+        : m.capability === "embedding" ? installEmbedding : installOcr;
       const r = await fn(m, onProgress);
       status.textContent = `Installed and self-tested on this device · ${r.verify_detail}`;
       // The label used to be computed only when the screen was drawn, so a model installed while the

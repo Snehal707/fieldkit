@@ -8,7 +8,8 @@ import { clear, h, isOnline, toast } from "./util";
 import {
   authBanner, homeView, recordsView, remoteView, reportsView, resultsView, runView, syncView, workflowLinkView, workflowsView, whoAmI, type View,
 } from "./views_core";
-import { assistantView, diagnosticsView, dictionaryView, knowledgeView, ocrView, packsView, settingsView, translateView } from "./views_tools";
+import { diagnosticsView, dictionaryView, knowledgeView, ocrView, packsView, settingsView, translateView } from "./views_tools";
+import { assistantView } from "./views_assistant";
 import { workspacesView, workspaceView } from "./views_workspace";
 
 const routes: [RegExp, View, string][] = [
@@ -24,6 +25,7 @@ const routes: [RegExp, View, string][] = [
   [/^#\/sync/, syncView, "Pending Sync"],
   [/^#\/reports/, reportsView, "Reports"],
   [/^#\/assistant/, assistantView, "Offline Assistant"],
+  [/^#\/guide\/(?<ws>[^/?]+)\/(?<gid>[^/?]+)/, assistantView, "Decision guide"],
   [/^#\/knowledge\/(?<key>[^?]+)/, knowledgeView, "Knowledge"],
   [/^#\/knowledge/, knowledgeView, "Knowledge"],
   [/^#\/dictionary/, dictionaryView, "Dictionary"],

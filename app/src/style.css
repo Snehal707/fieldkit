@@ -92,3 +92,15 @@ ol.actions { padding-left: 1.2rem; } ol.actions li { margin-bottom: .7rem; }
 .badge.origin-ai_suggestion { background: #fef3c7; color: #92400e; }
 .badge.origin-guide, .badge.origin-knowledge { background: #ccfbf1; color: #115e59; }
 .lang-switch button { padding: .2rem .6rem; }
+
+/* Offline assistant chat (0.2.5) */
+.chat { display: flex; flex-direction: column; gap: .6rem; margin: .6rem 0; }
+.msg { max-width: 92%; padding: .6rem .8rem; border-radius: 12px; border: 1px solid var(--line); }
+.msg.user { align-self: flex-end; background: var(--accent-soft, #e0f2fe); }
+.msg.bot { align-self: flex-start; background: var(--card, #fff); }
+.msg .msg-text { white-space: pre-wrap; }
+.msg .citations { margin-top: .4rem; font-size: .85rem; }
+.msg .msg-tools button { padding: .15rem .5rem; font-size: .85rem; }
+.msg .options button { font-weight: 600; }
+.msg[data-kind="not_covered"] { border-color: #d97706; }
+.ask-bar input { width: 100%; }

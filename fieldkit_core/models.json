@@ -49,6 +49,16 @@
        {"url": "https://huggingface.co/Xenova/whisper-small/resolve/2d67713f236afa48a18992566e7647f6ca848e13/onnx/encoder_model_quantized.onnx", "size": 92324809, "sha256": "969f5ac12974340386bf7a02ea6626003e5e2dee396ffc6ab0eec282bf55ba06"},
        {"url": "https://huggingface.co/Xenova/whisper-small/resolve/2d67713f236afa48a18992566e7647f6ca848e13/onnx/decoder_model_merged_quantized.onnx", "size": 156780950, "sha256": "fcfc6100dc7339e7507e10f8b274350be7c4f8d8b575f0293f94cc0e156d6d24"}
      ]},
+    {"kind": "model", "id": "understand-multilingual", "capability": "embedding", "title": "Question understanding — English and Hindi",
+     "version": 1, "languages": ["en", "hi"], "task": "feature-extraction",
+     "model": "Xenova/paraphrase-multilingual-MiniLM-L12-v2", "revision": "2c4055b12046f11709e9df2c122e59ffbdc2f900", "dtype": "q8",
+     "license": "Apache-2.0 (sentence-transformers, ONNX conversion by Xenova)",
+     "upstream": "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+     "download_size": 118308126,
+     "quality_note": "Lets the offline assistant understand questions by meaning in English and Hindi. On our test set: intent 91% (English) / 89% (Hindi) on fresh questions; keyword search found 0% of Hindi questions.",
+     "files": [
+       {"url": "https://huggingface.co/Xenova/paraphrase-multilingual-MiniLM-L12-v2/resolve/2c4055b12046f11709e9df2c122e59ffbdc2f900/onnx/model_quantized.onnx", "size": 118308126, "sha256": "66fc00f5f29afcaff34092e1bdd20008ca3918265a82fb9695a551e510cc4ebc"}
+     ]},
     {"kind": "model", "id": "ocr-eng", "capability": "ocr", "title": "OCR — English", "version": 1, "languages": ["en"],
      "engine": "tesseract.js 7.0.0", "lang_code": "eng", "license": "Apache-2.0 (tessdata_best, integer build)", "upstream": "https://github.com/naptha/tessdata",
      "download_size": 2952873,

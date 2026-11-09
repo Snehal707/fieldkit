@@ -67,7 +67,7 @@ export interface InstalledPack {
 }
 
 export interface InstalledModel {
-  id: string; capability: "translation" | "ocr" | "stt"; version: number; title: string; installed_at: string;
+  id: string; capability: "translation" | "ocr" | "stt" | "embedding"; version: number; title: string; installed_at: string;
   verified: boolean; verify_detail?: string; size?: number; manifest: any;
 }
 
@@ -93,10 +93,18 @@ interface FieldKitDB extends DBSchema {
   outbox: { key: number; value: OutboxOp; indexes: { by_record: string } };
   reports: { key: string; value: StoredReport };
   remote: { key: string; value: RemoteCopy };
+  learning: { key: string; value: LearningEvent; indexes: { by_sent: number } };
+  vectors: { key: string; value: { key: string; vec: number[] } };
+}
+
+/** Feedback, follow-up outcomes and unanswered questions, queued for Hermes (0.2.5). */
+export interface LearningEvent {
+  id: string; kind: "knowledge_gap" | "user_feedback" | "verified_outcome"; workspace_id?: string; ref_type?: string; ref_id?: string;
+  payload: Record<string, unknown>; created_at: string; sent: 0 | 1; idempotency_key: string;
 }
 
 export const DB_NAME = "fieldkit";
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 let dbp: Promise<IDBPDatabase<FieldKitDB>> | null = null;
 
 export function db(): Promise<IDBPDatabase<FieldKitDB>> {
@@ -121,6 +129,11 @@ export function db(): Promise<IDBPDatabase<FieldKitDB>> {
           // v2: offline copies of records from the user's OTHER devices. Separate store: never mixed with
           // this device's own records, never queued for sync, never touched by the outbox.
           d.createObjectStore("remote", { keyPath: "id" });
+        }
+        if (oldVersion < 3) {
+          // v3 (0.2.5): learning events for Hermes, and cached sentence vectors for the offline assistant.
+          d.createObjectStore("learning", { keyPath: "id" }).createIndex("by_sent", "sent");
+          d.createObjectStore("vectors", { keyPath: "key" });
         }
       },
       blocked() { console.warn("FieldKit DB upgrade blocked by another tab"); },

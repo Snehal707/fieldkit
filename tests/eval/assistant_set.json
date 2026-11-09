@@ -1,0 +1,488 @@
+{
+ "note": "Synthetic evaluation set for the offline assistant (written by the FieldKit authors). Retrieval questions are paraphrases that avoid the entry titles' keywords where possible. Intent 'train' examples are the built-in prototypes shipped in app/src/assistant_intents.ts; 'test' utterances are held out. 'fresh_*' sets were written after the intent word cues were tuned on 'intents_test', to measure them honestly.",
+ "retrieval": [
+  {
+   "lang": "en",
+   "q": "Why is the machine shaking so much?",
+   "expect": "vibration"
+  },
+  {
+   "lang": "en",
+   "q": "What makes a pump wobble and rattle when it runs?",
+   "expect": "vibration"
+  },
+  {
+   "lang": "en",
+   "q": "How do I make sure the motor and pump shafts line up?",
+   "expect": "alignment"
+  },
+  {
+   "lang": "en",
+   "q": "The coupling halves don't sit straight, how do I check that?",
+   "expect": "alignment"
+  },
+  {
+   "lang": "en",
+   "q": "The bearing housing is too hot to touch, what could cause it?",
+   "expect": "bearing-overheating"
+  },
+  {
+   "lang": "en",
+   "q": "Why would a bearing run very warm?",
+   "expect": "bearing-overheating"
+  },
+  {
+   "lang": "en",
+   "q": "What must I do to make the equipment safe before I open it up?",
+   "expect": "lockout"
+  },
+  {
+   "lang": "en",
+   "q": "How do I isolate the power so nobody switches it on while I work?",
+   "expect": "lockout"
+  },
+  {
+   "lang": "en",
+   "q": "There's oil dripping under the pump, what does that mean?",
+   "expect": "leaks"
+  },
+  {
+   "lang": "en",
+   "q": "Fluid pooling below the casing, is that a problem?",
+   "expect": "leaks"
+  },
+  {
+   "lang": "en",
+   "q": "Why are the plant's leaves turning a different colour?",
+   "expect": "leaf-discoloration"
+  },
+  {
+   "lang": "en",
+   "q": "The older leaves are going pale yellow, what is missing?",
+   "expect": "nitrogen"
+  },
+  {
+   "lang": "en",
+   "q": "The field has standing water after rain and plants look stressed",
+   "expect": "waterlogging"
+  },
+  {
+   "lang": "en",
+   "q": "How should I collect a specimen of a sick plant to send for checking?",
+   "expect": "sampling"
+  },
+  {
+   "lang": "en",
+   "q": "How do green plants make their own food from light?",
+   "expect": "photosynthesis"
+  },
+  {
+   "lang": "en",
+   "q": "Students think plants eat soil, is that right?",
+   "expect": "photosynthesis-misconceptions"
+  },
+  {
+   "lang": "en",
+   "q": "How does rain come back to the clouds again?",
+   "expect": "water-cycle"
+  },
+  {
+   "lang": "en",
+   "q": "Why does the bulb only light when the wires make a full loop?",
+   "expect": "circuits"
+  },
+  {
+   "lang": "en",
+   "q": "How can I quickly see whether the class understood the lesson?",
+   "expect": "check-questions"
+  },
+  {
+   "lang": "hi",
+   "q": "मशीन इतनी ज़्यादा क्यों हिल रही है?",
+   "expect": "vibration"
+  },
+  {
+   "lang": "hi",
+   "q": "मोटर और पंप की शाफ्ट एक सीध में हैं या नहीं, कैसे देखूँ?",
+   "expect": "alignment"
+  },
+  {
+   "lang": "hi",
+   "q": "बेयरिंग बहुत गरम हो रही है, इसका कारण क्या हो सकता है?",
+   "expect": "bearing-overheating"
+  },
+  {
+   "lang": "hi",
+   "q": "मशीन खोलने से पहले बिजली कैसे बंद और सुरक्षित करूँ?",
+   "expect": "lockout"
+  },
+  {
+   "lang": "hi",
+   "q": "पंप के नीचे तेल टपक रहा है, इसका क्या मतलब है?",
+   "expect": "leaks"
+  },
+  {
+   "lang": "hi",
+   "q": "पत्तियों का रंग क्यों बदल रहा है?",
+   "expect": "leaf-discoloration"
+  },
+  {
+   "lang": "hi",
+   "q": "पुरानी पत्तियाँ पीली पड़ रही हैं, किस चीज़ की कमी है?",
+   "expect": "nitrogen"
+  },
+  {
+   "lang": "hi",
+   "q": "खेत में पानी भरा है और पौधे मुरझा रहे हैं",
+   "expect": "waterlogging"
+  },
+  {
+   "lang": "hi",
+   "q": "बीमार पौधे का नमूना जाँच के लिए कैसे भेजूँ?",
+   "expect": "sampling"
+  },
+  {
+   "lang": "hi",
+   "q": "पौधे धूप से अपना भोजन कैसे बनाते हैं?",
+   "expect": "photosynthesis"
+  },
+  {
+   "lang": "hi",
+   "q": "बारिश का पानी वापस बादलों में कैसे जाता है?",
+   "expect": "water-cycle"
+  },
+  {
+   "lang": "hi",
+   "q": "बच्चों को पाठ समझ आया या नहीं, जल्दी कैसे पता करूँ?",
+   "expect": "check-questions"
+  }
+ ],
+ "intents_test": [
+  {
+   "lang": "en",
+   "q": "Can you tell me more about the second problem?",
+   "expect": "explain_issue"
+  },
+  {
+   "lang": "en",
+   "q": "What exactly is wrong with issue 1?",
+   "expect": "explain_issue"
+  },
+  {
+   "lang": "en",
+   "q": "OK so what should I do now?",
+   "expect": "what_next"
+  },
+  {
+   "lang": "en",
+   "q": "What's my next step here?",
+   "expect": "what_next"
+  },
+  {
+   "lang": "en",
+   "q": "Why did you say it has to stop?",
+   "expect": "why"
+  },
+  {
+   "lang": "en",
+   "q": "What is the reason behind that recommendation?",
+   "expect": "why"
+  },
+  {
+   "lang": "en",
+   "q": "Is it okay to keep running it today?",
+   "expect": "is_it_safe"
+  },
+  {
+   "lang": "en",
+   "q": "Can people still use it safely?",
+   "expect": "is_it_safe"
+  },
+  {
+   "lang": "en",
+   "q": "Walk me through replacing the seal",
+   "expect": "how_to"
+  },
+  {
+   "lang": "en",
+   "q": "What are the steps to re-test a sample?",
+   "expect": "how_to"
+  },
+  {
+   "lang": "en",
+   "q": "It keeps making a grinding sound, what could be causing it?",
+   "expect": "troubleshoot"
+  },
+  {
+   "lang": "en",
+   "q": "Readings are off, help me figure out the cause",
+   "expect": "troubleshoot"
+  },
+  {
+   "lang": "en",
+   "q": "What does SNF stand for?",
+   "expect": "define_term"
+  },
+  {
+   "lang": "en",
+   "q": "Meaning of misalignment?",
+   "expect": "define_term"
+  },
+  {
+   "lang": "en",
+   "q": "What is the legal minimum fat for buffalo milk?",
+   "expect": "check_requirement"
+  },
+  {
+   "lang": "en",
+   "q": "Does this reading meet the standard?",
+   "expect": "check_requirement"
+  },
+  {
+   "lang": "en",
+   "q": "Summarise the Hermes report for me",
+   "expect": "explain_report"
+  },
+  {
+   "lang": "en",
+   "q": "What did the analysis conclude?",
+   "expect": "explain_report"
+  },
+  {
+   "lang": "en",
+   "q": "Is it better or worse than the last inspection?",
+   "expect": "compare_to_previous"
+  },
+  {
+   "lang": "en",
+   "q": "How does this compare with last week?",
+   "expect": "compare_to_previous"
+  },
+  {
+   "lang": "en",
+   "q": "Put this answer into Hindi",
+   "expect": "translate"
+  },
+  {
+   "lang": "hi",
+   "q": "दूसरी समस्या के बारे में और बताइए",
+   "expect": "explain_issue"
+  },
+  {
+   "lang": "hi",
+   "q": "अब मुझे क्या करना चाहिए?",
+   "expect": "what_next"
+  },
+  {
+   "lang": "hi",
+   "q": "आपने इसे रोकने को क्यों कहा?",
+   "expect": "why"
+  },
+  {
+   "lang": "hi",
+   "q": "क्या आज इसे चलाना सुरक्षित है?",
+   "expect": "is_it_safe"
+  },
+  {
+   "lang": "hi",
+   "q": "सील बदलने के चरण बताइए",
+   "expect": "how_to"
+  },
+  {
+   "lang": "hi",
+   "q": "पीसने जैसी आवाज़ आ रही है, कारण क्या हो सकता है?",
+   "expect": "troubleshoot"
+  },
+  {
+   "lang": "hi",
+   "q": "SNF का मतलब क्या है?",
+   "expect": "define_term"
+  },
+  {
+   "lang": "hi",
+   "q": "भैंस के दूध में न्यूनतम वसा कितनी होनी चाहिए?",
+   "expect": "check_requirement"
+  },
+  {
+   "lang": "hi",
+   "q": "रिपोर्ट का सार बताइए",
+   "expect": "explain_report"
+  },
+  {
+   "lang": "hi",
+   "q": "पिछली जाँच से तुलना में कैसा है?",
+   "expect": "compare_to_previous"
+  },
+  {
+   "lang": "hi",
+   "q": "इसे अंग्रेज़ी में बताइए",
+   "expect": "translate"
+  }
+ ],
+ "out_of_scope_test": [
+  {
+   "lang": "en",
+   "q": "Who won the cricket match yesterday?"
+  },
+  {
+   "lang": "en",
+   "q": "Write me a poem about the sea"
+  },
+  {
+   "lang": "en",
+   "q": "What is the price of bitcoin?"
+  },
+  {
+   "lang": "hi",
+   "q": "कल क्रिकेट मैच किसने जीता?"
+  },
+  {
+   "lang": "hi",
+   "q": "मुझे एक कविता सुनाओ"
+  }
+ ],
+ "fresh_intents_test": [
+  {
+   "lang": "en",
+   "q": "Tell me what the third issue is about",
+   "expect": "explain_issue"
+  },
+  {
+   "lang": "en",
+   "q": "Where do I start with all this?",
+   "expect": "what_next"
+  },
+  {
+   "lang": "en",
+   "q": "How come the risk is high?",
+   "expect": "why"
+  },
+  {
+   "lang": "en",
+   "q": "Will anyone get hurt if we keep it on?",
+   "expect": "is_it_safe"
+  },
+  {
+   "lang": "en",
+   "q": "Teach me how to take a sample correctly",
+   "expect": "how_to"
+  },
+  {
+   "lang": "en",
+   "q": "The pump trips every hour, what's going on?",
+   "expect": "troubleshoot"
+  },
+  {
+   "lang": "en",
+   "q": "What's a gasket?",
+   "expect": "define_term"
+  },
+  {
+   "lang": "en",
+   "q": "How much urea is permitted in milk?",
+   "expect": "check_requirement"
+  },
+  {
+   "lang": "en",
+   "q": "Give me the gist of Hermes' findings",
+   "expect": "explain_report"
+  },
+  {
+   "lang": "en",
+   "q": "Was it like this the previous time too?",
+   "expect": "compare_to_previous"
+  },
+  {
+   "lang": "en",
+   "q": "Can I get that in English please",
+   "expect": "translate"
+  },
+  {
+   "lang": "hi",
+   "q": "तीसरी समस्या क्या है, समझाइए",
+   "expect": "explain_issue"
+  },
+  {
+   "lang": "hi",
+   "q": "शुरुआत कहाँ से करूँ?",
+   "expect": "what_next"
+  },
+  {
+   "lang": "hi",
+   "q": "जोखिम ज़्यादा क्यों बताया गया?",
+   "expect": "why"
+  },
+  {
+   "lang": "hi",
+   "q": "अगर इसे चालू रखें तो किसी को चोट लग सकती है क्या?",
+   "expect": "is_it_safe"
+  },
+  {
+   "lang": "hi",
+   "q": "नमूना सही तरीके से लेना सिखाइए",
+   "expect": "how_to"
+  },
+  {
+   "lang": "hi",
+   "q": "पंप हर घंटे बंद हो जाता है, क्या गड़बड़ है?",
+   "expect": "troubleshoot"
+  },
+  {
+   "lang": "hi",
+   "q": "गैस्केट क्या होता है?",
+   "expect": "define_term"
+  },
+  {
+   "lang": "hi",
+   "q": "दूध में यूरिया की कितनी मात्रा की अनुमति है?",
+   "expect": "check_requirement"
+  },
+  {
+   "lang": "hi",
+   "q": "हर्मीस के निष्कर्षों का सार दीजिए",
+   "expect": "explain_report"
+  }
+ ],
+ "fresh_retrieval": [
+  {
+   "lang": "en",
+   "q": "Shaft looks misaligned, how do I measure it?",
+   "expect": "alignment"
+  },
+  {
+   "lang": "en",
+   "q": "Lube may be low, bearing feels hot",
+   "expect": "bearing-overheating"
+  },
+  {
+   "lang": "en",
+   "q": "Before maintenance, what stops someone restarting the pump?",
+   "expect": "lockout"
+  },
+  {
+   "lang": "en",
+   "q": "Yellowing starts on lower leaves first",
+   "expect": "nitrogen"
+  },
+  {
+   "lang": "en",
+   "q": "How do I ask one quick question to test understanding?",
+   "expect": "check-questions"
+  },
+  {
+   "lang": "hi",
+   "q": "शाफ्ट टेढ़ी लगती है, कैसे मापूँ?",
+   "expect": "alignment"
+  },
+  {
+   "lang": "hi",
+   "q": "काम शुरू करने से पहले मशीन को कोई चालू न करे, इसके लिए क्या करें?",
+   "expect": "lockout"
+  },
+  {
+   "lang": "hi",
+   "q": "निचली पत्तियाँ पहले पीली हो रही हैं",
+   "expect": "nitrogen"
+  }
+ ]
+}

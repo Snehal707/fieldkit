@@ -205,6 +205,28 @@ export async function transcribe(blob: Blob, lang: string): Promise<{ text: stri
   return { text, engine: `${m.manifest.model} (on device)` };
 }
 
+// ------------------------------------------------------------------ understanding (sentence embeddings)
+export async function installEmbedding(manifest: any, onProgress?: Progress): Promise<InstalledModel> {
+  const pipe = await pipelineFor(manifest, onProgress);
+  const out = await pipe(["pump vibration", "पंप कंपन"], { pooling: "mean", normalize: true });
+  if (!out?.dims || out.dims[1] < 64) throw new Error("Understanding self-test produced no vectors");
+  const v = await verifyCachedFiles(manifest);
+  return markInstalled(manifest, v.ok, v.detail);
+}
+
+/** Meaning vectors for texts (English, Hindi and other languages the model knows). null if the pack isn't installed. */
+export async function embed(texts: string[]): Promise<number[][] | null> {
+  const m = (await installedModels()).find((x) => x.capability === "embedding");
+  if (!m || !texts.length) return m ? [] : null;
+  const pipe = await pipelineFor(m.manifest);
+  const out = await pipe(texts, { pooling: "mean", normalize: true });
+  return out.tolist() as number[][];
+}
+
+export async function embeddingModelId(): Promise<string | null> {
+  return (await installedModels()).find((x) => x.capability === "embedding")?.manifest.model ?? null;
+}
+
 // ------------------------------------------------------------------ OCR
 let ocrWorkers = new Map<string, Promise<any>>();
 const workerPath = () => new URL("../vendor/tesseract/worker.min.js", import.meta.url).toString();

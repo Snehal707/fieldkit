@@ -405,3 +405,31 @@ local score was inconsistent with the evidence.
   the previous report's checks** (Done / Not done / Can't check + reading); the answers travel with the new record.
 - Tests: `tests/python/test_decision_reports.py` (15), `tests/e2e/decision.spec.ts`. pytest 166 passed; Chromium E2E
   30 passed / 3 skipped.
+
+### Phase E: the offline assistant understands (0.2.5)
+- **Model choice by measurement** (`tests/eval/assistant_eval.mjs`, `tests/eval/assistant_set.json`, written by us; synthetic):
+  | Method | Retrieval top-1 en / hi | Intent top-1 en / hi |
+  |---|---|---|
+  | Keyword search (the 0.2.4 assistant) | 47% / 0% | – |
+  | `Xenova/multilingual-e5-small` | 74% / 92% | 76% / 91% |
+  | `Xenova/paraphrase-multilingual-MiniLM-L12-v2` (chosen, Apache-2.0, 118 MB) | 89% / 92% (top-3: 100% / 100%) | 81% / 82% |
+  With word cues added to meaning: intent 90.5% / 90.9% on the set the cues were tuned on, and **91% / 89% on fresh
+  questions written afterwards**; fresh retrieval top-1 80% / 67% (8 questions). Off-topic separation: every in-scope
+  question ≥ 0.36 similarity, every off-topic one ≤ 0.22 (threshold 0.29).
+- **Design** (`app/src/assistant*.ts`, `guides.ts`): intent by meaning + cues; follow-ups and references ("issue 2",
+  "what about the seal?", "दूसरी समस्या") from dialogue state; workspace terms linked in both languages; routing to the
+  report (explain issue with the record's values, why, what next, is it safe, summary), decision guides (filled from the
+  record, asking only what is missing, typed answers, outcome with each action's evidence status), the dictionary, cited
+  requirements, earlier records of the same subject, or knowledge. Answers come only from that content, with citations,
+  evidence status and uncertainty; nothing is generated. Below the support threshold it says "not covered" and queues a
+  **knowledge gap** for Hermes. Voice (Whisper) and photo text (OCR) feed the same pipeline. Without the model it falls
+  back to content-word search (labelled "Basic search").
+- **Phone:** chat with Translate, Read aloud and 👍/👎 per answer; "Ask about this report" from Results and remote
+  records; decision guides at `#/guide/<workspace>/<guide>` (report actions and workspace page link there).
+- Bugs found by the tests and fixed: a guide took a free-text sentence as a numeric reading (input types are now inferred
+  from the guide's conditions); a weak intent match answered an off-topic question ("yesterday" ≈ "last time"); basic mode
+  matched on "what/the".
+- Tests: `tests/app/assistant.test.ts` (13), `tests/e2e/assistant.spec.ts` (real model, offline after a cold restart:
+  paraphrase starts the right guide, typed answers, evidenced outcome, Hindi understood, off-topic refused and queued,
+  no network requests) — **passed in Chromium and WebKit**. vitest 124, pytest 166, Chromium 29 passed / 5 skipped,
+  WebKit 23 passed / 11 skipped.

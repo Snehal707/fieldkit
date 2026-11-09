@@ -1,0 +1,460 @@
+{
+ "domain": "dairy",
+ "evidence": [
+  {
+   "applicability": {
+    "jurisdiction": "IN",
+    "matches_profile": true
+   },
+   "claim": "Cow milk below 8.5% SNF does not meet the standard",
+   "excerpts": [
+    {
+     "locator": "test p.1",
+     "quote": "ILLUSTRATIVE TEST TEXT: cow milk minimum SNF 8.5 percent",
+     "source_id": "s_fssai"
+    }
+   ],
+   "id": "ev_snf_cow",
+   "status": "verified"
+  },
+  {
+   "applicability": {
+    "matches_profile": true
+   },
+   "claim": "Re-test before rejecting a borderline sample",
+   "excerpts": [
+    {
+     "quote": "ILLUSTRATIVE TEST TEXT: re-test borderline samples once",
+     "source_id": "s_nddb"
+    },
+    {
+     "quote": "ILLUSTRATIVE TEST TEXT: repeat the test for borderline results",
+     "source_id": "s_icar"
+    }
+   ],
+   "id": "ev_two_t2",
+   "status": "verified"
+  },
+  {
+   "applicability": {
+    "matches_profile": true
+   },
+   "claim": "Clean the analyser daily",
+   "excerpts": [
+    {
+     "quote": "ILLUSTRATIVE TEST TEXT: clean analysers every day",
+     "source_id": "s_nddb"
+    }
+   ],
+   "id": "ev_single_t2",
+   "status": "supported"
+  },
+  {
+   "applicability": {
+    "matches_profile": true
+   },
+   "claim": "Buffalo milk minimum fat",
+   "conflicts": [
+    {
+     "claim": "ILLUSTRATIVE TEST TEXT: buffalo fat minimum B in this state",
+     "source_id": "s_icar"
+    }
+   ],
+   "excerpts": [
+    {
+     "quote": "ILLUSTRATIVE TEST TEXT: buffalo milk fat minimum A",
+     "source_id": "s_fssai"
+    }
+   ],
+   "id": "ev_conflict",
+   "status": "conflicting"
+  },
+  {
+   "applicability": {
+    "matches_profile": true
+   },
+   "claim": "Add baking soda to sour milk",
+   "excerpts": [],
+   "id": "ev_model_only",
+   "status": "unverified"
+  },
+  {
+   "applicability": {
+    "matches_profile": true
+   },
+   "claim": "Forum says reject below 8%",
+   "excerpts": [
+    {
+     "quote": "ILLUSTRATIVE TEST TEXT: we always reject below 8 percent",
+     "source_id": "s_forum"
+    }
+   ],
+   "id": "ev_forum",
+   "status": "unverified"
+  },
+  {
+   "applicability": {
+    "matches_profile": true
+   },
+   "claim": "Blog says SNF 8.5",
+   "excerpts": [
+    {
+     "quote": "ILLUSTRATIVE TEST TEXT: blog restating SNF rules",
+     "source_id": "s_fake_gov"
+    }
+   ],
+   "id": "ev_fake_gov",
+   "status": "supported"
+  },
+  {
+   "applicability": {
+    "matches_profile": true
+   },
+   "claim": "Samples are kept for 24 hours",
+   "excerpts": [
+    {
+     "quote": "ILLUSTRATIVE TEST TEXT: keep every sample for 24 hours",
+     "source_id": "s_sop"
+    }
+   ],
+   "id": "ev_sop",
+   "status": "user_procedure",
+   "user_procedure": true
+  },
+  {
+   "applicability": {
+    "matches_profile": false,
+    "notes": "other state"
+   },
+   "claim": "National rule applied to another state",
+   "excerpts": [
+    {
+     "quote": "ILLUSTRATIVE TEST TEXT: rule for a different state",
+     "source_id": "s_fssai"
+    }
+   ],
+   "id": "ev_wrong_place",
+   "status": "supported"
+  }
+ ],
+ "gaps": [
+  {
+   "note": "No limit found in the regulations.",
+   "searched": [
+    "FSSAI dairy regulations"
+   ],
+   "topic": "Ammonium sulphate limit"
+  }
+ ],
+ "guides": [
+  {
+   "evidence_ids": [],
+   "id": "g_accept",
+   "nodes": {
+    "n_retested": {
+     "default": "o_retest",
+     "input": "yes_no",
+     "next": [
+      {
+       "to": "o_reject",
+       "when": {
+        "field": "retested",
+        "op": "eq",
+        "value": true
+       }
+      }
+     ],
+     "question": {
+      "en": "Was it re-tested?",
+      "hi": "क्या दोबारा जाँचा गया?"
+     },
+     "slot": "retested"
+    },
+    "n_snf": {
+     "default": "o_accept",
+     "field": "snf_pct",
+     "next": [
+      {
+       "to": "n_retested",
+       "when": {
+        "field": "snf_pct",
+        "op": "lt",
+        "value": 8.5
+       }
+      }
+     ],
+     "slot": "snf_pct"
+    },
+    "o_accept": {
+     "outcome": {
+      "actions": [
+       {
+        "evidence_ids": [
+         "ev_snf_cow"
+        ],
+        "text": {
+         "en": "Accept the milk",
+         "hi": "दूध स्वीकार करें"
+        }
+       }
+      ],
+      "decision": "accept",
+      "title": {
+       "en": "Accept",
+       "hi": "स्वीकार करें"
+      }
+     }
+    },
+    "o_reject": {
+     "outcome": {
+      "actions": [
+       {
+        "evidence_ids": [
+         "ev_snf_cow"
+        ],
+        "text": {
+         "en": "Reject and record the reason",
+         "hi": "अस्वीकार करें और कारण लिखें"
+        }
+       },
+       {
+        "kind": "escalate",
+        "text": {
+         "en": "Tell the centre manager",
+         "hi": "केंद्र प्रबंधक को बताएँ"
+        }
+       }
+      ],
+      "decision": "reject",
+      "title": {
+       "en": "Reject",
+       "hi": "अस्वीकार करें"
+      }
+     }
+    },
+    "o_retest": {
+     "outcome": {
+      "actions": [
+       {
+        "evidence_ids": [
+         "ev_two_t2"
+        ],
+        "text": {
+         "en": "Mix and re-test",
+         "hi": "मिलाकर दोबारा जाँचें"
+        }
+       }
+      ],
+      "decision": "retest",
+      "title": {
+       "en": "Re-test once",
+       "hi": "एक बार दोबारा जाँचें"
+      }
+     }
+    }
+   },
+   "start": "n_snf",
+   "title": {
+    "en": "Accept or reject milk",
+    "hi": "दूध स्वीकार या अस्वीकार"
+   },
+   "workflow_id": "milk-collection-check"
+  }
+ ],
+ "id": "ws-dairy-collection-mh",
+ "intents": [],
+ "kind": "workspace",
+ "language_features": {
+  "content": [
+   "en",
+   "hi"
+  ],
+  "ocr": [
+   "en",
+   "hi"
+  ],
+  "speech": [
+   "en",
+   "hi"
+  ]
+ },
+ "languages": [
+  "en",
+  "hi"
+ ],
+ "packs": [
+  "ws-dairy-collection-mh-knowledge",
+  "ws-dairy-collection-mh-dictionary"
+ ],
+ "profile": {
+  "country": "IN",
+  "industry": "dairy",
+  "procedures_in_use": [
+   {
+    "source": "user_document",
+    "title": "Centre SOP v3"
+   }
+  ],
+  "region": "Maharashtra",
+  "responsibilities": [
+   {
+    "decisions": [
+     "accept",
+     "reject",
+     "re-test"
+    ],
+    "description": "Accept or reject each farmer's milk at collection",
+    "frequency": "twice daily",
+    "id": "r_accept"
+   },
+   {
+    "decisions": [
+     "send sample to lab"
+    ],
+    "description": "Spot possible adulteration",
+    "id": "r_adulteration"
+   }
+  ],
+  "role": "Milk collection centre quality checker",
+  "tools_and_instruments": [
+   {
+    "name": "Milk analyser",
+    "units": [
+     "%"
+    ]
+   },
+   {
+    "name": "Lactometer"
+   }
+  ]
+ },
+ "report_policy": {
+  "decision_scale": [
+   {
+    "id": "reject",
+    "label": {
+     "en": "Reject",
+     "hi": "अस्वीकार"
+    },
+    "severity": "high"
+   },
+   {
+    "id": "retest",
+    "label": {
+     "en": "Re-test",
+     "hi": "दोबारा जाँच"
+    },
+    "severity": "medium"
+   },
+   {
+    "id": "accept",
+    "label": {
+     "en": "Accept",
+     "hi": "स्वीकार"
+    },
+    "severity": "low"
+   }
+  ]
+ },
+ "sources": [
+  {
+   "id": "s_fssai",
+   "publisher": "FSSAI",
+   "retrieved_at": "2026-11-10T00:00:00Z",
+   "tier": 1,
+   "title": "Dairy standards",
+   "type": "regulator",
+   "url": "https://www.fssai.gov.in/upload/uploadfiles/files/Dairy_Regulations.pdf"
+  },
+  {
+   "id": "s_nddb",
+   "publisher": "NDDB",
+   "retrieved_at": "2026-11-10T00:00:00Z",
+   "tier": 2,
+   "title": "Milk testing",
+   "type": "extension_or_ngo",
+   "url": "https://www.nddb.coop/information/milk-testing"
+  },
+  {
+   "id": "s_icar",
+   "publisher": "ICAR",
+   "retrieved_at": "2026-11-10T00:00:00Z",
+   "tier": 2,
+   "title": "Dairy quality",
+   "type": "academic",
+   "url": "https://icar.org.in/dairy-quality"
+  },
+  {
+   "id": "s_forum",
+   "publisher": "reddit",
+   "retrieved_at": "2026-11-10T00:00:00Z",
+   "tier": 0,
+   "title": "Forum thread",
+   "type": "government",
+   "url": "https://www.reddit.com/r/dairy/comments/x"
+  },
+  {
+   "id": "s_fake_gov",
+   "publisher": "blog",
+   "retrieved_at": "2026-11-10T00:00:00Z",
+   "tier": 2,
+   "title": "FSSAI explained",
+   "type": "government",
+   "url": "https://milk-rules-blog.example.com/fssai"
+  },
+  {
+   "id": "s_sop",
+   "publisher": "the user's dairy",
+   "retrieved_at": "2026-11-10T00:00:00Z",
+   "tier": 1,
+   "title": "Centre SOP v3",
+   "type": "user_document",
+   "url": ""
+  }
+ ],
+ "starter": false,
+ "summary": {
+  "conflicting": 1,
+  "entries": 2,
+  "gaps": 1,
+  "guides": 1,
+  "sources": 6,
+  "sources_excluded": 1,
+  "supported": 3,
+  "unverified": 2,
+  "user_procedure": 1,
+  "verified": 2,
+  "workflows": 1
+ },
+ "title": {
+  "en": "Dairy collection QA (Maharashtra)",
+  "hi": "दुग्ध संग्रह गुणवत्ता (महाराष्ट्र)"
+ },
+ "traceability": [
+  {
+   "guide_ids": [
+    "g_accept"
+   ],
+   "responsibility_id": "r_accept",
+   "workflow_ids": [
+    "milk-collection-check"
+   ]
+  },
+  {
+   "entry_ids": [
+    "k_retest"
+   ],
+   "responsibility_id": "r_adulteration"
+  }
+ ],
+ "version": 1,
+ "version_of_workspace": 1,
+ "workflows": [
+  {
+   "id": "milk-collection-check",
+   "version": 1
+  }
+ ],
+ "workspace_id": "dairy-collection-mh",
+ "_note": "Generated by FieldKit's publish() from tests/python/workspace_fixtures.py (synthetic; quotes are illustrative test text)."
+}

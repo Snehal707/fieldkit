@@ -54,13 +54,16 @@ test("install online, then work fully offline after a cold restart, then sync", 
 
   // offline knowledge Q&A + dictionary
   await page.goto(`${APP}#/assistant`);
+  // 0.2.5 chat assistant; without the understanding model it runs in basic (word) mode, still grounded and cited.
+  await expect(page.locator("#assistant-mode")).toContainText("Basic search", { timeout: 20_000 });
   await page.getByPlaceholder(/Ask a question/).fill("Explain common reasons for equipment vibration");
   await page.getByRole("button", { name: "Ask", exact: true }).click();
-  await expect(page.locator("h2", { hasText: "Common reasons for equipment vibration" })).toBeVisible();
-  await expect(page.locator("text=Source: Demo maintenance guide")).toBeVisible();
+  const a1 = page.locator("#chat .msg.bot").last();
+  await expect(a1).toContainText("Common reasons for equipment vibration");
+  await expect(a1.locator(".citations")).toContainText("Demo maintenance guide");
   await page.getByPlaceholder(/Ask a question/).fill("What is the capital of Peru?");
   await page.getByRole("button", { name: "Ask", exact: true }).click();
-  await expect(page.locator("text=Not covered by your downloaded knowledge")).toBeVisible();
+  await expect(page.locator("#chat .msg.bot").last()).toHaveAttribute("data-kind", "not_covered");
   await page.goto(`${APP}#/dictionary`);
   await page.getByPlaceholder(/Search a word/).fill("bearing");
   await expect(page.locator("text=hi: बेयरिंग")).toBeVisible();

@@ -734,6 +734,8 @@ function hermesSection(rec: LocalRecord, stored: StoredReport | undefined) {
   } else {
     box.append(h("p", { class: "muted" }, `Analysis status: ${ANALYSIS_TEXT[rec.analysis_status] ?? rec.analysis_status}. No report downloaded yet.`));
   }
+  box.append(h("div", { class: "row" }, h("a", { class: "btn", id: "ask-about-record", href: `#/assistant?record=${encodeURIComponent(rec.id)}` },
+    stored ? "Ask about this report" : "Ask about this record")));
   if (rec.sync_status === "synced" || rec.sync_status === "received") {
     box.append(h("div", { class: "row" },
       h("button", { onclick: async () => {
@@ -1095,6 +1097,7 @@ export const remoteView: View = async (main, p) => {
   main.append(h("div", { class: "card" }, h("h2", null, "Answers"), dl));
   const rep = h("div", { class: "card", id: "remote-report" }, h("h2", null, h("span", { class: "tag-hermes" }, "Hermes report")));
   if (r.report) reportBody(rep, r.report, l); else rep.append(h("p", { class: "muted" }, "No Hermes report yet."));
+  if (copy) rep.append(h("div", { class: "row" }, h("a", { class: "btn", href: `#/assistant?remote=${encodeURIComponent(id)}` }, "Ask about this")));
   main.append(rep);
   main.append(h("div", { class: "row" },
     live ? h("button", { class: "primary", onclick: async () => {

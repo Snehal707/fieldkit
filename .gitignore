@@ -14,3 +14,5 @@ playwright-report/
 # local Claude Code configuration (not part of the plugin)
 CLAUDE.md
 .claude/
+
+tests/eval/.*.bundle.mjs
