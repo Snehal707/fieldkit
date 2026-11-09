@@ -1,18 +1,73 @@
 // Photos (compressed), audio notes, signatures and GPS. Everything is stored locally as Blobs in
 // IndexedDB and kept until the server acknowledges each file's SHA-256.
+import { apiUrl } from "./config";
 import { db, type Attachment } from "./db";
+import { decodeImage, drawScaled } from "./ocr_prep";
 import { nowIso, sha256Hex, uuid } from "./util";
 
-export async function compressPhoto(file: Blob, maxSide = 1600, quality = 0.8): Promise<{ blob: Blob; width: number; height: number }> {
-  const bmp = await createImageBitmap(file);
-  const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
-  const w = Math.round(bmp.width * scale), hgt = Math.round(bmp.height * scale);
-  const c = document.createElement("canvas");
-  c.width = w; c.height = hgt;
-  c.getContext("2d")!.drawImage(bmp, 0, 0, w, hgt);
-  bmp.close?.();
+/** Photos are stored at up to 2048 px (was 1600): enough for OCR of ordinary print and for Hermes' vision model.
+ *  Decoding goes through an <img> element so the iPhone's EXIF orientation is applied (no sideways photos). */
+export async function compressPhoto(file: Blob, maxSide = 2048, quality = 0.85): Promise<{ blob: Blob; width: number; height: number }> {
+  const im = await decodeImage(file);
+  const c = drawScaled(im.src, im.width, im.height, Math.min(maxSide, Math.max(im.width, im.height)));
+  im.close();
   const blob = await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error("encode failed"))), "image/jpeg", quality));
-  return { blob, width: w, height: hgt };
+  const out = { blob, width: c.width, height: c.height };
+  c.width = c.height = 0;
+  return out;
+}
+
+/** Copy a Blob read from IndexedDB into a fresh in-memory Blob with the given type. iOS Safari can fail to load
+ *  object URLs made directly from IndexedDB-backed Blobs (broken image, audio "error"), and re-storing such a Blob
+ *  in a later transaction is not safe there either. Both are avoided by copying the bytes first. */
+export async function memoryBlob(b: Blob, type?: string): Promise<{ blob: Blob; bytes: ArrayBuffer }> {
+  const bytes = await b.arrayBuffer();
+  return { blob: new Blob([bytes], { type: type || b.type || "application/octet-stream" }), bytes };
+}
+
+/** Update an attachment's metadata (OCR text, transcript) without re-storing an IndexedDB-backed Blob. */
+export async function updateAttachment(id: string, patch: Partial<Omit<Attachment, "id" | "blob" | "sha256">>): Promise<Attachment | undefined> {
+  const d = await db();
+  const cur = await d.get("attachments", id);
+  if (!cur) return undefined;
+  const { blob } = await memoryBlob(cur.blob, cur.mime);
+  const next = { ...cur, ...patch, meta: { ...cur.meta, ...(patch.meta ?? {}) }, blob };
+  await d.put("attachments", next);
+  return next;
+}
+
+export interface MediaSource { url: string; source: "device" | "hermes"; repaired: boolean }
+
+/**
+ * A URL that displays/plays a stored attachment. The bytes on the device are checked against the SHA-256 recorded
+ * when the file was captured; if they are unreadable or damaged and Hermes has the file, Hermes' copy is used (and
+ * verified against the same hash) and the device copy is repaired. Throws with a plain-language reason otherwise.
+ */
+export async function attachmentUrl(a: Attachment, fetchImpl: typeof fetch = fetch): Promise<MediaSource> {
+  try {
+    const { blob, bytes } = await memoryBlob(a.blob, a.mime);
+    if (bytes.byteLength > 0 && (await sha256Hex(bytes)) === a.sha256) return { url: URL.createObjectURL(blob), source: "device", repaired: false };
+  } catch { /* unreadable on this device: try Hermes */ }
+  if (!a.uploaded) throw new Error("This file is damaged on this device and hasn't reached Hermes, so it can't be shown.");
+  let res: Response;
+  try { res = await fetchImpl(apiUrl(`attachments/${encodeURIComponent(a.id)}`), { credentials: "same-origin" }); }
+  catch { throw new Error("This file can't be read on this device. Connect to the internet to load Hermes' copy."); }
+  if (!res.ok) throw new Error(res.status === 401 ? "Sign in to Hermes to load this file." : `Hermes couldn't provide this file (HTTP ${res.status}).`);
+  const bytes = await res.arrayBuffer();
+  if ((await sha256Hex(bytes)) !== a.sha256) throw new Error("Hermes' copy doesn't match the file captured on this device.");
+  const blob = new Blob([bytes], { type: a.mime });
+  let repaired = false;
+  try { await (await db()).put("attachments", { ...a, blob }); repaired = true; } catch { /* still show it */ }
+  return { url: URL.createObjectURL(blob), source: "hermes", repaired };
+}
+
+/** Load a file from Hermes for a record that isn't on this device (needs internet); verified when a hash is known. */
+export async function hermesMediaUrl(id: string, mime: string, sha256?: string, fetchImpl: typeof fetch = fetch): Promise<string> {
+  const res = await fetchImpl(apiUrl(`attachments/${encodeURIComponent(id)}`), { credentials: "same-origin" });
+  if (!res.ok) throw new Error(res.status === 401 ? "Sign in to Hermes to load this file." : `Hermes couldn't provide this file (HTTP ${res.status}).`);
+  const bytes = await res.arrayBuffer();
+  if (sha256 && (await sha256Hex(bytes)) !== sha256) throw new Error("The file from Hermes failed its integrity check.");
+  return URL.createObjectURL(new Blob([bytes], { type: mime || res.headers.get("content-type") || "application/octet-stream" }));
 }
 
 export async function saveAttachment(recordId: string, fieldId: string, kind: Attachment["kind"], blob: Blob,
@@ -51,9 +106,19 @@ export function captureGps(timeoutMs = 20000): Promise<GpsFix> {
   });
 }
 
-export function pickRecorderMime(): string {
-  const options = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
-  return options.find((m) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported?.(m)) ?? "";
+/**
+ * Recording format: one this browser can both record AND play back. Safari (iPhone) records audio/mp4 (AAC) by
+ * default; recent versions also report WebM as recordable, but WebM playback in an <audio> element is not
+ * dependable there, which showed up as an audio playback error on the Results screen. MP4/AAC plays on every
+ * target and decodes for on-device transcription, so Apple devices use it; elsewhere WebM/Opus is kept.
+ */
+export function pickRecorderMime(env: { isTypeSupported?: (m: string) => boolean; canPlay?: (m: string) => string; apple?: boolean } = {}): string {
+  const isTypeSupported = env.isTypeSupported ?? ((m: string) => typeof MediaRecorder !== "undefined" && !!MediaRecorder.isTypeSupported?.(m));
+  const canPlay = env.canPlay ?? ((m: string) => (typeof document !== "undefined" ? document.createElement("audio").canPlayType(m) : "maybe"));
+  const apple = env.apple ?? (typeof navigator !== "undefined" && /Apple/.test(navigator.vendor ?? ""));
+  const options = apple ? ["audio/mp4", "audio/mp4;codecs=mp4a.40.2", "audio/webm;codecs=opus", "audio/webm"]
+    : ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+  return options.find((m) => isTypeSupported(m) && canPlay(m.split(";")[0]) !== "") ?? "";
 }
 
 export class VoiceRecorder {
@@ -68,7 +133,9 @@ export class VoiceRecorder {
     this.rec = new MediaRecorder(this.stream, mime ? { mimeType: mime } : undefined);
     this.chunks = [];
     this.rec.ondataavailable = (e) => e.data.size && this.chunks.push(e.data);
-    this.rec.start(1000);
+    // No timeslice: one complete file at stop. Sliced MP4 from Safari is fragmented and some players reject it;
+    // the chunks only ever lived in memory, so slicing protected nothing.
+    this.rec.start();
     this.started = performance.now();
   }
 
@@ -77,7 +144,7 @@ export class VoiceRecorder {
       if (!this.rec) return resolve({ blob: new Blob(), duration_s: 0 });
       this.rec.onstop = () => {
         this.stream?.getTracks().forEach((t) => t.stop());
-        const type = (this.rec!.mimeType || "audio/webm").split(";")[0];
+        const type = (this.rec!.mimeType || pickRecorderMime() || "audio/mp4").split(";")[0];
         resolve({ blob: new Blob(this.chunks, { type }), duration_s: Math.round((performance.now() - this.started) / 100) / 10 });
       };
       this.rec.stop();

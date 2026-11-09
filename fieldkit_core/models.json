@@ -27,21 +27,34 @@
        {"url": "https://huggingface.co/Xenova/opus-mt-hi-en/resolve/99853100ed9d932987a6816e8cf7b1b6742a6116/onnx/encoder_model_quantized.onnx", "size": 50916254, "sha256": "dc5a1b084a83019bbb9798809dea5f2d16cc30a9a257238ec93120b3c2892ebf"},
        {"url": "https://huggingface.co/Xenova/opus-mt-hi-en/resolve/99853100ed9d932987a6816e8cf7b1b6742a6116/onnx/decoder_model_merged_quantized.onnx", "size": 58213820, "sha256": "52655659006c8ce742cc761282d49b3be4e73bfbf080f1b6a546aa96170d5813"}
      ]},
-    {"kind": "model", "id": "stt-whisper-tiny", "capability": "stt", "title": "Speech to text (Whisper tiny, multilingual)",
-     "version": 1, "languages": ["en", "hi"], "task": "automatic-speech-recognition",
-     "model": "Xenova/whisper-tiny", "revision": "5332fcc35e32a33b86612b9a57a89be7906102b1", "dtype": "q8",
+    {"kind": "model", "id": "stt-whisper-tiny", "capability": "stt", "title": "Speech to text — English (Whisper tiny)",
+     "version": 2, "languages": ["en"], "task": "automatic-speech-recognition",
+     "model": "Xenova/whisper-tiny", "revision": "5332fcc35e32a33b86612b9a57a89be7906102b1",
+     "dtype": {"encoder_model": "fp32", "decoder_model_merged": "q8"},
      "license": "Apache-2.0 (OpenAI Whisper, ONNX conversion by Xenova)", "upstream": "https://huggingface.co/openai/whisper-tiny",
-     "download_size": 41000000, "quality_note": "Tiny model: usable for English; Hindi accuracy is limited.",
+     "download_size": 63637304,
+     "quality_note": "English only: Whisper tiny cannot write Hindi (it romanises it). Full-precision encoder: 3.7% word errors on our phone-style English test, was 8.9% with the v1 pack.",
+     "update_note": "full-precision encoder, much more accurate English (v1 used an 8-bit encoder)",
      "files": [
-       {"url": "https://huggingface.co/Xenova/whisper-tiny/resolve/5332fcc35e32a33b86612b9a57a89be7906102b1/onnx/encoder_model_quantized.onnx", "size": 10124910, "sha256": "fd9d995b9dcb0520f0dbf6cf68651af639fc385f594d9d876e69ca2802dc438e"},
+       {"url": "https://huggingface.co/Xenova/whisper-tiny/resolve/5332fcc35e32a33b86612b9a57a89be7906102b1/onnx/encoder_model.onnx", "size": 32909539, "sha256": "39e81b6c86a5b2b4beda1bb3145486a769d594801f780a66cad1ae72c7ad2c5e"},
        {"url": "https://huggingface.co/Xenova/whisper-tiny/resolve/5332fcc35e32a33b86612b9a57a89be7906102b1/onnx/decoder_model_merged_quantized.onnx", "size": 30727765, "sha256": "6c0c125986b007d2e3734bec84c18bda0152071b90b87fadac6d7764499927a0"}
      ]},
+    {"kind": "model", "id": "stt-whisper-small", "capability": "stt", "title": "Speech to text — Hindi and English (Whisper small)",
+     "version": 1, "languages": ["hi", "en"], "task": "automatic-speech-recognition",
+     "model": "Xenova/whisper-small", "revision": "2d67713f236afa48a18992566e7647f6ca848e13", "dtype": "q8",
+     "license": "Apache-2.0 (OpenAI Whisper, ONNX conversion by Xenova)", "upstream": "https://huggingface.co/openai/whisper-small",
+     "download_size": 249105759,
+     "quality_note": "Large download (250 MB) and slower. The smallest Whisper that writes Hindi in Devanagari: about 18% character errors on clear synthetic Hindi speech, 31% with phone-style noise. Used for Hindi; English uses the tiny pack when installed.",
+     "files": [
+       {"url": "https://huggingface.co/Xenova/whisper-small/resolve/2d67713f236afa48a18992566e7647f6ca848e13/onnx/encoder_model_quantized.onnx", "size": 92324809, "sha256": "969f5ac12974340386bf7a02ea6626003e5e2dee396ffc6ab0eec282bf55ba06"},
+       {"url": "https://huggingface.co/Xenova/whisper-small/resolve/2d67713f236afa48a18992566e7647f6ca848e13/onnx/decoder_model_merged_quantized.onnx", "size": 156780950, "sha256": "fcfc6100dc7339e7507e10f8b274350be7c4f8d8b575f0293f94cc0e156d6d24"}
+     ]},
     {"kind": "model", "id": "ocr-eng", "capability": "ocr", "title": "OCR — English", "version": 1, "languages": ["en"],
-     "engine": "tesseract.js 7.0.0", "lang_code": "eng", "license": "Apache-2.0 (tessdata_fast)", "upstream": "https://github.com/naptha/tessdata",
+     "engine": "tesseract.js 7.0.0", "lang_code": "eng", "license": "Apache-2.0 (tessdata_best, integer build)", "upstream": "https://github.com/naptha/tessdata",
      "download_size": 2952873,
      "files": [{"url": "https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int/eng.traineddata.gz"}]},
     {"kind": "model", "id": "ocr-hin", "capability": "ocr", "title": "OCR — Hindi (Devanagari)", "version": 1, "languages": ["hi"],
-     "engine": "tesseract.js 7.0.0", "lang_code": "hin", "license": "Apache-2.0 (tessdata_fast)", "upstream": "https://github.com/naptha/tessdata",
+     "engine": "tesseract.js 7.0.0", "lang_code": "hin", "license": "Apache-2.0 (tessdata_best, integer build)", "upstream": "https://github.com/naptha/tessdata",
      "download_size": 1389692,
      "files": [{"url": "https://cdn.jsdelivr.net/npm/@tesseract.js-data/hin@1.0.0/4.0.0_best_int/hin.traineddata.gz"}]}
   ]

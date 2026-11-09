@@ -89,6 +89,22 @@ def test_model_catalog_has_no_placeholders():
     """Only installable packs are offered; no 'unavailable' language placeholders (owner decision 2026-11-09)."""
     catalog = json.loads((ROOT / "fieldkit_core" / "models.json").read_text(encoding="utf-8"))
     assert "unavailable" not in catalog
-    assert [p["id"] for p in catalog["packs"]] == ["translate-en-hi", "translate-hi-en", "stt-whisper-tiny", "ocr-eng", "ocr-hin"]
+    assert [p["id"] for p in catalog["packs"]] == ["translate-en-hi", "translate-hi-en", "stt-whisper-tiny", "stt-whisper-small",
+                                                   "ocr-eng", "ocr-hin"]
     langs = {lang for p in catalog["packs"] for lang in p["languages"]}
     assert langs == {"en", "hi"}
+    # Every Transformers.js model file is pinned to a commit and verified by size and SHA-256 after download.
+    for p in catalog["packs"]:
+        if p["capability"] in ("stt", "translation"):
+            assert len(p["revision"]) == 40
+            for f in p["files"]:
+                assert f"/resolve/{p['revision']}/" in f["url"] and f["size"] > 0 and len(f["sha256"]) == 64
+            assert p["download_size"] == sum(f["size"] for f in p["files"]) or p["capability"] == "translation"
+
+
+def test_whisper_tiny_is_english_only_and_hindi_has_a_pack():
+    """Measured (tests/eval/stt_eval.mjs): Whisper tiny romanises Hindi, so it must not claim Hindi; Hindi uses small."""
+    packs = {p["id"]: p for p in json.loads((ROOT / "fieldkit_core" / "models.json").read_text(encoding="utf-8"))["packs"]}
+    assert packs["stt-whisper-tiny"]["languages"] == ["en"] and packs["stt-whisper-tiny"]["version"] == 2
+    assert packs["stt-whisper-tiny"]["dtype"] == {"encoder_model": "fp32", "decoder_model_merged": "q8"}
+    assert "hi" in packs["stt-whisper-small"]["languages"]

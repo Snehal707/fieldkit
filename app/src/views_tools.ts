@@ -1,7 +1,7 @@
 // Offline Assistant, Knowledge, Dictionary, Translate, OCR, Offline Packs and Settings.
 import { api, AuthRequired } from "./api";
 import { APP_VERSION, PUBLIC_APP_URL, RUNNING_FROM_LEGACY_PATH, signIn } from "./config";
-import { db, deleteRecord, deviceId, getSetting, setSetting } from "./db";
+import { db, deleteRecord, deviceId, getSetting, setSetting, type InstalledModel } from "./db";
 import { text } from "./engine";
 import {
   capabilities, installedModels, installOcr, installStt, installTranslation, localVoices, ocr, ocrLanguages, removeModel,
@@ -131,17 +131,19 @@ export const translateView: View = async (main) => {
     clear(out);
     try {
       const r = await translate(src.value, f, t);
-      out.append(h("div", { class: "card" }, h("p", { style: "font-size:1.1rem" }, r.text),
-        h("div", { class: "muted" }, `Translated on this device with ${r.model} in ${r.ms} ms — no network used.`),
+      out.append(h("div", { class: "card", id: "translation-out" }, h("p", { style: "font-size:1.1rem;white-space:pre-wrap" }, r.text),
+        r.terms.length ? h("div", { class: "muted", "data-terms": String(r.terms.length) }, `Dictionary terms used: ${r.terms.map((x) => `${x.source} → ${x.target}`).join(", ")}`) : null,
+        h("div", { class: "muted" }, `Translated on this device with ${r.model} in ${r.ms} ms — no network used. A small offline model: check important wording.`),
         h("button", { onclick: () => { const s = speak(r.text, t); if (!s.ok) toast(s.reason!, "error"); } }, "🔊 Read aloud")));
     } catch (e) { out.append(h("div", { class: "banner bad" }, (e as Error).message)); }
     btn.disabled = false; btn.textContent = "Translate";
   } }, "Translate");
   main.append(h("div", { class: "card" }, h("h2", null, "Translate (offline)"), sel, h("div", { style: "height:.5rem" }), src,
-    h("div", { class: "row", style: "margin-top:.5rem" }, btn, sttButton(src))), out);
+    h("div", { class: "row", style: "margin-top:.5rem" }, btn, sttButton(src, () => sel.value.split(">")[0]))), out);
 };
 
-function sttButton(target: HTMLTextAreaElement) {
+/** Dictation button. `speechLang` is the language being spoken (for Translate: the source language, not the app's). */
+function sttButton(target: HTMLTextAreaElement, speechLang: () => string | Promise<string> = lang) {
   const wrap = h("span");
   void installedModels().then((ms) => {
     if (!ms.some((m) => m.capability === "stt")) return;
@@ -151,7 +153,7 @@ function sttButton(target: HTMLTextAreaElement) {
       if (!on) { try { await rec.start(); on = true; b.textContent = "■ Stop"; } catch (e) { toast((e as Error).message, "error"); } return; }
       on = false; b.textContent = "Transcribing…";
       const { blob } = await rec.stop();
-      try { target.value = (await transcribe(blob, await lang())).text; } catch (e) { toast((e as Error).message, "error"); }
+      try { target.value = (await transcribe(blob, await speechLang())).text; } catch (e) { toast((e as Error).message, "error"); }
       b.textContent = "🎙 Speak";
     } }, "🎙 Speak");
     wrap.append(b);
@@ -166,18 +168,23 @@ export const ocrView: View = async (main) => {
     main.append(h("div", { class: "card" }, h("h2", null, "Scan text"), h("p", null, "No offline OCR language pack is installed."), h("a", { class: "btn primary", href: "#/packs" }, "Install OCR")));
     return;
   }
-  const sel = h("select", null, ...langs.map((x) => h("option", { value: x }, x))) as HTMLSelectElement;
+  const OCR_NAMES: Record<string, string> = { eng: "English", hin: "Hindi (Devanagari)" };
+  const pref = (await lang()) === "hi" ? "hin" : "eng";
+  const sel = h("select", { "aria-label": "Text language" }, ...langs.map((x) => h("option", { value: x, selected: x === pref }, OCR_NAMES[x] ?? x))) as HTMLSelectElement;
   const out = h("textarea", { placeholder: "Recognised text appears here (editable)" }) as HTMLTextAreaElement;
-  const status = h("div", { class: "muted" });
+  const status = h("div", { class: "muted", id: "ocr-status" });
   const prog = h("progress", { max: 1, value: 0 }) as HTMLProgressElement;
   const file = h("input", { type: "file", accept: "image/*", capture: "environment", onchange: async (e: Event) => {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (!f) return;
     status.textContent = "Reading text on this device…";
+    status.removeAttribute("data-quality");
     try {
-      const r = await ocr(f, sel.value, (p) => { if (p.progress !== undefined) prog.value = p.progress; });
+      const r = await ocr(f, sel.value, (p) => { if (p.progress !== undefined) prog.value = p.progress; if (p.status) status.textContent = p.status; });
       out.value = r.text;
-      status.textContent = `Done offline · confidence ${Math.round(r.confidence)}%`;
+      status.setAttribute("data-quality", r.quality);
+      status.setAttribute("data-confidence", String(r.confidence));
+      status.textContent = `Done offline · confidence ${r.confidence}%${r.rotation ? ` · photo was rotated ${r.rotation}°` : ""}${r.note ? ` · ${r.note}` : ""}`;
     } catch (err) { status.textContent = (err as Error).message; }
   } });
   main.append(h("div", { class: "card" }, h("h2", null, "Scan text (OCR, offline)"), h("div", { class: "row" }, sel, file), prog, status, out,
@@ -242,12 +249,15 @@ export const packsView: View = async (main) => {
   })));
   avail.append(h("h3", null, "On-device models (downloaded from pinned upstream sources)"),
     h("p", { class: "muted" }, "Large one-time downloads. Use Wi-Fi. After installation they work with no connection."),
-    h("ul", { class: "clean" }, ...cat.models.packs.map((m: any) => modelRow(m, models.some((x) => x.id === m.id)))));
+    h("ul", { class: "clean" }, ...cat.models.packs.map((m: any) => modelRow(m, models.find((x) => x.id === m.id)))));
 };
 
-function modelRow(m: any, installed: boolean) {
+function modelRow(m: any, have: InstalledModel | undefined) {
+  const installed = !!have;
+  const outdated = !!have && (have.version ?? 1) < (m.version ?? 1);
   const prog = h("progress", { max: 100, value: 0, style: "display:none" }) as HTMLProgressElement;
-  const status = h("div", { class: "muted" }, `${m.license} · ${fmtBytes(m.download_size)}${m.quality_note ? ` · ${m.quality_note}` : ""}`);
+  const status = h("div", { class: "muted" }, `${m.license} · ${fmtBytes(m.download_size)}${m.quality_note ? ` · ${m.quality_note}` : ""}`,
+    outdated ? h("div", { class: "banner warn", "data-model-update": m.id }, `Update available: ${m.update_note || "improved version"}. The installed version keeps working until you update.`) : null);
   const b = h("button", { class: installed ? "" : "primary", onclick: async () => {
     b.disabled = true; prog.style.display = "block";
     const totals = new Map<string, [number, number]>();
@@ -271,7 +281,8 @@ function modelRow(m: any, installed: boolean) {
       toast(`${m.title} ready offline`, "ok");
     } catch (e) { status.textContent = `Install failed: ${(e as Error).message}`; }
     b.disabled = false;
-  } }, installed ? "Reinstall" : "Install");
+  } }, outdated ? "Update" : installed ? "Reinstall" : "Install");
+  if (outdated) b.className = "primary";
   b.setAttribute("data-model", m.id);
   if (installed) b.setAttribute("data-installed", "true");
   return h("li", null, h("div", { class: "row" }, h("strong", { class: "grow" }, m.title), b), status, prog);

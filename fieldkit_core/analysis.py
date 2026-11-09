@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from . import engine, packs as packs_mod
+from . import engine, media, packs as packs_mod
 from .db import ALL, Store
 
 REPORT_SCHEMA: dict = {
@@ -48,16 +48,38 @@ SYSTEM = (
 )
 
 
-def _answers_for_prompt(wf: dict, answers: dict, lang: str) -> list[dict]:
+def _answers_for_prompt(wf: dict, answers: dict, lang: str, files: Optional[dict] = None) -> list[dict]:
+    """Answers as the model sees them. Media answers are described by kind: a photo with any text read from it,
+    a voice note with its transcript (from the phone or from Hermes speech-to-text), a signature with its time."""
+    files = files or {}
     rows = []
     for f in wf["fields"]:
         if f["type"] == "instruction" or f["id"] not in answers:
             continue
         v = answers[f["id"]]
         if f["type"] in ("photo", "audio", "signature"):
-            items = v if isinstance(v, list) else [v]
-            v = [{k: x.get(k) for k in ("attachment_id", "transcript", "ocr_text", "caption") if isinstance(x, dict) and x.get(k)}
-                 for x in items]
+            items = [x for x in (v if isinstance(v, list) else [v]) if isinstance(x, dict)]
+            desc = []
+            for x in items:
+                info = files.get(x.get("attachment_id"), {})
+                if f["type"] == "photo":
+                    d = {"photo": x.get("attachment_id")}
+                    if x.get("ocr_text"):
+                        d["text_read_from_photo"] = x["ocr_text"]
+                    if x.get("caption"):
+                        d["caption"] = x["caption"]
+                elif f["type"] == "audio":
+                    t = info.get("transcript") or (x.get("transcript") or "").strip()
+                    d = {"voice_note": x.get("attachment_id"),
+                         "transcript": t or None,
+                         "transcript_source": info.get("transcript_source") or ("device" if t else None)}
+                    if not t:
+                        d["not_transcribed_because"] = info.get("transcript_error") or "no transcript available"
+                else:
+                    d = {"signed": True, "signed_at": x.get("signed_at"), "signature_file": x.get("attachment_id"),
+                         "file_stored": info.get("status") == "stored"}
+                desc.append(d)
+            v = desc
         elif f["type"] in ("single_choice", "multi_choice"):
             labels = {o["value"]: engine.text(o["label"], lang) for o in f.get("options", [])}
             v = [labels.get(x, x) for x in v] if isinstance(v, list) else labels.get(v, v)
@@ -65,32 +87,37 @@ def _answers_for_prompt(wf: dict, answers: dict, lang: str) -> list[dict]:
     return rows
 
 
-def build_context(store: Store, record: dict, wf: dict, lang: str = "en") -> dict:
+def build_context(store: Store, record: dict, wf: dict, lang: str = "en", files: Optional[list[dict]] = None) -> dict:
     answers = record["answers"]
     local = record.get("local_results") or {}
     findings = local.get("findings") or engine.classify(wf, answers, lang)
     pack_docs = [p for p in (store.get_pack_content(pid) for pid in wf.get("knowledge_packs", [])) if p]
+    by_id = {x["id"]: x for x in (files or [])}
+    rows = _answers_for_prompt(wf, answers, lang, by_id)
+    transcripts = [x["transcript"] for x in (files or []) if x["kind"] == "audio" and x.get("transcript")]
     query = " ".join([engine.text(wf.get("title"), lang)] + [f.get("label", "") for f in findings] +
-                     [str(a.get("answer")) for a in _answers_for_prompt(wf, answers, lang) if isinstance(a.get("answer"), str)])
+                     [str(a.get("answer")) for a in rows if isinstance(a.get("answer"), str)] + transcripts)
     refs = packs_mod.search_knowledge(pack_docs, query, k=5, lang=lang) if pack_docs else []
     return {
         "workflow": {"id": wf["id"], "version": wf.get("version"), "title": engine.text(wf.get("title"), lang),
                      "domain": wf.get("domain", ""), "analysis_instructions": wf.get("analysis_instructions", ""),
                      "review_required": bool(wf.get("review_required"))},
         "record": {"id": record["id"], "revision": record["revision"], "completed_at": record.get("completed_at"),
-                   "device_id": record.get("device_id"), "answers": _answers_for_prompt(wf, answers, lang)},
+                   "device_id": record.get("device_id"), "answers": rows,
+                   "attachments": media.describe_counts(media.counts(files or []))},
         "local_findings": findings,
         "reference_passages": [{"title": r["title"], "source": r["source"], "entry_id": r["entry_id"], "text": r["text"][:1500]}
                                for r in refs],
     }
 
 
-def _image_inputs(record: dict, limit: int = 2, max_bytes: int = 4_000_000) -> list[dict]:
+def _image_inputs(files: list[dict], limit: int = 2, max_bytes: int = 4_000_000) -> list[dict]:
+    """Photos only: a signature is an image file too, but it is evidence of sign-off, not something to analyse."""
     out = []
-    for a in record.get("attachments", []):
+    for a in files:
         if len(out) >= limit:
             break
-        if a.get("status") == "stored" and str(a.get("mime", "")).startswith("image/"):
+        if a["kind"] == "photo" and a.get("status") == "stored" and str(a.get("mime", "")).startswith("image/"):
             path = a.get("path")
             if path and Path(path).exists() and Path(path).stat().st_size <= max_bytes:
                 out.append({"type": "image", "data": Path(path).read_bytes(), "mime_type": a["mime"]})
@@ -107,6 +134,12 @@ TEXT_ONLY_NOTE = (
     "Photos were attached to this record but are NOT available to you in this request. Do not describe, infer or "
     "speculate about image contents. Base the report only on the structured answers, notes, OCR text, transcripts, "
     "local findings and reference passages provided."
+)
+
+VOICE_NOTE = (
+    "Voice notes appear in the answers with their transcripts. Treat a transcript as the inspector's own spoken "
+    "observation and use it as evidence. A voice note marked not_transcribed_because has unknown content: list it "
+    "under missing_information instead of guessing."
 )
 
 _IMAGE_ERROR_HINTS = ("image", "vision", "multimodal", "multi-modal", "modality", "modalities", "image_url",
@@ -143,6 +176,8 @@ def _structured_call(llm: Any, context: dict, images: list[dict], task: Optional
     text = json.dumps(context, ensure_ascii=False, indent=1)
     inputs: list[dict] = [{"type": "text", "text": text}] + images
     system = SYSTEM if images or not context.get("record", {}).get("attachments_present") else f"{SYSTEM} {TEXT_ONLY_NOTE}"
+    if context.get("record", {}).get("voice_notes_present"):
+        system = f"{system} {VOICE_NOTE}"
     kwargs = dict(instructions="Produce the FieldKit report for this record as JSON matching the schema.",
                   input=inputs, json_schema=REPORT_SCHEMA, schema_name="fieldkit.report", system_prompt=system,
                   temperature=0.2, max_tokens=1800, purpose="fieldkit.analyze_record", timeout=120)
@@ -151,8 +186,12 @@ def _structured_call(llm: Any, context: dict, images: list[dict], task: Optional
     return llm.complete_structured(**kwargs)
 
 
+_DEFAULT = object()
+
+
 def analyze_record(store: Store, llm: Any, record_id: str, *, owner: Any = ALL, lang: str = "en",
-                   with_images: bool = True, use_vision_task: Optional[bool] = None) -> tuple[dict, bool, str, str]:
+                   with_images: bool = True, use_vision_task: Optional[bool] = None,
+                   transcriber: Any = _DEFAULT) -> tuple[dict, bool, str, str]:
     """Run one structured analysis. Returns (report, requires_review, provider, model). Raises on failure.
 
     Attempt chain inside ONE job attempt (so a non-multimodal model never burns the job's retries):
@@ -173,10 +212,24 @@ def analyze_record(store: Store, llm: Any, record_id: str, *, owner: Any = ALL, 
     wf = store.get_workflow_any_owner(record["workflow_id"], record["workflow_version"])
     if not wf:
         raise RuntimeError(f"workflow {record['workflow_id']}@{record['workflow_version']} missing")
-    context = build_context(store, record, wf, lang)
-    images = _image_inputs(record) if with_images else []
-    photo_count = sum(1 for a in record["attachments"] if str(a.get("mime", "")).startswith("image/"))
+    files = media.classify(record, wf, lang)
+    # Voice notes: the phone's transcript, else Hermes speech-to-text (cached). Opt out with voice_transcription: false.
+    if any(f["kind"] == "audio" for f in files):
+        from . import runtime
+        if transcriber is _DEFAULT:
+            if runtime.setting("voice_transcription", True):
+                transcriber, why = media.hermes_transcriber()
+            else:
+                transcriber, why = None, "voice-note transcription is turned off in FieldKit settings (voice_transcription: false)"
+        else:
+            why = "" if transcriber else "no speech-to-text available"
+        media.ensure_transcripts(store, files, transcriber, why)
+    c = media.counts(files)
+    context = build_context(store, record, wf, lang, files)
+    images = _image_inputs(files) if with_images else []
+    photo_count = c["photo"]
     context["record"]["attachments_present"] = photo_count
+    context["record"]["voice_notes_present"] = c["audio"]
 
     if use_vision_task is None:
         from . import runtime
@@ -227,6 +280,23 @@ def analyze_record(store: Store, llm: Any, record_id: str, *, owner: Any = ALL, 
         msg = "Photos were not analysed by Hermes (text-only analysis); review them manually if visual evidence matters."
         if msg not in report["missing_information"]:
             report["missing_information"].append(msg)
+    voice = [f for f in files if f["kind"] == "audio"]
+    heard = [f for f in voice if f.get("transcript")]
+    unheard = [f for f in voice if not f.get("transcript")]
+    if unheard:
+        reasons = sorted({f.get("transcript_error") or "no transcript" for f in unheard})
+        msg = f"{len(unheard)} voice note(s) could not be transcribed, so their content was not considered: {'; '.join(reasons)[:300]}."
+        if msg not in report["missing_information"]:
+            report["missing_information"].append(msg)
+    report["attachments"] = {
+        "counts": c, "summary": media.describe_counts(c),
+        "voice_notes": {"attached": len(voice), "transcribed": len(heard),
+                        "from_device": sum(1 for f in heard if f.get("transcript_source") == "device"),
+                        "from_hermes": sum(1 for f in heard if f.get("transcript_source") == "hermes")},
+        "signatures": [{"attachment_id": f["id"], "field_label": f.get("field_label"), "signed_at": f.get("signed_at"),
+                        "stored": f.get("status") == "stored"} for f in files if f["kind"] == "signature"],
+        "evidence": media.evidence(files),
+    }
     critical = any(i.get("severity") in ("high", "critical") for i in report["issues"]) or any(
         f.get("severity") in ("high", "critical") for f in context["local_findings"])
     requires_review = bool(report.get("requires_review")) or (context["workflow"]["review_required"] and critical)

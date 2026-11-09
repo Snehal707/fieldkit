@@ -54,6 +54,7 @@ The same `idempotency_key` returns the stored response with `duplicate: true`. I
 **Related routes:**
 - `PUT attachments/{id}`: the raw body with `Content-Type` set to an allowed image/audio type, ≤ 15 MB. The SHA-256 must equal the declared value (422 otherwise). Repeating an upload is idempotent.
 - `GET attachments/{id}`: returns the file, with an `X-FieldKit-SHA256` header.
+- Voice notes uploaded without a transcript from the phone are transcribed by Hermes after the upload finishes (0.2.4). The work runs in the background in the dashboard process, one at a time, and never blocks or fails the upload. It uses Hermes' own speech-to-text (`tools.transcription_tools.transcribe_audio`), which is the service Hermes uses for voice messages. That service may be a local engine or a cloud provider, depending on the Hermes operator's configuration. The transcript, or the reason there isn't one, is stored on the attachment. Turn this off with the `voice_transcription` setting (see below).
 - `GET sync/status`: per-user counts, outstanding attachments, open conflicts, devices and jobs.
 - `GET sync/conflicts`; `POST sync/conflicts/{id}/resolve` with `{resolution: keep_server|use_client|merge, merged_answers?}`.
 
@@ -67,7 +68,7 @@ The same `idempotency_key` returns the stored response with `duplicate: true`. I
 | Method | Path | Notes |
 |---|---|---|
 | GET | `records` | `workflow_id`, `analysis_status`, `limit`. Summaries include `workflow_title` |
-| GET | `records/{id}` | Full record, including attachment metadata |
+| GET | `records/{id}` | Full record, including attachment metadata. Each attachment has `kind` (`photo`, `audio` for a voice note, or `signature`), `field_label`, and `signed_at` (signatures). Voice notes also have `transcript`, `transcript_source` (`device` or `hermes`) and `transcript_error` (why there is no transcript). The record has `attachment_counts` (`{photo, audio, signature}`) and `attachment_summary` (for example "1 photo · 1 voice note"). |
 | POST | `records/{id}/analyze` | Queues (or re-queues a failed or completed) durable job |
 | GET | `records/{id}/report` | Latest report version. The PWA downloads this for offline use |
 | GET | `reports`, `reports/{id}` | |
@@ -84,7 +85,20 @@ The app is served publicly at `/dashboard-plugins/fieldkit/app_dist/index.html`,
 - Path traversal returns 404.
 
 ## Report schema (stored, `source: "hermes"`)
-`summary, issues[{title,severity,evidence,field_ids}], missing_information[], references[], suggested_actions[{action,priority}], followups[{title,detail,due_date}], requires_review, review_reason, workflow, observations, local_findings, available_references, report_id, version, record_revision, generated_at, generated_by, provider, model`.
+`summary, issues[{title,severity,evidence,field_ids}], missing_information[], references[], suggested_actions[{action,priority}], followups[{title,detail,due_date}], requires_review, review_reason, workflow, observations, local_findings, available_references, attachments, report_id, version, record_revision, generated_at, generated_by, provider, model`.
+
+**`attachments` block (0.2.4):**
+- `counts` (`{photo, audio, signature}`) and `summary` (text, for example "1 photo · 1 voice note · 1 signature").
+- `voice_notes`: `{attached, transcribed, from_device, from_hermes}`.
+- `signatures`: `[{attachment_id, field_label, signed_at, stored}]`.
+- `evidence`: one entry per attachment, `{attachment_id, kind, field_id, field_label, mime, size, sha256, stored, integrity, url}`, plus:
+  - `signed_at` for signatures;
+  - `transcript`, `transcript_source` and `transcript_error` for voice notes;
+  - `ocr_text` for photos that have OCR text.
+- `integrity` is `intact`, `mismatch`, `missing` or `not_uploaded`. It is recomputed from the stored file at report time.
+- `url` is a relative `attachments/<id>` path. Reports never contain server file paths.
+
+Photos are sent to the vision model only; signatures are never sent as photos.
 
 ## Hermes tools
 `fieldkit_create_workflow`, `fieldkit_validate_workflow`, `fieldkit_publish_workflow`, `fieldkit_list_workflows`,
@@ -95,3 +109,10 @@ The app is served publicly at `/dashboard-plugins/fieldkit/app_dist/index.html`,
 `fieldkit_process_pending_jobs`, `fieldkit_install_examples`.
 
 All tools return a JSON string `{ok: true, …}` or `{ok: false, error}`. They act as the instance owner.
+
+`fieldkit_get_record` returns the same attachment fields as `GET records/{id}` (0.2.4): `kind`, `field_label`, `signed_at`, transcript fields, `attachment_counts` and `attachment_summary`.
+
+## Plugin settings
+| Setting | Default | Environment variable | Effect |
+|---|---|---|---|
+| `voice_transcription` | `true` | `FIELDKIT_VOICE_TRANSCRIPTION=false` | When on, Hermes transcribes voice notes that have no phone transcript (see `attachments/{id}` above). When off, each untranscribed voice note's `transcript_error` says that transcription is turned off, and the analysis lists those voice notes under missing information. |

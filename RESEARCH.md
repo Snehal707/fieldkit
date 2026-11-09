@@ -85,14 +85,28 @@ or exercised by a test in this repository.
 | Translation en→hi | `Xenova/opus-mt-en-hi` @ `7aad7200…` (quantized ONNX, ~110 MB) | HF API: files, sizes, LFS SHA-256 pinned in `models.json`. Install in Chromium: "pinned files verified" (SHA-256 of cached weights matched). Offline result: see `docs/TESTING.md` |
 | Translation hi→en | `Xenova/opus-mt-hi-en` @ `99853100…` | HF API verified. A separate model, because reverse translation is not assumed from en→hi |
 | Marathi | **Not available.** Only PyTorch/CTranslate2 conversions exist (`Helsinki-NLP/opus-mt-en-mr`, `-mr-en`) | HF search. Needs a reproducible ONNX conversion in CI |
-| Speech to text | `Xenova/whisper-tiny` @ `5332fcc3…` (~41 MB) | HF API verified; tiny model, Hindi accuracy is limited |
-| OCR | tesseract.js 7.0.0, core 7.0.0, `@tesseract.js-data/{eng,hin}@1.0.0/4.0.0_best_int` | All URLs returned HTTP 200. The worker JS is vendored; core and language data are fetched pinned |
+| Speech to text | English: `Xenova/whisper-tiny` @ `5332fcc3…` (pack v2: fp32 encoder + 8-bit decoder, 63.6 MB; v1 was ~41 MB, 8-bit encoder). Hindi: `Xenova/whisper-small` @ `2d67713f…` (q8, 249 MB), optional | HF API verified. Measured in Node with the same ONNX files (`tests/eval`, see `tests/eval/README.md`). **tiny romanises Hindi** (or translates it, or loops) even with `language=hindi`, so it is English-only. **small is the smallest Whisper that writes Devanagari.** English WER on synthetic speech: 1.6% clean / 2.6–3.7% phone-style noise with preparation. Hindi CER 18.3% clean / 30.9% phone. Not verified on a phone |
+| OCR | tesseract.js 7.0.0, core 7.0.0, `@tesseract.js-data/{eng,hin}@1.0.0/4.0.0_best_int` | All URLs returned HTTP 200. The worker JS is vendored; core and language data are fetched pinned. 0.2.4 changed how images are prepared and which page-segmentation mode is used (see `docs/TESTING.md`) |
 | Text to speech | `speechSynthesis` restricted to `localService` voices | Runtime detection; no network voices are used |
 | Native local STT | `SpeechRecognition.available({processLocally:true})` detection only | Shown in Settings; never falls back to cloud recognition |
+
+**Translation and Transformers.js findings (0.2.4 measurements, `tests/eval`, Node):**
+- **NLLB-600M (895 MB) and M2M100 (632 MB) are too large** for a phone web app, so OPUS-MT stays.
+- **fp32 translation is not worth it:** en→hi fp32 44.6 chrF vs q8 41.5, at four times the download.
+- **Beam search is effectively greedy** in Transformers.js 4.3.1. Quality gains come from dictionary terminology instead (`app/src/translate_prep.ts`).
 
 **Transformers.js 4.3.1 bug found:** `get_tokenizer_files()` calls `get_file_metadata(modelId, "tokenizer_config.json", {})` without the revision. Offline, it therefore looks up the `main` URL, misses the pinned cache, and tries the network.
 
 - FieldKit's workaround is to set `env.remotePathTemplate` to the pinned commit while building each pipeline (`app/src/intel.ts`).
+
+## Server-side transcription (0.2.4)
+
+- Voice notes without a phone transcript are transcribed by **Hermes' own** `tools.transcription_tools.transcribe_audio`, the service Hermes uses for voice messages. FieldKit does not ship or call its own server-side speech model.
+- It runs in the dashboard process, in a background thread, one at a time, after the upload finishes. It never blocks or fails the upload. The transcript (or the error) is stored on the attachment.
+- The provider is whatever the Hermes operator configured: local faster-whisper, or a cloud provider with a key. A cloud provider receives the voice note.
+- Off switch: plugin setting `voice_transcription: false` (or `FIELDKIT_VOICE_TRANSCRIPTION=false`).
+- **Verified:** a local Hermes v0.23.0 transcribed a synthetic English voice note exactly, and the transcript appeared in the analysis prompt.
+- **Not verified:** a cloud STT provider, the hosted instance's configuration, and a real model-generated analysis that uses the transcript.
 
 ## Hackathon
 

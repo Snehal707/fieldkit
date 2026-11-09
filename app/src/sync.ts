@@ -6,6 +6,7 @@
 // * 401 pauses the queue (nothing is dropped) until the user signs in again.
 // * 409 marks a conflict for the user to resolve; the server never overwrites silently.
 // * A browser "online" event only triggers an attempt — reachability is proven by the request itself.
+import { memoryBlob } from "./media";
 import { AuthRequired, HttpError, Offline, api, loggedFetch } from "./api";
 import { apiUrl } from "./config";
 import { db, deviceId, getSetting, setSetting, type LocalRecord, type OutboxOp } from "./db";
@@ -155,8 +156,10 @@ async function sendAttachment(op: OutboxOp): Promise<"done" | "stop" | "retry"> 
     return "done";
   }
   try {
+    // Upload (and later re-store) an in-memory copy, never the IndexedDB-backed Blob itself (see media.memoryBlob).
+    const { blob: body0 } = await memoryBlob(att.blob, att.mime);
     const res = await loggedFetch(apiUrl(`attachments/${encodeURIComponent(att.id)}`), {
-      method: "PUT", body: att.blob, headers: { "Content-Type": att.mime }, credentials: "same-origin", redirect: "manual",
+      method: "PUT", body: body0, headers: { "Content-Type": att.mime }, credentials: "same-origin", redirect: "manual",
     });
     if (res.type === "opaqueredirect") throw new AuthRequired(false);
     if (res.status === 401) throw new AuthRequired(true);
@@ -168,7 +171,7 @@ async function sendAttachment(op: OutboxOp): Promise<"done" | "stop" | "retry"> 
     const tx = d.transaction(["outbox", "attachments", "records"], "readwrite");
     await tx.objectStore("outbox").delete(op.seq!);
     const a = await tx.objectStore("attachments").get(att.id);
-    if (a) { a.uploaded = true; await tx.objectStore("attachments").put(a); }
+    if (a) await tx.objectStore("attachments").put({ ...a, uploaded: true, blob: body0 });
     const r = await tx.objectStore("records").get(op.record_id);
     if (r) {
       r.sync_status = body.sync_status === "complete" ? "synced" : "received";

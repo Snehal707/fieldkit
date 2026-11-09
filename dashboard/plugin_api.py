@@ -26,7 +26,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from fieldkit_core import __version__, engine, packs as packs_mod, runtime  # noqa: E402
+from fieldkit_core import __version__, engine, media, packs as packs_mod, runtime  # noqa: E402
 from fieldkit_core.db import ALL, Conflict, Invalid, NotFound, data_dir, get_store  # noqa: E402
 
 router = APIRouter()
@@ -284,7 +284,37 @@ async def put_attachment(aid: str, request: Request):
     except Exception as exc:
         _err(exc)
     _ensure_worker()
+    if mime.startswith("audio/") and not res.get("duplicate"):
+        _transcribe_soon(uid, res.get("record_id") or "")
     return res
+
+
+_STT_POOL: Optional[Any] = None
+
+
+def _transcribe_soon(uid: str, rid: str) -> None:
+    """Voice notes are transcribed by Hermes' own speech-to-text (the service that transcribes voice messages) in the
+    background, one at a time, unless the phone already did it or ``voice_transcription`` is off. Never blocks or
+    fails the upload; the outcome (transcript or reason) is stored on the attachment."""
+    global _STT_POOL
+    if not rid or not runtime.setting("voice_transcription", True):
+        return
+    try:
+        import contextvars
+        from concurrent.futures import ThreadPoolExecutor
+        if _STT_POOL is None:
+            _STT_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="fieldkit-stt")
+        ctx = contextvars.copy_context()
+        _STT_POOL.submit(ctx.run, _transcribe_now, uid, rid)
+    except Exception:  # pragma: no cover - never break an upload over transcription
+        pass
+
+
+def _transcribe_now(uid: str, rid: str) -> None:
+    try:
+        media.transcribe_record(get_store(), uid, rid)
+    except Exception:  # pragma: no cover
+        pass
 
 
 @router.get("/attachments/{aid}")
@@ -345,7 +375,10 @@ def register_device(request: Request, device_id: str = Body(...), label: str = B
 @router.get("/records/{rid}")
 def get_record(rid: str, request: Request):
     try:
-        return get_store().get_record(_uid(request), rid)
+        store = get_store()
+        rec = store.get_record(_uid(request), rid)
+        # Each attachment's kind (photo / voice note / signature) and correct per-kind counts.
+        return media.annotate(rec, store.get_workflow_any_owner(rec["workflow_id"], rec["workflow_version"]))
     except Exception as exc:
         _err(exc)
 

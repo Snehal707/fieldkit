@@ -1863,9 +1863,15 @@
           if (u) URL.revokeObjectURL(u);
         };
       }, [a.id]);
-      if (a.status !== "stored") return h("div", null, `${a.id} (${a.mime}) \u2014 still uploading`);
-      if (!url) return h("div", null, "Loading media\u2026");
-      return String(a.mime).startsWith("audio/") ? h("audio", { controls: true, src: url }) : h("img", { src: url, style: { maxWidth: 220, borderRadius: 8, marginRight: 8 } });
+      const noun = a.kind === "signature" ? "Signature" : a.kind === "audio" ? "Voice note" : a.kind === "photo" ? "Photo" : "File";
+      if (a.status !== "stored") return h("div", null, `${noun} (${a.mime}) \u2014 still uploading`);
+      if (!url) return h("div", null, `Loading ${noun.toLowerCase()}\u2026`);
+      return h(
+        "figure",
+        { style: { margin: "0 8px 8px 0" } },
+        String(a.mime).startsWith("audio/") ? h("audio", { controls: true, src: url }) : h("img", { src: url, style: { maxWidth: 220, borderRadius: 8, background: a.kind === "signature" ? "#fff" : void 0 } }),
+        h("figcaption", { style: { fontSize: 12, opacity: 0.75 } }, `${noun}${a.field_label ? ` \xB7 ${a.field_label}` : ""}${a.signed_at ? ` \xB7 signed ${String(a.signed_at).replace("T", " ").slice(0, 16)}` : ""}${a.transcript ? ` \xB7 \u201C${a.transcript}\u201D` : ""}`)
+      );
     }
     function RecordDetail({ id }) {
       var _a2, _b2, _c;
@@ -1887,7 +1893,12 @@
             ((_b2 = (_a2 = rec.local_results) == null ? void 0 : _a2.findings) != null ? _b2 : []).map((f, i) => h("div", { key: i }, h(Sev, { s: f.severity }), " ", f.label, f.detail ? ` \u2014 ${f.detail}` : ""))
           )
         ),
-        ((_c = rec.attachments) == null ? void 0 : _c.length) > 0 && h("div", { style: { ...row, marginTop: 8 } }, rec.attachments.map((a) => h(Attachment, { key: a.id, a }))),
+        ((_c = rec.attachments) == null ? void 0 : _c.length) > 0 && h(
+          "div",
+          { style: { marginTop: 8 } },
+          h("b", null, rec.attachment_summary || `${rec.attachments.length} file(s)`),
+          h("div", { style: { ...row, flexWrap: "wrap" } }, rec.attachments.map((a) => h(Attachment, { key: a.id, a })))
+        ),
         h(
           "div",
           { style: { marginTop: 8 } },
@@ -1900,8 +1911,46 @@
         )
       );
     }
+    const INTEGRITY = {
+      intact: "intact (SHA-256 verified)",
+      mismatch: "DOES NOT MATCH the captured file",
+      missing: "missing",
+      not_uploaded: "not uploaded yet"
+    };
+    function Evidence({ att }) {
+      var _a2;
+      const vn = (_a2 = att.voice_notes) != null ? _a2 : {};
+      return h(
+        "div",
+        { style: { margin: "6px 0" } },
+        h("b", null, "Evidence: "),
+        att.summary,
+        vn.attached > 0 && h(
+          "div",
+          null,
+          `Voice notes: ${vn.transcribed} of ${vn.attached} transcribed`,
+          att.evidence.filter((e) => e.kind === "audio").map((e) => {
+            var _a3;
+            return h(
+              "div",
+              { key: e.attachment_id, style: { fontSize: 13 } },
+              e.transcript ? `\u201C${e.transcript}\u201D (${e.transcript_source === "device" ? "transcribed on the phone" : "transcribed by Hermes"})` : `Not transcribed: ${(_a3 = e.transcript_error) != null ? _a3 : "unknown reason"}`
+            );
+          })
+        ),
+        att.evidence.filter((e) => e.kind === "signature").map((e) => {
+          var _a3;
+          return h(
+            "div",
+            { key: e.attachment_id, style: { marginTop: 4 } },
+            `${e.field_label || "Signature"}${e.signed_at ? ` \u2014 signed ${String(e.signed_at).replace("T", " ").slice(0, 16)}` : ""} \xB7 file ${(_a3 = INTEGRITY[e.integrity]) != null ? _a3 : e.integrity}`,
+            e.stored && h(Attachment, { a: { id: e.attachment_id, mime: e.mime, status: "stored", kind: "signature" } })
+          );
+        })
+      );
+    }
     function ReportView({ r }) {
-      var _a2, _b2, _c, _d, _e;
+      var _a2, _b2, _c, _d, _e, _f, _g;
       return h(
         "div",
         { style: box },
@@ -1914,10 +1963,11 @@
           h("b", null, r.images.analyzed === false ? "Photos not analysed: " : "Photos: "),
           r.images.note
         ),
-        ((_b2 = r.issues) == null ? void 0 : _b2.length) > 0 && h("div", null, h("b", null, "Issues"), r.issues.map((i, k) => h("div", { key: k }, h(Sev, { s: i.severity }), ` ${i.title} \u2014 ${i.evidence}`))),
-        ((_c = r.missing_information) == null ? void 0 : _c.length) > 0 && h("div", null, h("b", null, "Missing information"), h("ul", null, r.missing_information.map((m, k) => h("li", { key: k }, m)))),
-        ((_d = r.suggested_actions) == null ? void 0 : _d.length) > 0 && h("div", null, h("b", null, "Suggested actions"), h("ul", null, r.suggested_actions.map((a, k) => h("li", { key: k }, `[${a.priority}] ${a.action}`)))),
-        ((_e = r.references) == null ? void 0 : _e.length) > 0 && h("div", null, h("b", null, "References"), h("ul", null, r.references.map((x, k) => h("li", { key: k }, `${x.title}${x.source ? ` \u2014 ${x.source}` : ""}`))))
+        ((_c = (_b2 = r.attachments) == null ? void 0 : _b2.evidence) == null ? void 0 : _c.length) > 0 && h(Evidence, { att: r.attachments }),
+        ((_d = r.issues) == null ? void 0 : _d.length) > 0 && h("div", null, h("b", null, "Issues"), r.issues.map((i, k) => h("div", { key: k }, h(Sev, { s: i.severity }), ` ${i.title} \u2014 ${i.evidence}`))),
+        ((_e = r.missing_information) == null ? void 0 : _e.length) > 0 && h("div", null, h("b", null, "Missing information"), h("ul", null, r.missing_information.map((m, k) => h("li", { key: k }, m)))),
+        ((_f = r.suggested_actions) == null ? void 0 : _f.length) > 0 && h("div", null, h("b", null, "Suggested actions"), h("ul", null, r.suggested_actions.map((a, k) => h("li", { key: k }, `[${a.priority}] ${a.action}`)))),
+        ((_g = r.references) == null ? void 0 : _g.length) > 0 && h("div", null, h("b", null, "References"), h("ul", null, r.references.map((x, k) => h("li", { key: k }, `${x.title}${x.source ? ` \u2014 ${x.source}` : ""}`))))
       );
     }
     function Records() {

@@ -6,7 +6,7 @@ import { describeLoadProblem, missingOnServer, unifiedRecords, type Availability
 import { computeState, ERROR_TEXT, text, type Field, type Workflow } from "./engine";
 import { installedModels, ocr, ocrLanguages, speak, transcribe, voicesReady } from "./intel";
 import { KnowledgeIndex } from "./knowledge";
-import { captureGps, compressPhoto, getAttachment, saveAttachment, signaturePad, VoiceRecorder } from "./media";
+import { attachmentUrl, captureGps, compressPhoto, getAttachment, hermesMediaUrl, saveAttachment, signaturePad, updateAttachment, VoiceRecorder } from "./media";
 import { installedPacks, installedWorkflows, installWorkflow, shellCached, storageInfo } from "./packs";
 import { completeDraft } from "./results";
 import { getSyncState, refreshPending, refreshReports, requestAnalysis, resendRecords, resolveConflict, retryRecords, runSync } from "./sync";
@@ -18,7 +18,7 @@ export async function lang(): Promise<string> { return getSetting("lang", "en");
 
 const STATUS_TEXT: Record<string, string> = {
   local: "Saved locally — pending synchronization", pending: "Saved locally — pending synchronization",
-  syncing: "Uploading…", received: "Received by Hermes — photos/audio still uploading", synced: "Saved to Hermes",
+  syncing: "Uploading…", received: "Received by Hermes — files still uploading", synced: "Saved to Hermes",
   conflict: "Conflict — needs your decision", error: "Hermes didn't accept it — try again",
 };
 const ANALYSIS_TEXT: Record<string, string> = {
@@ -27,6 +27,57 @@ const ANALYSIS_TEXT: Record<string, string> = {
 };
 
 export function sevBadge(sev: string) { return h("span", { class: `badge sev-${sev}` }, sev); }
+
+// ------------------------------------------------------------------ media previews
+export type MediaKind = "photo" | "audio" | "signature";
+const KIND_NOUN: Record<MediaKind, [string, string]> = { photo: ["photo", "photos"], audio: ["voice note", "voice notes"], signature: ["signature", "signatures"] };
+
+/** "2 photos · 1 voice note · 1 signature" */
+export function mediaSummary(counts: Partial<Record<MediaKind, number>>): string {
+  return (["photo", "audio", "signature"] as MediaKind[]).filter((k) => counts[k]).map((k) => `${counts[k]} ${KIND_NOUN[k][counts[k] === 1 ? 0 : 1]}`).join(" · ");
+}
+
+function mediaProblem(kind: MediaKind, msg: string) {
+  return h("div", { class: "banner warn media-problem", "data-media-problem": kind }, h("strong", null, kind === "audio" ? "Can't play this voice note here" : `Can't show this ${KIND_NOUN[kind][0]} here`), h("div", null, msg));
+}
+
+/** Element showing a locally stored attachment, loaded through integrity-checked attachmentUrl (never a broken icon). */
+export function mediaPreview(a: Attachment, kind: MediaKind): HTMLElement {
+  const box = h("div", { class: "media", "data-attachment-id": a.id, "data-kind": kind, "data-media-state": "loading" });
+  void attachmentUrl(a).then((src) => {
+    const el = kind === "audio" ? h("audio", { controls: true, preload: "metadata", src: src.url }) as HTMLAudioElement
+      : h("img", { src: src.url, alt: KIND_NOUN[kind][0], class: kind === "signature" ? "sig-img" : "" }) as HTMLImageElement;
+    el.addEventListener("error", () => {
+      box.setAttribute("data-media-state", "error");
+      clear(box);
+      box.append(mediaProblem(kind, kind === "audio" ? `This device can't play ${a.mime} recordings. The file is kept and uploaded to Hermes unchanged.`
+        : "This device couldn't decode the image. The file is kept and uploaded to Hermes unchanged."));
+    });
+    el.addEventListener(kind === "audio" ? "loadedmetadata" : "load", () => box.setAttribute("data-media-state", "ok"));
+    box.append(el);
+    if (src.source === "hermes") box.append(h("div", { class: "muted" }, src.repaired ? "The copy on this device was damaged; restored from Hermes (verified)." : "Shown from Hermes' copy (verified)."));
+  }, (e) => { box.setAttribute("data-media-state", "error"); box.append(mediaProblem(kind, (e as Error).message)); });
+  return box;
+}
+
+/** Element showing a file stored on Hermes (record not on this device). Loads on demand; needs internet. */
+function hermesMedia(a: { id: string; mime: string; sha256?: string; status?: string }, kind: MediaKind): HTMLElement {
+  const box = h("div", { class: "media", "data-attachment-id": a.id, "data-kind": kind, "data-media-state": "idle" });
+  if (a.status && a.status !== "stored") { box.append(h("div", { class: "muted" }, `${KIND_NOUN[kind][0]} still uploading to Hermes`)); return box; }
+  const btn = h("button", { onclick: async () => {
+    btn.disabled = true; btn.textContent = "Loading…";
+    try {
+      const url = await hermesMediaUrl(a.id, a.mime, a.sha256);
+      clear(box);
+      const el = kind === "audio" ? h("audio", { controls: true, preload: "metadata", src: url }) : h("img", { src: url, alt: KIND_NOUN[kind][0], class: kind === "signature" ? "sig-img" : "" });
+      el.addEventListener("error", () => { box.setAttribute("data-media-state", "error"); clear(box); box.append(mediaProblem(kind, `This device can't open ${a.mime} files.`)); });
+      box.setAttribute("data-media-state", "ok");
+      box.append(el);
+    } catch (e) { btn.disabled = false; btn.textContent = `Show ${KIND_NOUN[kind][0]}`; box.setAttribute("data-media-state", "error"); toast((e as Error).message, "error"); }
+  } }, `Show ${KIND_NOUN[kind][0]}`);
+  box.append(btn);
+  return box;
+}
 
 // ------------------------------------------------------------------ readiness
 export interface Check { label: string; ok: boolean | null; detail?: string }
@@ -386,20 +437,22 @@ export const runView: View = async (main, p) => {
     for (const it of items) {
       void getAttachment(it.attachment_id).then((a) => {
         if (!a) return;
-        const url = URL.createObjectURL(a.blob);
         const ocrBtn = h("button", { onclick: async () => {
           const langs = await ocrLanguages();
           if (!langs.length) return toast("Install an OCR pack in Offline Packs first.", "error");
+          ocrBtn.disabled = true;
           ocrBtn.textContent = "Reading text…";
           try {
-            const r = await ocr(a.blob, langs.includes(l === "hi" ? "hin" : "eng") ? (l === "hi" ? "hin" : "eng") : langs[0]);
+            const want = l === "hi" ? "hin" : "eng";
+            const r = await ocr(a.blob, langs.includes(want) ? want : langs[0], (p) => { if (p.status) ocrBtn.textContent = p.status; });
             it.ocr_text = r.text;
-            a.meta = { ...a.meta, ocr_text: r.text };
-            await d.put("attachments", a);
+            it.ocr_confidence = r.confidence;
+            await updateAttachment(a.id, { meta: { ocr_text: r.text, ocr_confidence: r.confidence } });
+            if (r.note) toast(r.note, r.quality === "poor" ? "error" : "info");
             await set(f.id, items);
-          } catch (e) { toast((e as Error).message, "error"); ocrBtn.textContent = "Extract text (OCR)"; }
+          } catch (e) { toast((e as Error).message, "error"); ocrBtn.disabled = false; ocrBtn.textContent = "Extract text (OCR)"; }
         } }, "Extract text (OCR)");
-        thumbs.append(h("div", null, h("img", { src: url, alt: "photo" }),
+        thumbs.append(h("div", null, mediaPreview(a, "photo"),
           h("div", { class: "row" }, ocrBtn, h("button", { class: "danger", onclick: async () => {
             await d.delete("attachments", a.id); await set(f.id, items.filter((x) => x.attachment_id !== a.id));
           } }, "Remove")),
@@ -427,13 +480,20 @@ export const runView: View = async (main, p) => {
       void getAttachment(it.attachment_id).then((a) => {
         if (!a) return;
         const tBtn = h("button", { onclick: async () => {
+          tBtn.disabled = true;
           tBtn.textContent = "Transcribing on device…";
-          try { const r = await transcribe(a.blob, l); it.transcript = r.text; a.meta = { ...a.meta, transcript: r.text }; await d.put("attachments", a); await set(f.id, items); }
-          catch (e) { toast((e as Error).message, "error"); tBtn.textContent = "Transcribe (offline)"; }
+          try {
+            const r = await transcribe(a.blob, l);
+            it.transcript = r.text;
+            it.transcript_source = "device";
+            await updateAttachment(a.id, { meta: { transcript: r.text, transcript_engine: r.engine } });
+            await set(f.id, items);
+          } catch (e) { toast((e as Error).message, "error"); tBtn.disabled = false; tBtn.textContent = "Transcribe (offline)"; }
         } }, "Transcribe (offline)");
-        list.append(h("div", { class: "card" }, h("audio", { controls: true, src: URL.createObjectURL(a.blob) }),
+        list.append(h("div", { class: "card" }, mediaPreview(a, "audio"),
           h("div", { class: "muted" }, `${a.meta?.duration_s ?? "?"} s · ${fmtBytes(a.size)}`),
-          it.transcript ? h("p", null, `“${it.transcript}”`) : tBtn,
+          it.transcript !== undefined ? h("div", null, h("label", { class: "q" }, "Transcript (you can correct it)"),
+            h("textarea", { "data-transcript": a.id, oninput: async (e: Event) => { it.transcript = (e.target as HTMLTextAreaElement).value; await set(f.id, items, false); } }, it.transcript)) : tBtn,
           h("button", { class: "danger", onclick: async () => { await d.delete("attachments", a.id); await set(f.id, items.filter((x) => x.attachment_id !== a.id)); } }, "Remove")));
       });
     }
@@ -469,9 +529,9 @@ export const runView: View = async (main, p) => {
   const signatureInput = (f: Field) => {
     const v = draft.answers[f.id] as any;
     if (v?.attachment_id) {
-      const img = h("img", { alt: "signature", style: "max-width:100%;background:#fff;border-radius:8px" });
-      void getAttachment(v.attachment_id).then((a) => { if (a) img.src = URL.createObjectURL(a.blob); });
-      return h("div", null, img, h("button", { onclick: async () => { await d.delete("attachments", v.attachment_id); await set(f.id, undefined); } }, "Sign again"));
+      const img = h("div");
+      void getAttachment(v.attachment_id).then((a) => { if (a) img.append(mediaPreview(a, "signature")); else img.append(mediaProblem("signature", "The signature file is missing on this device. Sign again.")); });
+      return h("div", null, img, v.signed_at ? h("div", { class: "muted" }, `Signed ${fmtTime(v.signed_at)}`) : null, h("button", { onclick: async () => { await d.delete("attachments", v.attachment_id); await set(f.id, undefined); } }, "Sign again"));
     }
     const c = h("canvas", { class: "sig", width: 600, height: 200 }) as HTMLCanvasElement;
     const pad = signaturePad(c);
@@ -560,7 +620,7 @@ export const resultsView: View = async (main, p) => {
       rec.sync_status === "conflict" ? h("a", { class: "btn", href: "#/sync" }, "Resolve") : null));
   } else {
     main.append(h("div", { class: "banner hermes" },
-      h("strong", null, rec.sync_status === "synced" ? "Saved to Hermes — confirmed" : "Received by Hermes — photos/audio still uploading"),
+      h("strong", null, rec.sync_status === "synced" ? "Saved to Hermes — confirmed" : "Received by Hermes — files still uploading"),
       h("div", { class: "muted" }, `Confirmed by Hermes ${fmtTime(rec.server_ack?.received_at)}`),
       h("div", null, "Hermes analysis: ", h("strong", null, ANALYSIS_TEXT[rec.analysis_status] ?? rec.analysis_status))));
   }
@@ -592,20 +652,37 @@ export const resultsView: View = async (main, p) => {
     else if (f.type === "multi_choice") shown = (v as any[]).map((x) => text(f.options?.find((o) => o.value === x)?.label, l) || String(x)).join(", ");
     else if (f.type === "checkbox") shown = v ? "Yes" : "No";
     else if (f.type === "gps") shown = `${v.lat}, ${v.lon} (±${v.accuracy ?? "?"} m, ${v.source})`;
-    else if (["photo", "audio"].includes(f.type)) shown = `${(Array.isArray(v) ? v : [v]).length} file(s)` + (Array.isArray(v) ? v.map((x: any) => x.ocr_text ? `\nOCR: ${x.ocr_text}` : x.transcript ? `\nTranscript: ${x.transcript}` : "").join("") : "");
-    else if (f.type === "signature") shown = "Signed";
+    else if (["photo", "audio"].includes(f.type)) {
+      const list = (Array.isArray(v) ? v : [v]).filter(Boolean);
+      shown = mediaSummary({ [f.type]: list.length }) + list.map((x: any) => x.ocr_text ? `\nText in photo: ${x.ocr_text}` : x.transcript ? `\nTranscript: ${x.transcript}` : "").join("");
+    }
+    else if (f.type === "signature") shown = v?.signed_at ? `Signed ${fmtTime(v.signed_at)}` : "Signed";
     else shown = `${v}${f.unit ? ` ${f.unit}` : ""}`;
     dl.append(h("dt", null, text(f.label, l)), h("dd", { style: "white-space:pre-wrap" }, shown));
   }
   resp.append(dl);
-  if (atts.length) {
-    const thumbs = h("div", { class: "thumbs", style: "margin-top:.6rem" });
-    for (const a of atts) {
-      const url = URL.createObjectURL(a.blob);
-      thumbs.append(a.kind === "audio" ? h("audio", { controls: true, src: url }) : h("img", { src: url, alt: a.kind }));
+  // Only files the record's answers actually reference (a removed photo's leftovers are not "attachments").
+  const referenced = new Set<string>();
+  const fieldOf = new Map<string, Field>();
+  for (const f of wf?.fields ?? []) {
+    if (!["photo", "audio", "signature"].includes(f.type)) continue;
+    for (const x of [rec.answers[f.id]].flat() as any[]) if (x?.attachment_id) { referenced.add(x.attachment_id); fieldOf.set(x.attachment_id, f); }
+  }
+  const shownAtts = atts.filter((a) => referenced.has(a.id) || !wf);
+  if (shownAtts.length) {
+    const kindOf = (a: Attachment): MediaKind => (fieldOf.get(a.id)?.type as MediaKind) ?? (a.kind as MediaKind);
+    const counts: Partial<Record<MediaKind, number>> = {};
+    for (const a of shownAtts) counts[kindOf(a)] = (counts[kindOf(a)] ?? 0) + 1;
+    const media = h("div", { class: "thumbs", style: "margin-top:.6rem", id: "result-media" });
+    for (const a of shownAtts) {
+      const f = fieldOf.get(a.id);
+      media.append(h("figure", { class: "media-item" }, mediaPreview(a, kindOf(a)),
+        h("figcaption", { class: "muted" }, `${f ? text(f.label, l) : KIND_NOUN[kindOf(a)][0]}${a.uploaded ? " · on Hermes" : " · not uploaded yet"}`)));
     }
-    resp.append(h("h3", null, "Photos, audio and signatures"), thumbs,
-      h("div", { class: "muted" }, `${atts.filter((a) => a.uploaded).length} of ${atts.length} uploaded · kept on this device`));
+    const up = shownAtts.filter((a) => a.uploaded).length;
+    resp.append(h("h3", null, mediaSummary(counts)), media,
+      h("div", { class: "muted", id: "media-upload-status", "data-uploaded": String(up), "data-total": String(shownAtts.length) },
+        up === shownAtts.length ? `All ${shownAtts.length} file(s) uploaded to Hermes and kept on this device.` : `${up} of ${shownAtts.length} file(s) uploaded to Hermes so far. All are kept on this device.`));
   }
   main.append(resp);
 
@@ -638,6 +715,33 @@ function hermesSection(rec: LocalRecord, stored: StoredReport | undefined) {
   return box;
 }
 
+const INTEGRITY_TEXT: Record<string, string> = {
+  intact: "intact (SHA-256 verified on Hermes)", mismatch: "DOES NOT MATCH the captured file", missing: "missing on Hermes",
+  not_uploaded: "not uploaded yet",
+};
+
+/** Report section listing the record's files as evidence: voice-note transcripts and signatures with integrity. */
+function evidenceSection(att: any): HTMLElement {
+  const sec = h("div", { class: "evidence", id: "report-evidence" }, h("h3", null, "Evidence"), h("p", { class: "muted", "data-summary": att.summary }, att.summary));
+  const vn = att.voice_notes;
+  if (vn?.attached) {
+    sec.append(h("div", { class: `banner ${vn.transcribed === vn.attached ? "hermes" : "warn"}`, "data-voice-transcribed": `${vn.transcribed}/${vn.attached}` },
+      h("strong", null, vn.transcribed === vn.attached ? `Voice notes considered (${vn.transcribed} of ${vn.attached} transcribed)` : `${vn.attached - vn.transcribed} voice note(s) not transcribed`),
+      ...att.evidence.filter((e: any) => e.kind === "audio").map((e: any) => h("div", null,
+        e.transcript ? `“${e.transcript}” — ${e.transcript_source === "device" ? "transcribed on the phone" : "transcribed by Hermes"}`
+          : `Not transcribed: ${e.transcript_error ?? "unknown reason"}`))));
+  }
+  for (const e of att.evidence.filter((x: any) => x.kind === "signature")) {
+    sec.append(h("div", { class: `banner ${e.integrity === "intact" ? "hermes" : "warn"}`, "data-signature": e.attachment_id, "data-integrity": e.integrity },
+      h("strong", null, `${e.field_label || "Signature"}${e.signed_at ? ` — signed ${fmtTime(e.signed_at)}` : ""}`),
+      h("div", null, `File ${INTEGRITY_TEXT[e.integrity] ?? e.integrity}`),
+      e.stored ? hermesMedia({ id: e.attachment_id, mime: e.mime, sha256: e.sha256 }, "signature") : null));
+  }
+  const bad = att.evidence.filter((e: any) => e.kind !== "signature" && e.integrity !== "intact" && e.integrity !== "not_uploaded");
+  if (bad.length) sec.append(h("div", { class: "banner bad" }, `${bad.length} file(s) on Hermes failed the integrity check.`));
+  return sec;
+}
+
 /** Body of a Hermes report — shared by this device's records and records from other devices. */
 export function reportBody(box: HTMLElement, r: any): void {
   {
@@ -647,6 +751,7 @@ export function reportBody(box: HTMLElement, r: any): void {
       box.append(h("div", { class: `banner ${r.images.analyzed === false ? "warn" : "hermes"}` },
         h("strong", null, r.images.analyzed === false ? "Photos not analysed" : "Photos analysed"), h("div", null, r.images.note)));
     }
+    if (r.attachments?.evidence?.length) box.append(evidenceSection(r.attachments));
     if (r.issues?.length) box.append(h("h3", null, "Issues identified"), h("ul", { class: "clean" }, ...r.issues.map((i: any) => h("li", null, sevBadge(i.severity), " ", h("strong", null, i.title), h("div", { class: "muted" }, i.evidence)))));
     if (r.missing_information?.length) box.append(h("h3", null, "Missing information"), h("ul", null, ...r.missing_information.map((m: string) => h("li", null, m))));
     if (r.suggested_actions?.length) box.append(h("h3", null, "Suggested actions"), h("ul", { class: "clean" }, ...r.suggested_actions.map((a: any) => h("li", null, h("span", { class: "badge" }, a.priority), " ", a.action))));
@@ -696,6 +801,7 @@ async function fetchRemoteCopy(id: string, names?: Map<string, string>, owner?: 
     device_label: names.get(rec.device_id) || (rec.device_id === await deviceId() ? "This device" : "Another device"),
     completed_at: rec.completed_at, received_at: rec.received_at, revision: rec.revision, analysis_status: rec.analysis_status,
     answers: rec.answers, local_results: rec.local_results, report, report_id: rec.report_id ?? null, downloaded_at: nowIso(),
+    attachments: (rec.attachments ?? []).map((a: any) => ({ id: a.id, field_id: a.field_id, mime: a.mime, size: a.size, sha256: a.sha256, status: a.status })),
     owner: owner || await currentAccountId() };
 }
 
@@ -863,12 +969,25 @@ export const remoteView: View = async (main, p) => {
       h("dt", null, "Hermes analysis"), h("dd", null, ANALYSIS_TEXT[r.analysis_status] ?? r.analysis_status),
       h("dt", null, "Availability"), h("dd", { "data-availability": copy ? "kept-offline" : "needs-internet" }, copy ? `Available offline (downloaded ${fmtTime(copy.downloaded_at)})` : "Needs internet"))));
   const dl = h("dl", { class: "kv" });
+  const serverAtts = new Map<string, any>((live?.attachments ?? copy?.attachments ?? []).map((a) => [a.id, a]));
   for (const [k, v] of Object.entries(r.answers ?? {})) {
     const f = wf?.fields.find((x) => x.id === k);
-    let shown = typeof v === "object" ? JSON.stringify(v) : String(v);
-    if (f?.type === "single_choice") shown = text(f.options?.find((o) => o.value === v)?.label, l) || shown;
+    let shown: string | HTMLElement = typeof v === "object" ? JSON.stringify(v) : String(v);
+    if (f?.type === "single_choice") shown = text(f.options?.find((o) => o.value === v)?.label, l) || String(shown);
+    else if (f?.type === "multi_choice" && Array.isArray(v)) shown = v.map((x) => text(f.options?.find((o) => o.value === x)?.label, l) || String(x)).join(", ");
     else if (f?.type === "checkbox") shown = v ? "Yes" : "No";
-    else if (f?.type === "photo" || f?.type === "audio") shown = `${(Array.isArray(v) ? v : [v]).length} file(s), viewable in the dashboard`;
+    else if (f?.type === "gps" && v && typeof v === "object") shown = `${(v as any).lat}, ${(v as any).lon} (±${(v as any).accuracy ?? "?"} m)`;
+    else if (f && ["photo", "audio", "signature"].includes(f.type)) {
+      const items = ([v].flat() as any[]).filter((x) => x?.attachment_id);
+      const box = h("div", null, f.type === "signature" ? `Signed ${fmtTime((v as any)?.signed_at)}` : mediaSummary({ [f.type]: items.length }));
+      for (const it of items) {
+        const sa = serverAtts.get(it.attachment_id);
+        box.append(hermesMedia({ id: it.attachment_id, mime: sa?.mime ?? "", sha256: sa?.sha256, status: sa?.status }, f.type as MediaKind));
+        if (it.transcript) box.append(h("div", { class: "muted" }, `Transcript: ${it.transcript}`));
+        if (it.ocr_text) box.append(h("div", { class: "muted" }, `Text in photo: ${it.ocr_text}`));
+      }
+      shown = box;
+    }
     dl.append(h("dt", null, f ? text(f.label, l) : k), h("dd", null, shown));
   }
   main.append(h("div", { class: "card" }, h("h2", null, "Answers"), dl));

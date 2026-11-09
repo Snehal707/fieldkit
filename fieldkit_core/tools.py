@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
-from . import analysis, engine, packs as packs_mod, runtime
+from . import analysis, engine, media, packs as packs_mod, runtime
 from .db import ALL, Conflict, Invalid, NotFound, get_store
 
 TOOLSET = "fieldkit"
@@ -170,7 +170,13 @@ def list_records(a: dict) -> str:
 def get_record(a: dict) -> str:
     rec = get_store().get_record(ALL, a["record_id"])
     wf = get_store().get_workflow_any_owner(rec["workflow_id"], rec["workflow_version"]) or {}
-    rec["answers_readable"] = analysis._answers_for_prompt(wf, rec["answers"], a.get("language", "en")) if wf else None
+    lang = a.get("language", "en")
+    if wf:
+        files = {x["id"]: x for x in media.classify(rec, wf, lang)}
+        rec["answers_readable"] = analysis._answers_for_prompt(wf, rec["answers"], lang, files)
+    else:
+        rec["answers_readable"] = None
+    media.annotate(rec, wf or None, lang)
     return _ok(record=rec)
 
 

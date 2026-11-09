@@ -65,4 +65,4 @@ export function signIn(returnHash = "#/sync"): void {
 // Pinned upstream runtimes (see fieldkit_core/models.json and THIRD_PARTY.md).
 export const TESSERACT_CORE = "https://cdn.jsdelivr.net/npm/tesseract.js-core@7.0.0";
 export const TESSDATA = (lang: string) => `https://cdn.jsdelivr.net/npm/@tesseract.js-data/${lang}@1.0.0/4.0.0_best_int`;
-export const APP_VERSION = "0.2.3";
+export const APP_VERSION = "0.2.4";

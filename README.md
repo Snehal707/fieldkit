@@ -46,9 +46,9 @@ Full instructions are in [docs/INSTALL.md](docs/INSTALL.md).
   - a clear *"Saved locally. Pending synchronization."* label. Local findings are never presented as Hermes analysis.
 - The offline assistant and knowledge browser. Retrieval answers come with a source, and the assistant says when a question isn't covered.
 - Dictionary search (exact, translation, prefix and fuzzy matches).
-- Sentence translation English→Hindi and Hindi→English (OPUS-MT, on device).
-- OCR in English and Hindi (tesseract.js).
-- Speech-to-text (Whisper tiny).
+- Sentence translation English→Hindi and Hindi→English (OPUS-MT, on device). Terms from installed dictionary packs are used in the translation, and the Translate screen lists the dictionary terms it used.
+- OCR in English and Hindi (tesseract.js). Photos keep their orientation (EXIF) and are read at high resolution with lighting correction. Each result gets a reliability verdict (good, check or poor). When the text is poor, the app says so and asks you to retake the photo closer, in good light.
+- Speech-to-text in English with the Whisper tiny pack (version 2, about 64 MB). Hindi speech-to-text needs the optional Whisper small pack (about 250 MB, slower).
 - Read-aloud with local voices only.
 - Previously downloaded Hermes reports.
 - A header that shows the device network, Hermes reachability, records awaiting confirmation and "N not submitted" drafts. Tap the status pill for connection diagnostics.
@@ -75,6 +75,17 @@ Full instructions are in [docs/INSTALL.md](docs/INSTALL.md).
 - **Run FieldKit's Hermes on one machine with one persistent volume.** FieldKit keeps its data in SQLite at `<HERMES_HOME>/plugin-data/fieldkit/data.db`. With several machines (each with its own volume), or a volume that is replaced on redeploy, different installs can reach different data. Settings → Advanced shows the **Hermes data store** id, the machine, and your record count, so you can compare installs.
 - **After updating FieldKit on a hosted Hermes, restart the Hermes dashboard process** as well as the gateway. Plugin API routes are mounted by the dashboard, so until it restarts, the new app talks to the old server code.
 
+## Photos, voice notes and signatures (0.2.4)
+- Every photo, voice note and signature is checked against the SHA-256 recorded when it was captured. If the copy on the device is unreadable or damaged and Hermes has the file, FieldKit shows Hermes' verified copy and repairs the device copy.
+- A file that can't be shown or played gives a plain message instead of a broken icon or an audio error.
+- Results shows how many of each kind were captured (for example "1 photo · 1 voice note · 1 signature"), the field each one answers, and its upload status. Transcripts can be edited, and each signature shows when it was signed.
+- Voice notes are recorded as MP4/AAC on Apple devices and WebM elsewhere, using only formats the device can play back.
+- Analysis: only photos are sent to the vision model. Signatures are no longer counted as photos. For a voice note, the phone's transcript is used if there is one. Otherwise Hermes transcribes the voice note after upload, using the speech-to-text provider the Hermes operator configured. That may be a local engine or a cloud provider, if the operator set one up. The transcript, or the reason there is none, is stored with the record. Transcripts are included in the analysis, and a voice note without one is listed under missing information with the reason.
+- Operators can turn Hermes-side transcription off with the plugin setting `voice_transcription: false` (or the environment variable `FIELDKIT_VOICE_TRANSCRIPTION=false`). It is on by default.
+- Reports have an **Evidence** section: a summary, the voice-note transcripts and where each came from, each signature with its time, an integrity check against the stored file, and a **Show signature** button.
+- Records from other devices (shown as "From …") load their photos, voice notes and signatures from Hermes on demand. This needs internet, and each file is checked against its SHA-256.
+- **Not yet verified on an iPhone.** The exact iOS cause of the broken thumbnail and audio error could not be reproduced on desktop WebKit. The fixes target the known causes (files stored in IndexedDB shown through object URLs, and WebM playback). They are verified in Chromium and WebKit only.
+
 ## Verification status (honest)
 See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anything not listed as verified below is pending.
 
@@ -94,6 +105,8 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 |---|---|
 | Offline OCR (English) and English↔Hindi translation | Work after a cold restart with no network; model files verified by SHA-256 on install |
 | Offline speech-to-text (Whisper) | Verified in Chromium only (WebKit cannot simulate a microphone) |
+| OCR, speech-to-text and translation accuracy (0.2.4, synthetic test material, see [tests/eval/README.md](tests/eval/README.md)) | OCR: Chromium and WebKit. Speech-to-text and translation: measured in Node with the same ONNX files, not in a browser. Not measured on a phone |
+| Photos, voice notes, signatures and Evidence (`media.spec.ts`, 0.2.4; real Hermes v0.23.0) | Chromium: passed (voice note via fake microphone). WebKit: passed (photo and signature; WebKit has no fake microphone). Real Hermes speech-to-text of uploaded spoken voice notes: passed on the local Hermes in both runs |
 | Downloaded Hermes reports | Readable offline after a cold restart |
 | Dashboard tab | Works inside the real Hermes dashboard, all 7 sections |
 | Strict offline | No request leaves the device while offline; record survives restart; auto-sync on reconnect with no user action |
@@ -105,7 +118,7 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 
 | Area | Status |
 |---|---|
-| Tests | 100 Python tests, 87 TypeScript tests, 11 Playwright E2E suites; every one of the 23 Hermes tools has a test |
+| Tests | 114 Python tests, 110 TypeScript tests, 16 Playwright E2E spec files; every one of the 23 Hermes tools has a test |
 | Simulated Hermes Mobile conversation | Covered by a test: create, publish, app link, sync, process jobs, get record and report, compare and save report, follow-up, sync status, conflict resolution (simulated, not a real device conversation) |
 | Security | `hermes plugins validate` security scan: safe. `npm audit`: 0 vulnerabilities. `pip-audit`: 0 known vulnerabilities |
 | Access control | Every API route checks the signed-in user; the app page is public and contains no data. v0.1.7 fixed a cross-user leak where `GET /jobs` listed other users' jobs |
@@ -115,6 +128,8 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 | Area | Status |
 |---|---|
 | OCR, translation and speech-to-text on iPhone | Pending |
+| real iPhone check of 0.2.4 photo/voice/signature fixes | Pending |
+| Hindi Whisper small on iPhone (memory, speed) | Pending |
 | real iPhone check of the unified Saved Records (Safari + Home Screen app) | Pending |
 | Offline reports on iPhone | Pending |
 | Full Hermes Mobile conversation on a real device | Pending (needs the hosted instance and owner's permission) |
@@ -125,8 +140,9 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 | `hermes plugins doctor . --ci` | Pass (v0.1.7: 23 tools, 1 hook) |
 
 ### Known limitations
-- The small OPUS-MT model mistranslates some technical terms (for example "bearing" → "bear").
-- Whisper tiny's Hindi accuracy is limited.
+- The small OPUS-MT model mistranslates some technical terms (for example "bearing" → "bear"). Dictionary terms help when an installed dictionary has the term, but general quality is still limited.
+- Whisper tiny is English-only; Hindi needs the 250 MB Whisper small pack (about 18–31% character errors on synthetic speech).
+- OCR cannot read blurred or dark photos. It says so and asks for a retake. Handwriting is not supported.
 - iOS PWAs have separate storage from Safari. Sign in once inside the installed app.
 - Uploads run while the app is open. There is no background upload from a closed app.
 - Hermes OAuth sessions last 15 minutes. Sync pauses and asks you to sign in; nothing is lost.

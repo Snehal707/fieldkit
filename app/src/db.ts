@@ -51,7 +51,7 @@ export interface LocalRecord {
 export interface Attachment {
   id: string; record_id: string; field_id: string; kind: "photo" | "audio" | "signature";
   mime: string; size: number; sha256: string; blob: Blob; created_at: string; uploaded: boolean;
-  meta?: { width?: number; height?: number; duration_s?: number; ocr_text?: string; transcript?: string };
+  meta?: { width?: number; height?: number; duration_s?: number; ocr_text?: string; ocr_confidence?: number; transcript?: string; transcript_engine?: string };
 }
 
 export interface OutboxOp {
@@ -76,6 +76,7 @@ export interface RemoteCopy {
   completed_at?: string; received_at?: number; revision: number; analysis_status: string; answers: Record<string, unknown>;
   local_results: any; report: any | null; report_id?: string | null; downloaded_at: string;
   owner?: string;        // Hermes account that downloaded it; only shown to that account
+  attachments?: { id: string; field_id?: string; mime: string; size?: number; sha256?: string; status?: string }[];   // metadata only; files load from Hermes on demand
 }
 export interface StoredWorkflow { id: string; version: number; downloaded_at: string; definition: Workflow }
 

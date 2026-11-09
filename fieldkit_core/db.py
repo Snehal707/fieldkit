@@ -83,6 +83,13 @@ MIGRATIONS: list[str] = [
     INSERT INTO meta(key, value) VALUES ('store_id', 'fks_' || lower(hex(randomblob(8))));
     INSERT INTO meta(key, value) VALUES ('store_created_at', CAST(strftime('%s','now') AS TEXT));
     """,
+    # v3: voice-note transcripts made by Hermes speech-to-text (the phone's own transcripts stay in the answers).
+    """
+    ALTER TABLE attachments ADD COLUMN transcript TEXT;
+    ALTER TABLE attachments ADD COLUMN transcript_source TEXT;
+    ALTER TABLE attachments ADD COLUMN transcript_error TEXT;
+    ALTER TABLE attachments ADD COLUMN transcribed_at REAL;
+    """,
 ]
 
 
@@ -531,6 +538,11 @@ class Store:
             self.audit(c, owner, "sync.attachment", aid, {"record": row["record_id"], "size": len(body)})
             return {"attachment_id": aid, "status": "stored", **self._sync_response(c, row["record_id"])}
 
+    def set_attachment_transcript(self, aid: str, transcript: Optional[str], source: Optional[str], error: Optional[str]) -> None:
+        with self.tx() as c:
+            c.execute("UPDATE attachments SET transcript=?, transcript_source=?, transcript_error=?, transcribed_at=? WHERE id=?",
+                      (transcript, source, error, _now(), aid))
+
     def get_attachment(self, owner: Any, aid: str) -> dict:
         clause, args = self._owner_clause(owner)
         rows = self._q(f"SELECT * FROM attachments WHERE id=? AND {clause}", (aid, *args))
@@ -546,7 +558,8 @@ class Store:
             d["answers"] = _uj(d["answers"])
             d["local_results"] = _uj(d["local_results"])
             d["attachments"] = [dict(a) for a in self._q(
-                "SELECT id, field_id, mime, size, sha256, status, created_at, stored_at FROM attachments WHERE record_id=?", (d["id"],))]
+                "SELECT id, field_id, mime, size, sha256, status, created_at, stored_at, transcript, transcript_source, "
+                "transcript_error FROM attachments WHERE record_id=?", (d["id"],))]
         else:
             d.pop("answers", None)
             d.pop("local_results", None)

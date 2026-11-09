@@ -137,9 +137,13 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
       fetcher(`${API}/attachments/${a.id}`).then((r: Response) => r.blob()).then((b: Blob) => { u = URL.createObjectURL(b); setUrl(u); }).catch(() => undefined);
       return () => { if (u) URL.revokeObjectURL(u); };
     }, [a.id]);
-    if (a.status !== "stored") return h("div", null, `${a.id} (${a.mime}) — still uploading`);
-    if (!url) return h("div", null, "Loading media…");
-    return String(a.mime).startsWith("audio/") ? h("audio", { controls: true, src: url }) : h("img", { src: url, style: { maxWidth: 220, borderRadius: 8, marginRight: 8 } });
+    const noun = a.kind === "signature" ? "Signature" : a.kind === "audio" ? "Voice note" : a.kind === "photo" ? "Photo" : "File";
+    if (a.status !== "stored") return h("div", null, `${noun} (${a.mime}) — still uploading`);
+    if (!url) return h("div", null, `Loading ${noun.toLowerCase()}…`);
+    return h("figure", { style: { margin: "0 8px 8px 0" } },
+      String(a.mime).startsWith("audio/") ? h("audio", { controls: true, src: url })
+        : h("img", { src: url, style: { maxWidth: 220, borderRadius: 8, background: a.kind === "signature" ? "#fff" : undefined } }),
+      h("figcaption", { style: { fontSize: 12, opacity: .75 } }, `${noun}${a.field_label ? ` · ${a.field_label}` : ""}${a.signed_at ? ` · signed ${String(a.signed_at).replace("T", " ").slice(0, 16)}` : ""}${a.transcript ? ` · “${a.transcript}”` : ""}`));
   }
 
   function RecordDetail({ id }: { id: string }) {
@@ -152,10 +156,28 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
         h("div", null, h("b", null, "Answers"), h("pre", { style: pre }, JSON.stringify(rec.answers, null, 2))),
         h("div", null, h("b", { style: { color: "#7c3aed" } }, "Local findings (computed on the phone)"),
           (rec.local_results?.findings ?? []).map((f: any, i: number) => h("div", { key: i }, h(Sev, { s: f.severity }), " ", f.label, f.detail ? ` — ${f.detail}` : "")))),
-      rec.attachments?.length > 0 && h("div", { style: { ...row, marginTop: 8 } }, rec.attachments.map((a: any) => h(Attachment, { key: a.id, a }))),
+      rec.attachments?.length > 0 && h("div", { style: { marginTop: 8 } }, h("b", null, rec.attachment_summary || `${rec.attachments.length} file(s)`),
+        h("div", { style: { ...row, flexWrap: "wrap" } }, rec.attachments.map((a: any) => h(Attachment, { key: a.id, a })))),
       h("div", { style: { marginTop: 8 } }, h("b", { style: { color: "#0f766e" } }, "Hermes report"),
         rep ? h(ReportView, { r: rep }) : h("div", null, `No report yet (analysis: ${rec.analysis_status}).`),
         h("div", { style: row }, h(Button, { onClick: () => post(`records/${id}/analyze`).then((r: any) => { setMsg(`Analysis ${r.analysis_status} (${r.analysis_mode})`); reload(); }, (e: any) => setMsg(String(e))) }, rep ? "Re-analyse" : "Request analysis"), msg)));
+  }
+
+  const INTEGRITY: Record<string, string> = { intact: "intact (SHA-256 verified)", mismatch: "DOES NOT MATCH the captured file",
+    missing: "missing", not_uploaded: "not uploaded yet" };
+
+  /** Files of the record as evidence: correct counts, voice-note transcripts, signatures with integrity. */
+  function Evidence({ att }: { att: any }) {
+    const vn = att.voice_notes ?? {};
+    return h("div", { style: { margin: "6px 0" } },
+      h("b", null, "Evidence: "), att.summary,
+      vn.attached > 0 && h("div", null, `Voice notes: ${vn.transcribed} of ${vn.attached} transcribed`,
+        att.evidence.filter((e: any) => e.kind === "audio").map((e: any) => h("div", { key: e.attachment_id, style: { fontSize: 13 } },
+          e.transcript ? `“${e.transcript}” (${e.transcript_source === "device" ? "transcribed on the phone" : "transcribed by Hermes"})`
+            : `Not transcribed: ${e.transcript_error ?? "unknown reason"}`))),
+      att.evidence.filter((e: any) => e.kind === "signature").map((e: any) => h("div", { key: e.attachment_id, style: { marginTop: 4 } },
+        `${e.field_label || "Signature"}${e.signed_at ? ` — signed ${String(e.signed_at).replace("T", " ").slice(0, 16)}` : ""} · file ${INTEGRITY[e.integrity] ?? e.integrity}`,
+        e.stored && h(Attachment, { a: { id: e.attachment_id, mime: e.mime, status: "stored", kind: "signature" } }))));
   }
 
   function ReportView({ r }: { r: any }) {
@@ -165,6 +187,7 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
       h("p", null, r.summary),
       r.images?.note && h("div", { style: { margin: "6px 0", padding: 8, borderRadius: 6, border: `1px solid ${r.images.analyzed === false ? "#d97706" : "#0f766e"}` } },
         h("b", null, r.images.analyzed === false ? "Photos not analysed: " : "Photos: "), r.images.note),
+      r.attachments?.evidence?.length > 0 && h(Evidence, { att: r.attachments }),
       r.issues?.length > 0 && h("div", null, h("b", null, "Issues"), r.issues.map((i: any, k: number) => h("div", { key: k }, h(Sev, { s: i.severity }), ` ${i.title} — ${i.evidence}`))),
       r.missing_information?.length > 0 && h("div", null, h("b", null, "Missing information"), h("ul", null, r.missing_information.map((m: string, k: number) => h("li", { key: k }, m)))),
       r.suggested_actions?.length > 0 && h("div", null, h("b", null, "Suggested actions"), h("ul", null, r.suggested_actions.map((a: any, k: number) => h("li", { key: k }, `[${a.priority}] ${a.action}`)))),

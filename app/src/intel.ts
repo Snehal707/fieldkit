@@ -5,8 +5,11 @@
 // are cached on the device (Transformers.js Cache API store, tesseract IndexedDB + service worker
 // upstream cache). After installation no network request is needed; FieldKit never calls a remote
 // translation, OCR or speech service.
+import { collapseRepeats, isSilent, prepareSpeech, whisperOptions } from "./audio_prep";
 import { TESSDATA, TESSERACT_CORE } from "./config";
 import { db, type InstalledModel } from "./db";
+import { OCR_PARAMS, runOcr } from "./ocr_prep";
+import { protectTerms, restoreTerms, splitSentences, termPairs, tidyOutput, type GlossaryEntry } from "./translate_prep";
 import { nowIso, sha256Hex } from "./util";
 
 export type Progress = (p: { file?: string; loaded?: number; total?: number; progress?: number; status?: string }) => void;
@@ -108,20 +111,41 @@ export async function installTranslation(manifest: any, onProgress?: Progress): 
   return markInstalled(manifest, v.ok, v.detail);
 }
 
-export async function translate(textIn: string, from: string, to: string): Promise<{ text: string; model: string; ms: number }> {
+/** Terminology from the installed dictionary packs (reviewed translations) for one direction. */
+async function glossary(from: string, to: string) {
+  const packs = await (await db()).getAllFromIndex("packs", "by_kind", "dictionary");
+  return termPairs(packs.flatMap((p) => (p.content?.entries ?? []) as GlossaryEntry[]), from, to);
+}
+
+export interface TranslationResult { text: string; model: string; ms: number; terms: { source: string; target: string }[] }
+
+export async function translate(textIn: string, from: string, to: string): Promise<TranslationResult> {
   const models = await installedModels();
   const m = models.find((x) => x.capability === "translation" && x.manifest.direction?.[0] === from && x.manifest.direction?.[1] === to);
   if (!m) throw new Error(`No offline ${from}→${to} translation pack installed`);
   const t0 = performance.now();
   const pipe = await pipelineFor(m.manifest);
-  // Translate sentence by sentence so long inputs stay within the model's context.
-  const parts = textIn.split(/(?<=[.!?।])\s+/u).filter((s) => s.trim());
-  const outs: string[] = [];
-  for (const s of parts.length ? parts : [textIn]) {
-    const r = await pipe(s, { max_new_tokens: 256 });
-    outs.push(r[0].translation_text);
+  const pairs = await glossary(from, to);
+  const used = new Map<string, string>();
+  const one = async (s: string) => (await pipe(s, { max_new_tokens: 256 }))[0].translation_text as string;
+  // Sentence by sentence (long inputs stay within the model's context) and line by line (lists keep their shape).
+  const lines: string[] = [];
+  for (const sentences of splitSentences(textIn)) {
+    const outs: string[] = [];
+    for (const s of sentences) {
+      const p = protectTerms(s, pairs);
+      let out = await one(p.text);
+      if (p.slots.length) {
+        const r = restoreTerms(out, p.slots);
+        if (r.ok) { out = r.text; for (const x of p.slots) used.set(x.source, x.target); }
+        else out = await one(s);                        // the model lost a placeholder: plain translation instead
+      }
+      outs.push(tidyOutput(out, to));
+    }
+    lines.push(outs.join(" "));
   }
-  return { text: outs.join(" "), model: m.manifest.model, ms: Math.round(performance.now() - t0) };
+  return { text: lines.join("\n").trim(), model: m.manifest.model, ms: Math.round(performance.now() - t0),
+    terms: [...used].map(([source, target]) => ({ source, target })) };
 }
 
 export async function translationPairs(): Promise<[string, string][]> {
@@ -152,14 +176,33 @@ export async function decodeTo16k(blob: Blob): Promise<Float32Array> {
   return rendered.getChannelData(0);
 }
 
+/** The speech pack to use for a language: the smallest installed pack that supports it. */
+export function sttPackFor(models: InstalledModel[], lang: string): InstalledModel | undefined {
+  // Measured, not declared: Whisper tiny romanises or translates Hindi, so it is English-only here even for a v1
+  // pack whose stored manifest (installed before 0.2.4) still lists "hi".
+  const langs = (x: InstalledModel): string[] => (x.manifest.model === "Xenova/whisper-tiny" ? ["en"] : x.manifest.languages ?? ["en"]);
+  return models.filter((x) => x.capability === "stt" && langs(x).includes(lang))
+    .sort((a, b) => (a.manifest.download_size ?? 0) - (b.manifest.download_size ?? 0))[0];
+}
+
 export async function transcribe(blob: Blob, lang: string): Promise<{ text: string; engine: string }> {
-  const m = (await installedModels()).find((x) => x.capability === "stt");
-  if (!m) throw new Error("No offline speech-to-text pack installed");
+  const models = await installedModels();
+  const stt = models.filter((x) => x.capability === "stt");
+  if (!stt.length) throw new Error("No offline speech-to-text pack installed");
+  const m = sttPackFor(models, lang);
+  if (!m) {
+    // Whisper tiny cannot write Hindi (it romanises or translates it); say so instead of returning garbage.
+    throw new Error(lang === "hi" ? "Hindi speech needs the “Speech to text — Hindi and English (Whisper small)” pack. Install it in Offline Packs."
+      : `No installed speech pack supports “${lang}”.`);
+  }
   const pipe = await pipelineFor(m.manifest);
-  const audio = await decodeTo16k(blob);
+  const raw = await decodeTo16k(blob);
+  if (isSilent(raw)) throw new Error("No speech was detected in this recording.");
+  const audio = prepareSpeech(raw);
   const language = { en: "english", hi: "hindi" }[lang] ?? "english";
-  const out = await pipe(audio, { language, task: "transcribe", chunk_length_s: 30, stride_length_s: 5 });
-  return { text: (Array.isArray(out) ? out[0].text : out.text).trim(), engine: `${m.manifest.model} (on device)` };
+  const out = await pipe(audio, whisperOptions(audio.length, language));
+  const text = collapseRepeats((Array.isArray(out) ? out[0].text : out.text).trim());
+  return { text, engine: `${m.manifest.model} (on device)` };
 }
 
 // ------------------------------------------------------------------ OCR
@@ -197,6 +240,7 @@ async function ocrWorker(lang: string, onProgress?: Progress): Promise<any> {
         workerPath: workerPath(), corePath: await coreBlobUrl(), langPath: TESSDATA(lang), cacheMethod: "write",
         workerBlobURL: false, logger: (x: any) => onProgress?.({ status: x.status, progress: x.progress }),
       } as any);
+      await w.setParameters(OCR_PARAMS as any);
       return w;
     });
     p.catch(() => ocrWorkers.delete(lang));
@@ -216,25 +260,26 @@ export async function installOcr(manifest: any, onProgress?: Progress): Promise<
   return markInstalled(manifest, true, "engine and language data loaded and executed on device");
 }
 
-/** Downscale large photos before OCR to stay within mobile memory. */
-export async function prepareImage(blob: Blob, maxSide = 1800): Promise<HTMLCanvasElement> {
-  const bmp = await createImageBitmap(blob);
-  const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
-  const c = document.createElement("canvas");
-  c.width = Math.round(bmp.width * scale);
-  c.height = Math.round(bmp.height * scale);
-  c.getContext("2d")!.drawImage(bmp, 0, 0, c.width, c.height);
-  bmp.close?.();
-  return c;
+export interface OcrResult {
+  text: string; confidence: number; quality: "good" | "check" | "poor"; note: string; rotation: number; passes: number;
 }
 
-export async function ocr(blob: Blob, lang = "eng", onProgress?: Progress): Promise<{ text: string; confidence: number }> {
+/** Plain-language verdict on an OCR result, so a weak read is never presented as reliable text. */
+export function ocrVerdict(confidence: number, kept: number, dropped: number, chars: number): Pick<OcrResult, "quality" | "note"> {
+  if (!chars) return { quality: "poor", note: "No readable text was found. Retake the photo closer to the text, in good light, holding the phone steady." };
+  if (confidence >= 80 && dropped <= kept) return { quality: "good", note: "" };
+  if (confidence >= 65) return { quality: "check", note: "Some words may be wrong. Check the text against the photo." };
+  return { quality: "poor", note: "The photo looks blurred, dark or at an angle, so this text is unreliable. Retake it closer, in good light, holding the phone steady." };
+}
+
+export async function ocr(blob: Blob, lang = "eng", onProgress?: Progress): Promise<OcrResult> {
   const models = await installedModels();
   if (!models.some((m) => m.capability === "ocr" && m.manifest.lang_code === lang)) throw new Error(`No offline OCR pack for ${lang}`);
   const w = await ocrWorker(lang, onProgress);
-  const img = await prepareImage(blob);
-  const { data } = await w.recognize(img);
-  return { text: data.text.trim(), confidence: data.confidence };
+  const r = await runOcr(blob, async (c) => (await w.recognize(c, {}, { text: true, blocks: true })).data,
+    { onPass: (label) => onProgress?.({ status: label }) });
+  return { text: r.text, confidence: r.confidence, rotation: r.rotation, passes: r.passes,
+    ...ocrVerdict(r.confidence, r.kept, r.dropped, r.text.replace(/\s/g, "").length) };
 }
 
 export async function ocrLanguages(): Promise<string[]> {

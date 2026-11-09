@@ -1,0 +1,99 @@
+{
+ "note": "Small hand-written English/Hindi field-inspection test set for on-device translation (written by the FieldKit authors; synthetic, not real records). `pairs` are general sentences; `term_pairs` use terms from the example dictionary packs, with references that use the dictionary's translation. One reference per sentence, so chrF understates quality.",
+ "pairs": [
+  [
+   "The motor is making a loud noise.",
+   "मोटर से तेज़ आवाज़ आ रही है।"
+  ],
+  [
+   "The bearing is hot.",
+   "बेयरिंग गरम है।"
+  ],
+  [
+   "Water is leaking from the pump.",
+   "पंप से पानी रिस रहा है।"
+  ],
+  [
+   "The safety guard is broken.",
+   "सुरक्षा कवर टूटा हुआ है।"
+  ],
+  [
+   "Check the oil level every day.",
+   "हर दिन तेल का स्तर जांचें।"
+  ],
+  [
+   "The machine must be switched off before cleaning.",
+   "सफाई से पहले मशीन बंद करनी चाहिए।"
+  ],
+  [
+   "There is no fire extinguisher in the room.",
+   "कमरे में कोई अग्निशामक यंत्र नहीं है।"
+  ],
+  [
+   "The leaves have yellow spots.",
+   "पत्तियों पर पीले धब्बे हैं।"
+  ],
+  [
+   "The crop needs water.",
+   "फसल को पानी की ज़रूरत है।"
+  ],
+  [
+   "Many plants are damaged by insects.",
+   "कई पौधे कीड़ों से खराब हो गए हैं।"
+  ],
+  [
+   "The teacher asked the students a question.",
+   "शिक्षक ने छात्रों से एक प्रश्न पूछा।"
+  ],
+  [
+   "Thirty students were present in the class.",
+   "कक्षा में तीस छात्र उपस्थित थे।"
+  ],
+  [
+   "Please call the supervisor immediately.",
+   "कृपया तुरंत पर्यवेक्षक को बुलाएं।"
+  ],
+  [
+   "The inspection is complete.",
+   "निरीक्षण पूरा हो गया है।"
+  ],
+  [
+   "Replace the belt next week.",
+   "अगले सप्ताह बेल्ट बदलें।"
+  ],
+  [
+   "The pressure is too high.",
+   "दबाव बहुत अधिक है।"
+  ]
+ ],
+ "term_pairs": [
+  [
+   "Vibration increased after the motor was replaced.",
+   "मोटर बदलने के बाद कंपन बढ़ गया।"
+  ],
+  [
+   "Check the lubrication every week.",
+   "हर सप्ताह स्नेहन की जांच करें।"
+  ],
+  [
+   "The coupling is loose.",
+   "कपलिंग ढीली है।"
+  ],
+  [
+   "The seal is leaking.",
+   "सील से रिसाव हो रहा है।"
+  ],
+  [
+   "Apply lockout before the repair.",
+   "मरम्मत से पहले लॉकआउट लगाएं।"
+  ],
+  [
+   "Chlorosis appeared on the lower leaves.",
+   "निचली पत्तियों पर हरिमाहीनता दिखाई दी।"
+  ],
+  [
+   "The bearing was hot to the touch.",
+   "छूने पर बेयरिंग गरम थी।"
+  ]
+ ]
+}

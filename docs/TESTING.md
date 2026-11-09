@@ -6,8 +6,8 @@ Node 22. Anything not listed as run here is marked **unverified**.
 ## 1. Unit and API tests
 ```bash
 uv venv .venv --python 3.11 && uv pip install --python .venv fastapi httpx pytest jsonschema pyyaml python-multipart
-.venv/Scripts/python -m pytest            # 100 passed
-npm ci --legacy-peer-deps && npm test     # 87 passed (vitest)
+.venv/Scripts/python -m pytest            # 114 passed
+npm ci --legacy-peer-deps && npm test     # 110 passed (vitest)
 npm run typecheck
 ```
 
@@ -222,10 +222,96 @@ Results (0.2.3):
 - **WebKit:** 20 passed, 9 skipped.
 - No failures on either.
 
+### Real-iPhone findings (`media.spec.ts` + tests/eval, 0.2.4)
+Offline testing on a real iPhone found the problems below. Each was reproduced or measured, fixed, and checked again on desktop engines. **None of this has been re-tested on an iPhone yet** (see section 5). All accuracy numbers come from synthetic test material, not real users' recordings or photos. The scripts and how to run them are in [tests/eval/README.md](../tests/eval/README.md).
+
+**Root causes and fixes**
+- **OCR (poor reading, 20–32% confidence, gibberish):**
+  - Every photo was downscaled to 1800 px, and photo fields stored only a 1600 px copy. Ordinary print fell below the text size Tesseract needs.
+  - tesseract.js defaults to page-segmentation mode 6 ("one uniform block"). On unevenly lit photos, layout analysis classed shaded body text as a picture and read only the heading.
+  - Fixes: EXIF-aware decoding; OCR at 3000 px on the long side; illumination flattening and contrast stretch; PSM 3 (automatic layout) at 300 dpi; a flattened pass and a plain pass, keeping whichever recovers more confident text; a low-resolution orientation probe only when the result is weak; word-level filtering of edge marks and texture; a verdict (good, check or poor) with "retake closer, in good light" advice.
+  - Photos are now stored at up to 2048 px JPEG, quality 0.85 (was 1600 px, quality 0.8).
+- **Speech to text (poor voice transcription):**
+  - Whisper tiny cannot write Hindi. It romanises or translates it, or loops ("5th year, 5th year…"), even with the Hindi language applied correctly.
+  - The 8-bit encoder hurt English.
+  - Fixes: trimming of leading and trailing silence; level normalisation; a repetition guard (`no_repeat_ngram_size` 4); a length cap based on duration; collapsing of residual loops; "No speech detected" for silent recordings.
+  - The tiny pack is now version 2 (English only: fp32 encoder, 8-bit decoder, 63.6 MB; was 41 MB). Installed copies show an **Update** button and keep working until updated.
+  - New optional pack `stt-whisper-small` (Hindi and English, 249 MB, slower). Hindi transcription uses it and otherwise says the Hindi pack is needed.
+  - Translate's microphone now transcribes in the translation's source language. It used the app language before, which was a bug.
+- **Translation (weak offline translation):**
+  - Dictionary-guided terminology from installed dictionary packs: terms are replaced with placeholders that the model copies, then the dictionary translation is inserted. If the model drops a placeholder, the sentence is retranslated plainly.
+  - Hindi danda punctuation; a line-preserving sentence split; the Translate screen lists the dictionary terms used.
+- **Photo thumbnail and audio playback errors on Results:**
+  - Each preview now copies the stored file into an in-memory Blob of the right type, and checks it against the SHA-256 recorded at capture. If the device copy is unreadable or damaged and Hermes has the file, Hermes' verified copy is shown and the device copy is repaired.
+  - A file that can't be shown or played gives a plain message.
+  - Metadata updates (OCR text, transcripts) and the post-upload "uploaded" flag no longer re-store the IndexedDB-backed Blob.
+  - Recording uses MP4/AAC on Apple devices and WebM elsewhere, and only formats the device can play back. Recording is one complete file (no 1-second slices).
+  - Results shows per-kind counts, field names and upload status. Transcripts are editable. Signatures show their time.
+  - Records from other devices (`#/remote`) load photos, voice notes and signatures on demand from Hermes (needs internet, hash-verified).
+  - **Honesty:** the exact iOS mechanism could not be reproduced on desktop WebKit. The fixes target the known iOS causes (IndexedDB-backed Blob object URLs, WebM playback).
+- **Signatures, linking and analysis (the server side):**
+  - A signature PNG was counted as a photo ("2 photo(s) attached but NOT analysed") and sent to the vision model.
+  - Attachments are now classified by the workflow field they answer: photo, voice note (`audio`) or signature. Only photos go to the vision model, and counts are per kind.
+  - Voice notes use the phone's transcript if present. Otherwise Hermes transcribes them after upload (dashboard process, Hermes' own `tools.transcription_tools.transcribe_audio`). The transcript, or the reason there is none, is stored on the attachment (DB migration v3: `transcript`, `transcript_source`, `transcript_error`, `transcribed_at`).
+  - The analysis includes transcripts and lists an untranscribed voice note under `missing_information` with the reason.
+  - Reports gain an `attachments` block. Integrity is recomputed from the stored file. No server file paths appear in reports.
+  - Plugin setting `voice_transcription` (default `true`; environment variable `FIELDKIT_VOICE_TRANSCRIPTION=false`) turns Hermes-side transcription off.
+
+**What each E2E test checks** (`tests/e2e/media.spec.ts`, Chromium and WebKit)
+- Photo: an EXIF-rotated photo is stored upright.
+- Voice note: recorded with Chromium's fake microphone only. Its accuracy is not asserted.
+- Drawn signature: saved.
+- Results loads every file with no error and shows the correct counts.
+- Each file on Hermes is byte-identical (SHA-256) and linked to the same inspection and field.
+- A deliberately damaged device copy is restored from Hermes.
+- The real analysis pipeline, with the LLM round-trip stubbed, counts 1 photo, not 2.
+- The downloaded report shows the signature as intact and viewable.
+- A second install opens the record and views the signature from Hermes.
+- A second E2E test checks real Hermes speech-to-text. It needs `FIELDKIT_E2E_SPEECH_WAV` and `FIELDKIT_E2E_SPEECH_TEXT`.
+
+**Results**
+- pytest: 114 passed (10 new in `tests/python/test_media_evidence.py`).
+- vitest: 110 passed (19 new in `tests/app/media_quality.test.ts`). `npm run typecheck` is clean.
+- `media.spec.ts`: Chromium passed (full suite 28 passed, 3 skipped). WebKit passed without the voice-note step (full suite 22 passed, 9 skipped). The spoken-voice-note test passed in both runs: Hermes transcribed "Water is leaking from the pump seal near the outlet valve." and "The safety guard on the conveyor belt is missing and needs replacement." from synthetic speech.
+- Real Hermes speech-to-text, local Hermes v0.23.0 (inside its dashboard process): an uploaded synthetic English voice note ("The motor bearing is making a grinding noise and the housing feels hot.") was transcribed exactly, stored with source `hermes`, and appeared in the analysis prompt. The fake microphone's beep correctly gave "no speech recognised".
+
+**OCR accuracy** (character error rate, CER; synthetic iPhone-style photos: 4032×3024, EXIF orientation 6, 2° skew, uneven light, noise, blur)
+
+| Case | Before | After |
+|---|---|---|
+| Large print | 0–1.3% | 0% (Chromium and WebKit) |
+| Ordinary small print (reproduces the iPhone symptom: old confidence 20–46%) | 78–89% | OCR screen: 2.3–2.7% English, 2.0–4.6% Hindi. Photo-field path: 3.8–4.6% English, 4.6–7.2% Hindi. Confidence about 90% |
+| Dim room with heavy camera shake | not measured | 72–94%: still poor. The app says the text is unreliable and asks for a retake. About 3–8 s on desktop |
+
+Browser breakdown for the small-print rows is not separated in these results.
+
+**Speech-to-text accuracy** (Node, same ONNX files; 8 English and 6 Hindi sentences read by Windows voices; "phone" = quiet, 12 dB SNR noise, silence padding)
+
+| Model | English WER, clean | English WER, phone | Hindi CER, clean | Hindi CER, phone |
+|---|---|---|---|---|
+| Old tiny q8 (before) | 2.1% | 8.9% | unusable | unusable |
+| New tiny v2 with FieldKit preparation | 1.6% | 3.7% | not applicable (English only) | not applicable |
+| Whisper small q8 with preparation | 1.6% | 2.6% | 18.3% | 30.9% |
+
+**Translation accuracy** (Node, OPUS-MT, chrF; 16 general and 7 dictionary-term sentence pairs, one hand-written reference each)
+
+| Direction and set | Plain (before) | With FieldKit pipeline (after) |
+|---|---|---|
+| en→hi, general | 41.5 | 47.9 |
+| en→hi, dictionary-term sentences | 30.8 | 49.6 |
+| hi→en, general | 61.2 | 62.1 |
+| hi→en, dictionary-term sentences | 48.9 | 63.7 |
+
+General quality is still limited by the small model. For example, "bearing" is fixed only when a dictionary has the term. Larger precision did not help (en→hi fp32 44.6 vs q8 41.5, at 4× the download). NLLB-600M (895 MB) and M2M100 (632 MB) are too large for a phone web app, so OPUS-MT stays.
+
 ## 5. Not yet verified (needs your hardware or permission)
 - A real model-generated report (needs a provider; it would run on the hosted instance).
 - Hermes Mobile conversations invoking FieldKit tools against the hosted instance.
 - Android Chrome and iOS Safari: installation, offline reopen, camera, microphone, GPS, OCR/translation memory use.
+- **Real iPhone, 0.2.4:** the photo thumbnail, voice-note playback and signature fixes; the Results screen with real files; reports with the Evidence section.
+- **Real iPhone, 0.2.4 accuracy and speed:** OCR, speech-to-text and translation quality on a phone; Hindi Whisper small memory and speed on iOS (249 MB download).
+- **Real speech and photos:** the accuracy numbers above use synthetic voices and synthetic photos. Dim, shaky photos are still poor, and handwriting is not measured.
+- **Hosted Hermes:** which speech-to-text provider it is configured with (local or cloud), and a real model-generated analysis that includes the Evidence section.
 - OAuth (Nous) 15-minute expiry with real redirects inside an installed PWA. Locally only the basic provider was tested; the return page works the same for any provider because the target is a plain `next` path.
 
 ## Device checklist

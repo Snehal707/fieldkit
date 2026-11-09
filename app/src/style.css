@@ -70,3 +70,15 @@ dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: .25rem .8rem
 .update-bar .update-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .update-bar button { padding: .35rem .8rem; min-height: 32px; flex: none; }
 .update-bar .update-close { border: 0; background: transparent; color: var(--muted); padding: .35rem .5rem; }
+
+/* Attachment previews (0.2.4): never a broken icon; signatures on white so ink is visible in dark mode. */
+.media { min-width: 0; }
+.media img, .media audio { max-width: 100%; display: block; }
+.media img.sig-img, .sig-img { background: #fff; border-radius: 8px; padding: 4px; max-height: 180px; }
+.media-item { margin: 0 0 .6rem; }
+.media-item figcaption { margin-top: .2rem; }
+.media-problem { margin: 0; }
+.evidence .banner { margin: .4rem 0; }
+.thumbs img.sig-img { width: auto; max-width: 100%; height: 88px; object-fit: contain; }
+.thumbs .media audio { width: 260px; max-width: 100%; }
+.thumbs .media-problem { max-width: 260px; }

@@ -51,6 +51,13 @@ Workflow rules you must follow when writing a `definition` yourself:
 4. `fieldkit_create_followup` for any agreed next action; `fieldkit_list_followups` for open tasks.
 5. Always say which statements come from local findings, which from a stored Hermes report, and which are your new reasoning.
 6. Flag `requires_review` items as needing a qualified person.
+7. Attachments: `fieldkit_get_record` gives each file's `kind` (photo, voice note or signature) and `attachment_summary`
+   (for example "2 photos · 1 voice note · 1 signature"). Use those counts; a signature is not a photo.
+   - Voice notes appear in `answers_readable` with their transcript (made on the phone or by Hermes speech-to-text),
+     or with `not_transcribed_because`. Treat a transcript as the inspector's own words; never guess an
+     untranscribed note's content.
+   - A report's `attachments.evidence` lists every file with its SHA-256 and an `integrity` check
+     (`intact`, `mismatch`, `missing`). Signatures carry `signed_at`. Mention any file that is not `intact`.
 
 ## Sync and processing
 
