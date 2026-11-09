@@ -71,6 +71,8 @@ Full instructions are in [docs/INSTALL.md](docs/INSTALL.md).
 - The last list seen from Hermes is remembered. Offline, records that need internet are listed but cannot be opened.
 - On a shared browser, offline copies and the remembered list are tied to the Hermes account. Another account never sees them.
 - If the list can't be loaded, Saved Records says why: offline, can't reach Hermes, signed out, a server error with its HTTP status, or a Hermes dashboard still running an older FieldKit server (restart the dashboard after updating). It never shows "No records yet" for a failed load.
+- If Hermes no longer has records this device saved and Hermes confirmed (its FieldKit data was reset or moved, or the host answered from a different machine), Saved Records says so and offers **Upload again**. That re-uploads them to the signed-in account, photos included, and first puts back the exact workflow version they were made with. It never runs automatically, so a shared browser can't push one account's records into another.
+- **Run FieldKit's Hermes on one machine with one persistent volume.** FieldKit keeps its data in SQLite at `<HERMES_HOME>/plugin-data/fieldkit/data.db`. With several machines (each with its own volume), or a volume that is replaced on redeploy, different installs can reach different data. Settings → Advanced shows the **Hermes data store** id, the machine, and your record count, so you can compare installs.
 - **After updating FieldKit on a hosted Hermes, restart the Hermes dashboard process** as well as the gateway. Plugin API routes are mounted by the dashboard, so until it restarts, the new app talks to the old server code.
 
 ## Verification status (honest)

@@ -29,9 +29,12 @@ function initScript(mode: "protected" | "declined" | "unsupported") {
     if (mode === "unsupported") {
       try { Object.defineProperty(navigator, "storage", { configurable: true, value: undefined }); } catch (e) {}
     } else if (navigator.storage) {
+      // Patch the prototype, not the instance: WebKit doesn't keep the navigator.storage wrapper alive, so after a
+      // garbage collection navigator.storage is a fresh object and instance-level overrides silently disappear.
       const granted = mode === "protected";
-      navigator.storage.persisted = async () => granted;
-      navigator.storage.persist = async () => granted;
+      const proto = Object.getPrototypeOf(navigator.storage);
+      proto.persisted = async function () { return granted; };
+      proto.persist = async function () { return granted; };
     }
   })();`;
 }

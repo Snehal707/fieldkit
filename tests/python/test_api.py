@@ -372,3 +372,52 @@ def test_record_summaries_carry_device_and_title_and_stay_per_user(env):
     assert rec["workflow_title"] == "Equipment inspection" and rec["device_id"] == "dev-1"
     assert "answers" not in rec                                                 # summaries only
     assert env.client.get(f"{PREFIX}/records", headers=H("bob")).json()["records"] == []
+
+
+def test_status_identifies_the_data_store_and_counts_only_your_records(env):
+    _install(env)
+    assert _sync(env, _record()).status_code == 200
+    assert _sync(env, _record()).status_code == 200
+    assert _sync(env, _record(), user="bob").status_code == 200
+    a = env.client.get(f"{PREFIX}/status", headers=H("alice")).json()
+    b = env.client.get(f"{PREFIX}/status", headers=H("bob")).json()
+    assert a["store"]["store_id"].startswith("fks_") and len(a["store"]["store_id"]) == 20
+    assert a["store"]["store_id"] == b["store"]["store_id"]          # same database → same id, every time
+    assert a["store"]["records_for_you"] == 2 and b["store"]["records_for_you"] == 1   # never another user's count
+    assert a["store"]["path"].endswith(".db")
+    assert a["instance"]["machine"]
+    assert env.client.get(f"{PREFIX}/status").status_code == 401
+
+
+def test_v1_database_upgrades_keeps_records_and_gets_a_stable_store_id(tmp_path):
+    import sqlite3
+    from fieldkit_core import db as dbmod
+    path = str(tmp_path / "old.db")
+    conn = sqlite3.connect(path)
+    conn.executescript("BEGIN;" + dbmod.MIGRATIONS[0] + "PRAGMA user_version=1;COMMIT;")
+    conn.execute("INSERT INTO records(id, owner_user_id, device_id, workflow_id, workflow_version, revision, answers, content_hash, "
+                 "received_at, sync_status) VALUES ('rec_old_0001','alice','dev_1','w',1,1,'{}','h',1.0,'complete')")
+    conn.commit(); conn.close()
+    s1 = dbmod.Store(path=path)
+    first = s1.store_info("alice")
+    assert first["records_for_you"] == 1
+    s1.conn.close()
+    assert dbmod.Store(path=path).store_info("alice")["store_id"] == first["store_id"]   # survives reopening
+
+
+def test_restore_workflow_version_puts_back_exact_version_and_enables_resync(env):
+    wf = json.loads((ROOT / "examples" / "maintenance" / "workflow.json").read_text(encoding="utf-8"))
+    wf = dict(wf, version=3)
+    rec = _record(wf=wf["id"], ver=3)
+    assert _sync(env, rec).status_code == 422                          # fresh data store: workflow unknown
+    r = env.client.post(f"{PREFIX}/workflows/restore", headers=H(), json={"definition": wf})
+    assert r.status_code == 200 and r.json() == {"restored": True, "version": 3}
+    again = env.client.post(f"{PREFIX}/workflows/restore", headers=H(), json={"definition": dict(wf, title={"en": "Tampered"})})
+    assert again.json() == {"restored": False, "version": 3}          # never overwrites an existing version
+    got = env.client.get(f"{PREFIX}/workflows/{wf['id']}", headers=H()).json()
+    assert got["version"] == 3 and got["title"] == wf["title"]
+    assert _sync(env, rec).status_code == 200                          # the record can now be uploaded again
+    # Another user cannot add versions to alice's workflow, and invalid definitions are rejected.
+    assert env.client.post(f"{PREFIX}/workflows/restore", headers=H("bob"), json={"definition": dict(wf, version=4)}).status_code == 404
+    assert env.client.post(f"{PREFIX}/workflows/restore", headers=H(), json={"definition": {"id": "x", "version": 1}}).status_code == 422
+    assert env.client.post(f"{PREFIX}/workflows/restore", json={"definition": wf}).status_code == 401

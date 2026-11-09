@@ -13,6 +13,8 @@ from __future__ import annotations
 import asyncio
 import json
 import mimetypes
+import os
+import socket
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -98,11 +100,16 @@ def me(request: Request):
 
 @router.get("/status")
 def status(request: Request):
-    _uid(request)
+    uid = _uid(request)
     _ensure_worker()
     store = get_store()
     return {
         "plugin": "fieldkit", "version": __version__,
+        # Which machine and which database answered: lets two installs of the same account tell whether they
+        # reach the same FieldKit data (hosts with several machines/volumes, or a reset volume, do not).
+        "instance": {"machine": os.environ.get("FLY_MACHINE_ID") or socket.gethostname(),
+                     "region": os.environ.get("FLY_REGION", ""), "pid": os.getpid()},
+        "store": store.store_info(uid),
         "analysis_mode": runtime.mode(), "llm_available": runtime.llm is not None,
         "auto_analyze": runtime.auto_analyze(), "worker": runtime.worker_state,
         "jobs": store.job_counts(), "app_built": (APP_DIR / "index.html").exists(),
@@ -147,6 +154,20 @@ def save_workflow(request: Request, definition: dict = Body(...), publish: bool 
     except Exception as exc:
         _err(exc)
     return {"workflow": saved}
+
+
+@router.post("/workflows/restore")
+def restore_workflow(request: Request, definition: dict = Body(..., embed=True)):
+    """Restore one exact workflow version this Hermes lacks (its FieldKit data was reset or moved), from the copy a
+    device downloaded. Validated like any workflow; never overwrites a version or another user's workflow."""
+    uid = _uid(request)
+    problems = engine.validate_definition(definition)
+    if problems:
+        return JSONResponse({"problems": problems}, status_code=422)
+    try:
+        return get_store().restore_workflow_version(uid, definition)
+    except Exception as exc:
+        _err(exc)
 
 
 @router.post("/workflows/{wid}/publish")

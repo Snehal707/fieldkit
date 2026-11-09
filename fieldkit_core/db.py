@@ -76,6 +76,13 @@ MIGRATIONS: list[str] = [
     CREATE TABLE audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL NOT NULL, actor TEXT, action TEXT NOT NULL,
                                target TEXT, detail TEXT);
     """,
+    # v2: a permanent random identity for THIS database file. Two installs that see different store ids are
+    # talking to different FieldKit databases (e.g. several hosting machines with their own volumes, or a reset).
+    """
+    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    INSERT INTO meta(key, value) VALUES ('store_id', 'fks_' || lower(hex(randomblob(8))));
+    INSERT INTO meta(key, value) VALUES ('store_created_at', CAST(strftime('%s','now') AS TEXT));
+    """,
 ]
 
 
@@ -210,6 +217,16 @@ class Store:
                       (device_id, owner, label, now, now))
         return {"id": device_id, "label": label}
 
+    def store_info(self, owner: Any) -> dict:
+        """Which database answered, and how many records it holds for this account (never other accounts' counts)."""
+        meta = {r["key"]: r["value"] for r in self._q("SELECT key, value FROM meta")}
+        path = next((r["file"] for r in self._q("PRAGMA database_list") if r["name"] == "main"), "")
+        clause, args = self._owner_clause(owner)
+        mine = self._q(f"SELECT COUNT(*) AS n, MAX(received_at) AS last FROM records WHERE {clause}", args)[0]
+        created = meta.get("store_created_at")
+        return {"store_id": meta.get("store_id", ""), "created_at": float(created) if created else None, "path": path or "",
+                "records_for_you": int(mine["n"]), "last_received_at": mine["last"]}
+
     def list_devices(self, owner: Any) -> list[dict]:
         clause, args = self._owner_clause(owner)
         sql = f"SELECT id, label, first_seen, last_seen FROM devices WHERE {clause} ORDER BY last_seen DESC LIMIT 100"
@@ -242,6 +259,36 @@ class Store:
                       "VALUES (?,?,?,?,?,?)", (wid, version, _j(definition), definition["status"], now, str(actor or owner_id)))
             self.audit(c, actor or owner, "workflow.publish" if publish else "workflow.draft", wid, {"version": version})
         return definition
+
+    def restore_workflow_version(self, owner: str, definition: dict) -> dict:
+        """Put back one exact workflow version that this database lacks (e.g. after its data was reset), using the
+        copy a device downloaded earlier. Never overwrites an existing version and never touches a workflow owned by
+        another user. Returns {"restored": bool, "version": n}."""
+        wid = definition.get("id")
+        version = definition.get("version")
+        if not isinstance(wid, str) or not wid or not isinstance(version, int) or isinstance(version, bool) or not 1 <= version <= 100000:
+            raise Invalid("definition needs an id and an integer version")
+        now = _now()
+        definition = dict(definition, status="published")
+        with self.tx() as c:
+            row = c.execute("SELECT * FROM workflows WHERE id=?", (wid,)).fetchone()
+            if row and row["owner_user_id"] not in (owner, "owner", "local"):
+                raise NotFound(wid)
+            if c.execute("SELECT 1 FROM workflow_versions WHERE workflow_id=? AND version=?", (wid, version)).fetchone():
+                return {"restored": False, "version": version}
+            if row:
+                latest = max(row["latest_version"], version)
+                published = max(row["published_version"] or 0, version)
+                c.execute("UPDATE workflows SET latest_version=?, published_version=?, status='published', updated_at=? WHERE id=?",
+                          (latest, published, now, wid))
+            else:
+                c.execute("INSERT INTO workflows(id, owner_user_id, title, domain, latest_version, published_version, status, "
+                          "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                          (wid, owner, _title(definition.get("title")), definition.get("domain", ""), version, version, "published", now, now))
+            c.execute("INSERT INTO workflow_versions(workflow_id, version, definition, status, created_at, created_by) "
+                      "VALUES (?,?,?,?,?,?)", (wid, version, _j(definition), "published", now, str(owner)))
+            self.audit(c, owner, "workflow.restore", wid, {"version": version})
+        return {"restored": True, "version": version}
 
     def publish_workflow(self, owner: Any, wid: str, version: Optional[int] = None) -> dict:
         with self.tx() as c:

@@ -2,14 +2,14 @@
 import { api, AuthRequired, HttpError } from "./api";
 import { APP_VERSION, signIn } from "./config";
 import { db, deleteRecord, deviceId, getSetting, setSetting, type Attachment, type Draft, type LocalRecord, type RemoteCopy, type StoredReport } from "./db";
-import { describeLoadProblem, unifiedRecords, type Availability, type LoadProblem, type ServerLike } from "./device";
+import { describeLoadProblem, missingOnServer, unifiedRecords, type Availability, type LoadProblem, type ServerLike } from "./device";
 import { computeState, ERROR_TEXT, text, type Field, type Workflow } from "./engine";
 import { installedModels, ocr, ocrLanguages, speak, transcribe, voicesReady } from "./intel";
 import { KnowledgeIndex } from "./knowledge";
 import { captureGps, compressPhoto, getAttachment, saveAttachment, signaturePad, VoiceRecorder } from "./media";
 import { installedPacks, installedWorkflows, installWorkflow, shellCached, storageInfo } from "./packs";
 import { completeDraft } from "./results";
-import { getSyncState, refreshPending, refreshReports, requestAnalysis, resolveConflict, runSync } from "./sync";
+import { getSyncState, refreshPending, refreshReports, requestAnalysis, resendRecords, resolveConflict, runSync } from "./sync";
 import { clear, fmtBytes, fmtTime, h, isOnline, nowIso, toast, uuid } from "./util";
 
 export type View = (main: HTMLElement, params: Record<string, string>) => Promise<void> | void;
@@ -690,6 +690,33 @@ export const recordsView: View = async (main) => {
     card.append(h("p", { class: "muted", id: "records-fresh" }, `Up to date with Hermes · ${fmtTime(index!.at)}`));
     if (partial) card.append(h("div", { class: "banner warn", id: "records-partial", "data-problem": partial.kind },
       h("strong", null, "Device names unavailable"), h("div", null, partial.message)));
+    // Records Hermes confirmed earlier but no longer has for this account: its FieldKit data was reset, or the
+    // host answered from another machine with its own data. They are still on this device; offer to upload again.
+    const serverRecs = recRes.status === "fulfilled" ? recRes.value.records : [];
+    const missing = missingOnServer(local, serverRecs.map((r) => r.id), serverRecs.length < 500);
+    if (missing.length) {
+      const st = await api<{ store?: { store_id?: string; records_for_you?: number }; instance?: { machine?: string } }>("status").catch(() => null);
+      const where = st?.store?.store_id ? ` (Hermes data store ${st.store.store_id}${st.instance?.machine ? ` on ${st.instance.machine}` : ""})` : "";
+      card.append(h("div", { class: "banner warn", id: "records-missing", "data-missing": String(missing.length) },
+        h("strong", null, `Hermes doesn't have ${missing.length} record(s) from this device`),
+        h("div", null, `Hermes confirmed receiving them earlier, but your account's records on Hermes${where} don't include them now. ` +
+          "This happens when Hermes' FieldKit data was reset or moved, or when the server answers from a different machine. " +
+          "They are safe on this device."),
+        h("div", { class: "row" }, h("button", { class: "primary", id: "resend-missing", onclick: async (ev: Event) => {
+          const btn = ev.currentTarget as HTMLButtonElement;   // currentTarget is null after the first await
+          const who = (await getSetting<{ display_name?: string; user_id?: string } | null>("last_account", null));
+          const name = who?.display_name || who?.user_id || account;
+          if (!confirm(`Upload ${missing.length} record(s) from this device to Hermes account “${name}”?`)) return;
+          btn.disabled = true;
+          try {
+            const n = await resendRecords(missing.map((r) => r.id));
+            toast(`${n} record(s) queued for upload. They'll appear on your other devices once Hermes confirms them.`, "ok");
+          } catch (e) {
+            toast(e instanceof AuthRequired ? "Sign in to Hermes first." : `Couldn't upload now: ${(await problemFor(e)).message}`, "error");
+          }
+          go(`#/records?r=${Date.now()}`);
+        } }, `Upload ${missing.length} again`))));
+    }
   }
   if (live && onlineOnly.length) {
     card.append(h("div", { class: "row" }, h("button", { id: "download-all", onclick: async (ev: Event) => {
@@ -727,7 +754,7 @@ export const recordsView: View = async (main) => {
         rec?.sync_status === "synced" ? h("button", { class: "danger", onclick: async () => {
           await deleteRecord(r.id); toast("Removed from this device. It's still in your Hermes account.", "ok"); go(`#/records?r=${Date.now()}`);
         } }, "Remove from device") : null));
-  })) : h("p", { class: "muted", id: "records-empty" }, live ? "No records yet." : "No records stored on this device. Your account's records will appear here once they can be loaded from Hermes."));
+  })) : h("p", { class: "muted", id: "records-empty" }, live ? `Hermes has no records for this account yet${account ? ` (Account ID ${account})` : ""}.` : "No records stored on this device. Your account's records will appear here once they can be loaded from Hermes."));
   main.append(card);
   // Quietly refresh offline copies whose record changed on Hermes (e.g. a report arrived after it was downloaded).
   if (live) {

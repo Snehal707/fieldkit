@@ -1,5 +1,5 @@
 // Offline Assistant, Knowledge, Dictionary, Translate, OCR, Offline Packs and Settings.
-import { AuthRequired } from "./api";
+import { api, AuthRequired } from "./api";
 import { APP_VERSION, PUBLIC_APP_URL, RUNNING_FROM_LEGACY_PATH, signIn } from "./config";
 import { db, deleteRecord, deviceId, getSetting, setSetting } from "./db";
 import { text } from "./engine";
@@ -287,6 +287,7 @@ export const settingsView: View = async (main) => {
   // ---- Hermes account + this device
   const last = await getSetting<{ user_id: string; display_name: string; provider: string; at: string } | null>("last_account", null);
   const acct = me ?? null;
+  const hstatus = acct ? await api<any>("status").catch(() => null) : null;   // which Hermes data store answered
   const shownAccount = acct ?? last;
   const devName = await currentDeviceLabel();
   const nameInput = h("input", { value: devName, maxlength: 80, "aria-label": "Device name" }) as HTMLInputElement;
@@ -310,8 +311,12 @@ export const settingsView: View = async (main) => {
       go(`#/settings?r=${Date.now()}`);
     } }, "Save")),
     h("details", { id: "advanced", style: "margin-top:.8rem" }, h("summary", null, "Advanced"),
-      h("dl", { class: "kv" }, h("dt", null, "Device ID"), h("dd", { "data-device-id": dev }, dev)),
-      h("p", { class: "muted" }, "Technical identifier for this browser's offline storage. Only needed for troubleshooting."))));
+      h("dl", { class: "kv" }, h("dt", null, "Device ID"), h("dd", { "data-device-id": dev }, dev),
+        h("dt", null, "Hermes data store"), h("dd", { "data-store-id": hstatus?.store?.store_id ?? "" }, hstatus?.store?.store_id || (acct ? "unknown (older server)" : "—")),
+        h("dt", null, "Hermes machine"), h("dd", null, hstatus?.instance?.machine ? `${hstatus.instance.machine}${hstatus.instance.region ? ` (${hstatus.instance.region})` : ""}` : "—"),
+        h("dt", null, "Your records on it"), h("dd", { "data-store-records": String(hstatus?.store?.records_for_you ?? "") }, hstatus?.store ? String(hstatus.store.records_for_you) : "—"),
+        h("dt", null, "FieldKit server"), h("dd", null, hstatus?.version ?? "—")),
+      h("p", { class: "muted" }, "Technical details for troubleshooting. Two installs signed in to the same account should show the same Hermes data store and record count."))));
 
   // ---- Storage: three clearly different states, calm wording, no false promises (see storage.ts)
   const ss = await storageState();

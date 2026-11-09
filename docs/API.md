@@ -9,7 +9,7 @@ Base path: `/api/plugins/fieldkit/`.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `me` | `{user_id, display_name, provider}` |
-| GET | `status` | `analysis_mode` (`automatic` \| `on-demand` \| `deferred`), `llm_available`, `worker`, `jobs`, `app_built`, `public_url` |
+| GET | `status` | `analysis_mode` (`automatic` \| `on-demand` \| `deferred`), `llm_available`, `worker`, `jobs`, `app_built`, `public_url`, `version`, `instance` `{machine, region, pid}` (machine = `FLY_MACHINE_ID` or host name), `store` `{store_id, created_at, path, records_for_you, last_received_at}`. `store_id` is a permanent random id kept inside the FieldKit database: two installs on the same account that see different ids are using different databases. `records_for_you` counts only the caller's records. |
 
 ## Workflows
 | Method | Path | Body / query | Result |
@@ -19,6 +19,7 @@ Base path: `/api/plugins/fieldkit/`.
 | POST | `workflows/validate` | `{definition}` | `{problems:[{path,message}]}` |
 | POST | `workflows` | `{definition, publish}` | `{workflow}` with a new version, or 422 `{problems}` |
 | POST | `workflows/{id}/publish` | `{version?}` | `{workflow}` (owner only) |
+| POST | `workflows/restore` | `{definition}` | `{restored, version}`. Puts back one exact version this Hermes lacks (its FieldKit data was reset or moved), from a copy a device downloaded. Validated like any workflow (422 `{problems}`); never overwrites an existing version (`restored:false`); 404 for a workflow owned by another user. |
 
 ## Packs
 | Method | Path | Notes |

@@ -180,6 +180,29 @@ Results (0.2.1):
 
 Two unrelated tests failed once each across these runs and passed on every re-run: `login.spec` (Chromium) and `settings.spec › storage state: protected` (WebKit).
 
+### Records Hermes lost (`restore.spec.ts`, 0.2.2)
+Regression test for the 0.2.1 iPhone report: Safari listed its records ("Available offline", confirmed by Hermes), while a new Home Screen app on the same account (same Account ID and sign-in method) showed none.
+
+Reproduced on the test Hermes:
+1. Install A synced two records.
+2. Hermes was restarted on a fresh data store (the original moved aside, not deleted), as a new machine or replaced volume would be.
+3. A fresh install B showed 0 records, with the same account.
+4. A showed "Hermes doesn't have 2 record(s) from this device".
+5. After **Upload again**, Hermes had 2 records for the account and B listed both.
+
+The spec reproduces the same state in one run. It removes one record, and the uniquely named workflow it used, from the test database. It then checks:
+- the fresh install doesn't list the record;
+- A detects it;
+- Upload again restores the exact workflow version and the record;
+- B lists it once;
+- both installs report the same data store.
+
+It cleans up after itself. Results:
+- **`restore.spec`:** passes on Chromium and WebKit.
+- **Full suite (0.2.2):** Chromium 23 passed, 3 skipped; WebKit 17 passed, 9 skipped; no failures.
+
+The intermittent WebKit `settings.spec › storage state: protected` failure was a test-harness bug. The init script overrode `persisted()` on the `navigator.storage` instance, which WebKit can replace after a garbage collection. It now patches the prototype. Before the fix, a forced-GC reproduction failed every time; after it, the reproduction passes.
+
 ## 5. Not yet verified (needs your hardware or permission)
 - A real model-generated report (needs a provider; it would run on the hosted instance).
 - Hermes Mobile conversations invoking FieldKit tools against the hosted instance.

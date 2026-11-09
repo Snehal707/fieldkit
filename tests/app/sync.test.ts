@@ -142,3 +142,47 @@ describe("sync queue", () => {
     expect(await refreshReports()).toBe(0);
   });
 });
+
+describe("upload again records Hermes no longer has", () => {
+  it("re-sends a confirmed record as new (base revision 0, fresh key) and re-uploads its media when asked", async () => {
+    const { resendRecords } = await import("../../app/src/sync");
+    const { missingOnServer } = await import("../../app/src/device");
+    const d = await db();
+    await addRecord({ sync_status: "synced", server_revision: 3, server_ack: { received_at: 1, revision: 3, sync_status: "complete" } });
+    await addRecord({ id: "rec_test_pending", sync_status: "pending" });
+    await d.put("attachments", { id: "att_photo_0001", record_id: "rec_test_000001", field_id: "photo", kind: "photo", mime: "image/jpeg",
+      size: 3, sha256: "abc", blob: new Blob(["abc"], { type: "image/jpeg" }), created_at: "", uploaded: true });
+
+    // Detection: only CONFIRMED records missing from a complete server list; never pending ones; never on a truncated list.
+    const local = await d.getAll("records");
+    expect(missingOnServer(local, [], true).map((r) => r.id)).toEqual(["rec_test_000001"]);
+    expect(missingOnServer(local, ["rec_test_000001"], true)).toEqual([]);
+    expect(missingOnServer(local, [], false)).toEqual([]);
+
+    await d.put("workflows", { id: "equipment-inspection", version: 1, downloaded_at: "",
+      definition: { id: "equipment-inspection", version: 1, title: { en: "Equipment inspection" }, fields: [] } as any });
+    handler = (url) => url.endsWith("/workflows/restore") ? json(200, { restored: true, version: 1 }) : url.includes("/attachments/")
+      ? json(200, { attachment_id: "att_photo_0001", status: "stored", record_id: "rec_test_000001", sync_status: "complete", analysis_status: "pending" })
+      : json(200, ack({ attachments_needed: ["att_photo_0001"] }));
+    expect(await resendRecords(["rec_test_000001", "rec_test_pending", "rec_unknown"])).toBe(1);   // only the confirmed one
+    // resendRecords starts the upload itself; wait until the queue is empty and the record is confirmed again.
+    await vi.waitFor(async () => {
+      if (getSyncState().running) await new Promise((r) => setTimeout(r, 10));
+      else await runSync({ force: true });
+      expect(await d.count("outbox")).toBe(0);
+      expect((await d.get("records", "rec_test_000001"))!.sync_status).toBe("synced");
+    }, { timeout: 4000, interval: 20 });
+    const sent = calls.filter((c) => c.url.endsWith("/sync/records"));
+    expect(sent).toHaveLength(1);
+    expect(sent[0].body.record.id).toBe("rec_test_000001");
+    expect(sent[0].body.record.base_revision).toBe(0);
+    // The exact workflow version is put back BEFORE the record is uploaded (a reset Hermes lost it too).
+    const restoreAt = calls.findIndex((c) => c.url.endsWith("/workflows/restore"));
+    expect(restoreAt).toBeGreaterThanOrEqual(0);
+    expect(calls[restoreAt].body.definition).toMatchObject({ id: "equipment-inspection", version: 1 });
+    expect(restoreAt).toBeLessThan(calls.findIndex((c) => c.url.endsWith("/sync/records")));              // new on that server, not a stale revision → no conflict
+    expect(calls.some((c) => c.url.includes("/attachments/att_photo_0001") && c.method === "PUT")).toBe(true);
+    expect((await d.get("records", "rec_test_000001"))!.sync_status).toBe("synced");
+    expect((await d.get("records", "rec_test_pending"))!.sync_status).toBe("pending");   // untouched
+  });
+});

@@ -343,3 +343,34 @@ export async function registerBackgroundSync(): Promise<boolean> {
     return true;
   } catch { return false; }
 }
+
+/**
+ * Upload records again that Hermes confirmed earlier but no longer has (e.g. its FieldKit data was reset, or the
+ * host answered from a different machine/volume). Only on the user's explicit request. Uses the normal outbox:
+ * a fresh idempotency key, base revision 0 (new on that server); Hermes then asks again for any media it lacks,
+ * which is still on this device. Never touches records that are not confirmed-synced.
+ */
+export async function resendRecords(ids: string[]): Promise<number> {
+  const d = await db();
+  const recs = (await Promise.all(ids.map((id) => d.get("records", id))))
+    .filter((r): r is LocalRecord => !!r && (r.sync_status === "synced" || r.sync_status === "received"));
+  // A reset Hermes has lost the workflows too, and would reject these records (unknown workflow). Put back the exact
+  // versions they were made with, from the copies this device downloaded (the server never overwrites a version).
+  const needed = new Map(recs.map((r) => [`${r.workflow_id}@${r.workflow_version}`, r]));
+  for (const r of needed.values()) {
+    const stored = await d.get("workflows", r.workflow_id);
+    if (stored?.definition && stored.definition.version === r.workflow_version) {
+      try { await api("workflows/restore", { method: "POST", json: { definition: stored.definition } }); }
+      catch (e) { if (e instanceof AuthRequired || e instanceof Offline) throw e; /* else: the upload reports it */ }
+    }
+  }
+  let n = 0;
+  for (const rec of recs) {
+    const id = rec.id;
+    await d.put("records", { ...rec, server_revision: 0, server_ack: undefined, sync_error: undefined });
+    await enqueueRecord(id);
+    n++;
+  }
+  if (n) void runSync({ force: true });
+  return n;
+}

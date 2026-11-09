@@ -121,3 +121,14 @@ export function describeLoadProblem(e: unknown, browserOnline: boolean, serverVe
   if (e instanceof HttpError) return { kind: "server-error", message: `Hermes couldn't load your records (HTTP ${e.status}). Try again in a moment.` };
   return { kind: "server-error", message: `Couldn't load your records from Hermes: ${(e as Error)?.message ?? String(e)}` };
 }
+
+// ------------------------------------------------------------------ records Hermes no longer has
+/**
+ * Records this device saved and Hermes CONFIRMED earlier, but that are missing from the account's list now.
+ * Only meaningful when the server list is complete (not truncated by the limit).
+ */
+export function missingOnServer(local: LocalLike[], serverIds: Iterable<string>, listComplete: boolean): LocalLike[] {
+  if (!listComplete) return [];
+  const have = new Set(serverIds);
+  return local.filter((r) => (r.sync_status === "synced" || r.sync_status === "received") && !have.has(r.id));
+}
