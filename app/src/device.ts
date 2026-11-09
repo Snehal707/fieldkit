@@ -1,6 +1,6 @@
 // Readable device names. Each browser and each Home Screen app keeps its own on-device storage (on iOS a
 // Home Screen web app is fully separate from Safari), so each is its own FieldKit "device" with its own id.
-import { api } from "./api";
+import { api, AuthRequired, HttpError, Offline } from "./api";
 import { deviceId, getSetting, setSetting } from "./db";
 import { isStandalone } from "./storage";
 
@@ -96,4 +96,28 @@ export function unifiedRecords(local: LocalLike[], server: ServerLike[], copies:
       availability: "kept-offline", analysis: c.analysis_status, source: c.device_label || "Another device", href: `#/remote/${c.id}`, hasReport: !!c.report });
   }
   return [...out.values()].sort((a, b) => b.sortKey - a.sortKey).map(({ sortKey: _s, ...rest }) => rest);
+}
+
+// ------------------------------------------------------------------ honest load errors
+export type ProblemKind = "offline" | "unreachable" | "signed-out" | "server-outdated" | "server-error";
+export interface LoadProblem { kind: ProblemKind; message: string }
+
+/**
+ * Say what actually went wrong when Hermes data couldn't be loaded. "Offline" only when the device really is
+ * offline; a network failure while online is "can't reach Hermes"; HTTP errors are server errors, never "offline".
+ */
+export function describeLoadProblem(e: unknown, browserOnline: boolean, serverVersion = "", appVersion = ""): LoadProblem {
+  if (e instanceof AuthRequired) return { kind: "signed-out", message: "Signed out of Hermes. Sign in to see every record in your account." };
+  if (e instanceof Offline) {
+    return browserOnline
+      ? { kind: "unreachable", message: "Can't reach Hermes right now (the request didn't get through). Records on this device still work." }
+      : { kind: "offline", message: "You're offline. Records marked “Needs internet” open once you're connected." };
+  }
+  if (e instanceof HttpError && e.status === 404) {
+    return { kind: "server-outdated", message: serverVersion && appVersion && serverVersion !== appVersion
+      ? `Hermes is running the FieldKit ${serverVersion} server, but this app is ${appVersion}. Restart the Hermes dashboard so the update takes effect.`
+      : "This Hermes server doesn't support this FieldKit feature yet (HTTP 404). Restart the Hermes dashboard after updating the plugin." };
+  }
+  if (e instanceof HttpError) return { kind: "server-error", message: `Hermes couldn't load your records (HTTP ${e.status}). Try again in a moment.` };
+  return { kind: "server-error", message: `Couldn't load your records from Hermes: ${(e as Error)?.message ?? String(e)}` };
 }

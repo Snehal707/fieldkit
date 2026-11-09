@@ -59,3 +59,24 @@ describe("one Saved Records list for the whole account", () => {
     expect(list.some((r) => /dev_/.test(r.source))).toBe(false);
   });
 });
+
+describe("load problems are reported honestly", () => {
+  it("never calls an HTTP error 'offline'; offline only when the device is offline", async () => {
+    const { describeLoadProblem } = await import("../../app/src/device");
+    const { AuthRequired, HttpError, Offline } = await import("../../app/src/api");
+    expect(describeLoadProblem(new Offline(), false).kind).toBe("offline");
+    expect(describeLoadProblem(new Offline(), true).kind).toBe("unreachable");          // online but request failed
+    expect(describeLoadProblem(new AuthRequired(true), true).kind).toBe("signed-out");
+    const outdated = describeLoadProblem(new HttpError(404, { detail: "Not Found" }, true), true, "0.1.9", "0.2.1");
+    expect(outdated.kind).toBe("server-outdated");
+    expect(outdated.message).toContain("0.1.9");
+    expect(outdated.message).toContain("Restart the Hermes dashboard");
+    expect(describeLoadProblem(new HttpError(404, null), true).kind).toBe("server-outdated");
+    const err = describeLoadProblem(new HttpError(500, "boom"), true);
+    expect(err.kind).toBe("server-error");
+    expect(err.message).toContain("HTTP 500");
+    for (const e of [new HttpError(404, null), new HttpError(500, ""), new HttpError(503, ""), new AuthRequired()]) {
+      expect(describeLoadProblem(e, true).message.toLowerCase()).not.toContain("offline");
+    }
+  });
+});

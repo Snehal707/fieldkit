@@ -1,8 +1,8 @@
 // Core screens: Home, My Workflows, workflow runner, Results, Saved Records, Pending Sync, Reports.
 import { api, AuthRequired, HttpError } from "./api";
-import { signIn } from "./config";
+import { APP_VERSION, signIn } from "./config";
 import { db, deleteRecord, deviceId, getSetting, setSetting, type Attachment, type Draft, type LocalRecord, type RemoteCopy, type StoredReport } from "./db";
-import { unifiedRecords, type Availability, type ServerLike } from "./device";
+import { describeLoadProblem, unifiedRecords, type Availability, type LoadProblem, type ServerLike } from "./device";
 import { computeState, ERROR_TEXT, text, type Field, type Workflow } from "./engine";
 import { installedModels, ocr, ocrLanguages, speak, transcribe, voicesReady } from "./intel";
 import { KnowledgeIndex } from "./knowledge";
@@ -605,6 +605,15 @@ async function currentAccountId(): Promise<string> {
   return (await getSetting<{ user_id?: string } | null>("last_account", null))?.user_id ?? "";
 }
 
+/** Turn a failed request into an honest message; on a 404, ask Hermes which FieldKit server version it runs. */
+async function problemFor(e: unknown): Promise<LoadProblem> {
+  let serverVersion = "";
+  if (e instanceof HttpError && e.status === 404) {
+    try { serverVersion = String((await api<{ version?: string }>("status")).version ?? ""); } catch { /* keep generic message */ }
+  }
+  return describeLoadProblem(e, isOnline(), serverVersion, APP_VERSION);
+}
+
 /** Offline copies that belong to the signed-in (or last signed-in) Hermes account only. */
 async function accountCopies(account?: string): Promise<RemoteCopy[]> {
   const who = account ?? await currentAccountId();
@@ -618,7 +627,7 @@ async function fetchRemoteCopy(id: string, names?: Map<string, string>, owner?: 
   let report: any = null;
   try { report = await api<any>(`records/${encodeURIComponent(id)}/report`); }
   catch (e) { if (!(e instanceof HttpError && e.status === 404)) throw e; }
-  if (!names) names = new Map((await api<{ devices: any[] }>("devices")).devices.map((x: any) => [x.id, x.label]));
+  if (!names) names = await api<{ devices: any[] }>("devices").then((r) => new Map(r.devices.map((x: any) => [x.id, x.label] as [string, string])), () => new Map<string, string>());   // names are optional
   const wfDef = (await d.get("workflows", rec.workflow_id))?.definition;
   return { id: rec.id, workflow_id: rec.workflow_id, workflow_title: wfDef ? text(wfDef.title, await lang()) : (rec.workflow_title ?? rec.workflow_id),
     workflow_version: rec.workflow_version, device_id: rec.device_id ?? "",
@@ -636,17 +645,29 @@ export const recordsView: View = async (main) => {
   let index = await getSetting<ServerIndex | null>("server_index", null);
   if (index && account && index.user_id !== account) index = null;     // never show another account's list
   let live = false;
-  let note = "";
-  try {
-    const [{ records }, { devices }, who] = await Promise.all([api<{ records: ServerLike[] }>("records?limit=500"),
-      api<{ devices: any[] }>("devices"), api<{ user_id: string }>("me")]);
-    index = { user_id: who.user_id, at: nowIso(), records, devices: devices.map((x: any) => [x.id, x.label]) };
-    await setSetting("server_index", index);
-    account = who.user_id;
+  let problem: LoadProblem | null = null;      // the account's list could not be loaded
+  let partial: LoadProblem | null = null;      // the list loaded, but device names didn't
+  // Only the record list is required. Device names and the identity check are optional extras: their failure
+  // must never hide records that did load (v0.2.0 bug: a 404 on `devices` emptied the list and said "Offline").
+  const [recRes, devRes, whoRes] = await Promise.allSettled([api<{ records: ServerLike[] }>("records?limit=500"),
+    api<{ devices: any[] }>("devices"), api<{ user_id: string }>("me")]);
+  if (recRes.status === "fulfilled") {
     live = true;
-  } catch (e) {
-    note = e instanceof AuthRequired ? "Signed out. Sign in to Hermes to see every record in your account."
-      : "Offline. Records marked “Needs internet” open once you're connected.";
+    const who = whoRes.status === "fulfilled" ? whoRes.value.user_id : "";
+    if (who) account = who;
+    const sameAccount = !!index && index.user_id === account;
+    const devices: [string, string][] = devRes.status === "fulfilled"
+      ? devRes.value.devices.map((x: any) => [x.id, x.label]) : sameAccount ? index!.devices : [];
+    if (devRes.status === "rejected") partial = await problemFor(devRes.reason);
+    const titles = new Map((await d.getAll("workflows")).map((w) => [w.id, w.definition.title]));
+    const l = await lang();
+    const records = recRes.value.records.map((r) => ({ ...r,
+      workflow_title: r.workflow_title ?? (titles.has(r.workflow_id) ? text(titles.get(r.workflow_id), l) : r.workflow_id) }));
+    index = { user_id: account, at: nowIso(), records, devices };
+    // Remember the list for offline use only when we know whose list it is.
+    if (who) await setSetting("server_index", index);
+  } else {
+    problem = await problemFor(recRes.reason);
   }
   const copies = await accountCopies(account);
   const names = new Map(index?.devices ?? []);
@@ -656,10 +677,20 @@ export const recordsView: View = async (main) => {
 
   const card = h("div", { class: "card", id: "saved-records" }, h("h2", null, "Saved Records"),
     h("p", { class: "muted" }, "Every record in your Hermes account, from all your devices. Records marked “Available offline” open without internet."));
-  if (note) {
-    card.append(h("div", { class: "banner warn", id: "records-note" }, note,
-      note.startsWith("Signed out") ? h("div", null, h("button", { onclick: () => signIn("#/records") }, "Sign in")) : null));
-  } else if (index) card.append(h("p", { class: "muted" }, `Up to date with Hermes · ${fmtTime(index.at)}`));
+  if (problem) {
+    card.append(h("div", { class: `banner ${problem.kind === "offline" ? "local" : "warn"}`, id: "records-note", "data-problem": problem.kind },
+      h("strong", null, problem.kind === "offline" ? "Offline" : "Couldn't load your account's records"),
+      h("div", null, problem.message),
+      h("div", { class: "muted" }, index ? `Showing records on this device and the list from Hermes as of ${fmtTime(index.at)}.`
+        : "Showing only records stored on this device."),
+      h("div", { class: "row" },
+        problem.kind === "signed-out" ? h("button", { class: "primary", onclick: () => signIn("#/records") }, "Sign in") : null,
+        problem.kind !== "offline" ? h("button", { onclick: () => go(`#/records?r=${Date.now()}`) }, "Try again") : null)));
+  } else {
+    card.append(h("p", { class: "muted", id: "records-fresh" }, `Up to date with Hermes · ${fmtTime(index!.at)}`));
+    if (partial) card.append(h("div", { class: "banner warn", id: "records-partial", "data-problem": partial.kind },
+      h("strong", null, "Device names unavailable"), h("div", null, partial.message)));
+  }
   if (live && onlineOnly.length) {
     card.append(h("div", { class: "row" }, h("button", { id: "download-all", onclick: async (ev: Event) => {
       const btn = ev.currentTarget as HTMLButtonElement; btn.disabled = true;
@@ -696,7 +727,7 @@ export const recordsView: View = async (main) => {
         rec?.sync_status === "synced" ? h("button", { class: "danger", onclick: async () => {
           await deleteRecord(r.id); toast("Removed from this device. It's still in your Hermes account.", "ok"); go(`#/records?r=${Date.now()}`);
         } }, "Remove from device") : null));
-  })) : h("p", { class: "muted" }, "No records yet."));
+  })) : h("p", { class: "muted", id: "records-empty" }, live ? "No records yet." : "No records stored on this device. Your account's records will appear here once they can be loaded from Hermes."));
   main.append(card);
   // Quietly refresh offline copies whose record changed on Hermes (e.g. a report arrived after it was downloaded).
   if (live) {
@@ -720,8 +751,11 @@ export const remoteView: View = async (main, p) => {
     live = await fetchRemoteCopy(id);
   } catch (e) {
     if (!copy) {
-      main.append(h("div", { class: "banner warn" }, e instanceof AuthRequired ? "Sign in to Hermes to open records from other devices."
-        : "This record isn't kept on this device. Connect to the internet to open it."));
+      const pr = await problemFor(e);
+      main.append(h("div", { class: "banner warn", id: "remote-problem", "data-problem": pr.kind },
+        h("strong", null, "This record isn't available offline on this device"), h("div", null, pr.message),
+        h("div", { class: "row" }, pr.kind === "signed-out" ? h("button", { class: "primary", onclick: () => signIn(`#/remote/${id}`) }, "Sign in") : null,
+          pr.kind !== "offline" ? h("button", { onclick: () => go(`#/remote/${id}?r=${Date.now()}`) }, "Try again") : null)));
       return;
     }
   }

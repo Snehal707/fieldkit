@@ -162,6 +162,24 @@ Results this run:
 - **Chromium:** 16 passed, 3 skipped. The model and voice specs need `FIELDKIT_E2E_MODELS=1` (large downloads) and were not run this time.
 - **WebKit:** 14 passed, 5 skipped. The same 3 skipped, plus two that `route()` cannot run under WebKit.
 
+### Saved Records load errors (`records-errors.spec.ts`, 0.2.1)
+Regression test for the 0.2.0 iPhone bug: Saved Records said "Offline" and "No records yet" while Hermes was reachable. The cause was that any failed request hid the account's records, even a 404 on the optional `devices` endpoint from a Hermes dashboard still running the 0.1.9 FieldKit router. The bug was reproduced with the 0.2.0 app against the real 0.1.9 server code (`GET records` returned 200 and `GET devices` 404). The fix was verified the same way in Chromium and WebKit: all of the account's records were listed, with "Hermes is running the FieldKit 0.1.9 server, but this app is 0.2.x. Restart the Hermes dashboard…".
+
+The spec checks:
+- The old server (404 on `devices`): records are still listed, with a restart message and no "Offline".
+- A 500 on `records`: "HTTP 500" and Try again, never "No records yet" or "Offline", and the remembered list is labelled with its date.
+- A network failure while online: "Can't reach Hermes".
+- A 401: a sign-in prompt.
+- A real offline state: "Offline" plus the remembered list.
+
+The four simulated-failure cases use `route()`, so they run in Chromium only.
+
+Results (0.2.1):
+- **Chromium:** 22 passed, 3 skipped.
+- **WebKit:** 16 passed, 9 skipped.
+
+Two unrelated tests failed once each across these runs and passed on every re-run: `login.spec` (Chromium) and `settings.spec › storage state: protected` (WebKit).
+
 ## 5. Not yet verified (needs your hardware or permission)
 - A real model-generated report (needs a provider; it would run on the hosted instance).
 - Hermes Mobile conversations invoking FieldKit tools against the hosted instance.

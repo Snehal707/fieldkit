@@ -70,6 +70,8 @@ Full instructions are in [docs/INSTALL.md](docs/INSTALL.md).
 - **Make available offline** and **Download all for offline** store a record and its Hermes report in a separate read-only store on the device. **Remove offline copy** deletes only that copy; the record stays on Hermes. Offline copies refresh automatically when the record or its report changes on Hermes.
 - The last list seen from Hermes is remembered. Offline, records that need internet are listed but cannot be opened.
 - On a shared browser, offline copies and the remembered list are tied to the Hermes account. Another account never sees them.
+- If the list can't be loaded, Saved Records says why: offline, can't reach Hermes, signed out, a server error with its HTTP status, or a Hermes dashboard still running an older FieldKit server (restart the dashboard after updating). It never shows "No records yet" for a failed load.
+- **After updating FieldKit on a hosted Hermes, restart the Hermes dashboard process** as well as the gateway. Plugin API routes are mounted by the dashboard, so until it restarts, the new app talks to the old server code.
 
 ## Verification status (honest)
 See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anything not listed as verified below is pending.
