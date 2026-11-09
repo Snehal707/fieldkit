@@ -1,7 +1,8 @@
 // Core screens: Home, My Workflows, workflow runner, Results, Saved Records, Pending Sync, Reports.
-import { api, AuthRequired } from "./api";
+import { api, AuthRequired, HttpError } from "./api";
 import { signIn } from "./config";
-import { db, deleteRecord, getSetting, type Attachment, type Draft, type LocalRecord, type StoredReport } from "./db";
+import { db, deleteRecord, deviceId, getSetting, setSetting, type Attachment, type Draft, type LocalRecord, type RemoteCopy, type StoredReport } from "./db";
+import { unifiedRecords, type Availability, type ServerLike } from "./device";
 import { computeState, ERROR_TEXT, text, type Field, type Workflow } from "./engine";
 import { installedModels, ocr, ocrLanguages, speak, transcribe, voicesReady } from "./intel";
 import { KnowledgeIndex } from "./knowledge";
@@ -555,17 +556,7 @@ function hermesSection(rec: LocalRecord, stored: StoredReport | undefined) {
   if (stored) {
     const r = stored.report;
     box.append(h("p", { class: "muted" }, `Version ${r.version} · generated ${fmtTime(r.generated_at)} by ${r.generated_by} · downloaded ${fmtTime(stored.downloaded_at)} (available offline)`));
-    if (r.requires_review) box.append(h("div", { class: "banner warn" }, h("strong", null, "Requires human review"), r.review_reason ? h("div", null, r.review_reason) : null));
-    box.append(h("p", null, r.summary));
-    if (r.images?.note) {
-      box.append(h("div", { class: `banner ${r.images.analyzed === false ? "warn" : "hermes"}` },
-        h("strong", null, r.images.analyzed === false ? "Photos not analysed" : "Photos analysed"), h("div", null, r.images.note)));
-    }
-    if (r.issues?.length) box.append(h("h3", null, "Issues identified"), h("ul", { class: "clean" }, ...r.issues.map((i: any) => h("li", null, sevBadge(i.severity), " ", h("strong", null, i.title), h("div", { class: "muted" }, i.evidence)))));
-    if (r.missing_information?.length) box.append(h("h3", null, "Missing information"), h("ul", null, ...r.missing_information.map((m: string) => h("li", null, m))));
-    if (r.suggested_actions?.length) box.append(h("h3", null, "Suggested actions"), h("ul", { class: "clean" }, ...r.suggested_actions.map((a: any) => h("li", null, h("span", { class: "badge" }, a.priority), " ", a.action))));
-    if (r.followups?.length) box.append(h("h3", null, "Follow-up tasks"), h("ul", { class: "clean" }, ...r.followups.map((f: any) => h("li", null, h("strong", null, f.title), f.due_date ? ` — due ${f.due_date}` : "", f.detail ? h("div", { class: "muted" }, f.detail) : null))));
-    if (r.references?.length) box.append(h("h3", null, "Supporting references"), h("ul", null, ...r.references.map((x: any) => h("li", null, `${x.title}${x.source ? ` — ${x.source}` : ""}`))));
+    reportBody(box, r);
   } else if (rec.sync_status !== "synced" && rec.sync_status !== "received") {
     box.append(h("p", { class: "muted" }, "Available after the record is synchronised and Hermes has analysed it."));
   } else {
@@ -585,14 +576,185 @@ function hermesSection(rec: LocalRecord, stored: StoredReport | undefined) {
   return box;
 }
 
+/** Body of a Hermes report — shared by this device's records and records from other devices. */
+export function reportBody(box: HTMLElement, r: any): void {
+  {
+    if (r.requires_review) box.append(h("div", { class: "banner warn" }, h("strong", null, "Requires human review"), r.review_reason ? h("div", null, r.review_reason) : null));
+    box.append(h("p", null, r.summary));
+    if (r.images?.note) {
+      box.append(h("div", { class: `banner ${r.images.analyzed === false ? "warn" : "hermes"}` },
+        h("strong", null, r.images.analyzed === false ? "Photos not analysed" : "Photos analysed"), h("div", null, r.images.note)));
+    }
+    if (r.issues?.length) box.append(h("h3", null, "Issues identified"), h("ul", { class: "clean" }, ...r.issues.map((i: any) => h("li", null, sevBadge(i.severity), " ", h("strong", null, i.title), h("div", { class: "muted" }, i.evidence)))));
+    if (r.missing_information?.length) box.append(h("h3", null, "Missing information"), h("ul", null, ...r.missing_information.map((m: string) => h("li", null, m))));
+    if (r.suggested_actions?.length) box.append(h("h3", null, "Suggested actions"), h("ul", { class: "clean" }, ...r.suggested_actions.map((a: any) => h("li", null, h("span", { class: "badge" }, a.priority), " ", a.action))));
+    if (r.followups?.length) box.append(h("h3", null, "Follow-up tasks"), h("ul", { class: "clean" }, ...r.followups.map((f: any) => h("li", null, h("strong", null, f.title), f.due_date ? ` — due ${f.due_date}` : "", f.detail ? h("div", { class: "muted" }, f.detail) : null))));
+    if (r.references?.length) box.append(h("h3", null, "Supporting references"), h("ul", null, ...r.references.map((x: any) => h("li", null, `${x.title}${x.source ? ` — ${x.source}` : ""}`))));
+  }
+}
+
 // ------------------------------------------------------------------ records / sync / reports
+const AVAIL_TEXT: Record<Availability, string> = {
+  "on-device": "Available offline", waiting: "Available offline", "kept-offline": "Available offline", "needs-internet": "Needs internet",
+};
+
+/** Last list of the account's records seen on Hermes, so offline the list still shows what exists (tied to the account). */
+interface ServerIndex { user_id: string; at: string; records: ServerLike[]; devices: [string, string][] }
+
+async function currentAccountId(): Promise<string> {
+  return (await getSetting<{ user_id?: string } | null>("last_account", null))?.user_id ?? "";
+}
+
+/** Offline copies that belong to the signed-in (or last signed-in) Hermes account only. */
+async function accountCopies(account?: string): Promise<RemoteCopy[]> {
+  const who = account ?? await currentAccountId();
+  return (await (await db()).getAll("remote")).filter((c) => !!who && c.owner === who);
+}
+
+/** Fetch a record (plus its report, if any) from Hermes in the shape kept in the separate `remote` store. */
+async function fetchRemoteCopy(id: string, names?: Map<string, string>, owner?: string): Promise<RemoteCopy> {
+  const d = await db();
+  const rec = await api<any>(`records/${encodeURIComponent(id)}`);
+  let report: any = null;
+  try { report = await api<any>(`records/${encodeURIComponent(id)}/report`); }
+  catch (e) { if (!(e instanceof HttpError && e.status === 404)) throw e; }
+  if (!names) names = new Map((await api<{ devices: any[] }>("devices")).devices.map((x: any) => [x.id, x.label]));
+  const wfDef = (await d.get("workflows", rec.workflow_id))?.definition;
+  return { id: rec.id, workflow_id: rec.workflow_id, workflow_title: wfDef ? text(wfDef.title, await lang()) : (rec.workflow_title ?? rec.workflow_id),
+    workflow_version: rec.workflow_version, device_id: rec.device_id ?? "",
+    device_label: names.get(rec.device_id) || (rec.device_id === await deviceId() ? "This device" : "Another device"),
+    completed_at: rec.completed_at, received_at: rec.received_at, revision: rec.revision, analysis_status: rec.analysis_status,
+    answers: rec.answers, local_results: rec.local_results, report, report_id: rec.report_id ?? null, downloaded_at: nowIso(),
+    owner: owner || await currentAccountId() };
+}
+
 export const recordsView: View = async (main) => {
-  const recs = (await (await db()).getAll("records")).sort((a, b) => b.completed_at.localeCompare(a.completed_at));
-  main.append(h("div", { class: "card" }, h("h2", null, "Saved Records"),
-    recs.length ? h("ul", { class: "clean" }, ...recs.map((r) => h("li", null, h("a", { href: `#/results/${r.id}` }, h("strong", null, r.workflow_title)),
-      h("div", { class: "muted" }, `${fmtTime(r.completed_at)} · ${STATUS_TEXT[r.sync_status]} · analysis: ${ANALYSIS_TEXT[r.analysis_status]}`),
-      r.sync_status === "synced" ? h("button", { class: "danger", onclick: async () => { await deleteRecord(r.id); go(`#/records?r=${Date.now()}`); } }, "Remove from device") : null)))
-      : h("p", { class: "muted" }, "No completed records yet.")));
+  const d = await db();
+  const local = await d.getAll("records");
+  const me = await deviceId();
+  let account = await currentAccountId();
+  let index = await getSetting<ServerIndex | null>("server_index", null);
+  if (index && account && index.user_id !== account) index = null;     // never show another account's list
+  let live = false;
+  let note = "";
+  try {
+    const [{ records }, { devices }, who] = await Promise.all([api<{ records: ServerLike[] }>("records?limit=500"),
+      api<{ devices: any[] }>("devices"), api<{ user_id: string }>("me")]);
+    index = { user_id: who.user_id, at: nowIso(), records, devices: devices.map((x: any) => [x.id, x.label]) };
+    await setSetting("server_index", index);
+    account = who.user_id;
+    live = true;
+  } catch (e) {
+    note = e instanceof AuthRequired ? "Signed out. Sign in to Hermes to see every record in your account."
+      : "Offline. Records marked “Needs internet” open once you're connected.";
+  }
+  const copies = await accountCopies(account);
+  const names = new Map(index?.devices ?? []);
+  const list = unifiedRecords(local, index?.records ?? [], copies, names, me);
+  const localById = new Map(local.map((r) => [r.id, r]));
+  const onlineOnly = list.filter((r) => r.availability === "needs-internet");
+
+  const card = h("div", { class: "card", id: "saved-records" }, h("h2", null, "Saved Records"),
+    h("p", { class: "muted" }, "Every record in your Hermes account, from all your devices. Records marked “Available offline” open without internet."));
+  if (note) {
+    card.append(h("div", { class: "banner warn", id: "records-note" }, note,
+      note.startsWith("Signed out") ? h("div", null, h("button", { onclick: () => signIn("#/records") }, "Sign in")) : null));
+  } else if (index) card.append(h("p", { class: "muted" }, `Up to date with Hermes · ${fmtTime(index.at)}`));
+  if (live && onlineOnly.length) {
+    card.append(h("div", { class: "row" }, h("button", { id: "download-all", onclick: async (ev: Event) => {
+      const btn = ev.currentTarget as HTMLButtonElement; btn.disabled = true;
+      let ok = 0; let failed = 0;
+      for (const r of onlineOnly) {
+        btn.textContent = `Downloading ${ok + failed + 1} of ${onlineOnly.length}…`;
+        try { await d.put("remote", await fetchRemoteCopy(r.id, names, account)); ok++; } catch { failed++; }
+      }
+      toast(failed ? `${ok} downloaded, ${failed} failed. Try again.` : `${ok} record(s) now available offline.`, failed ? "error" : "ok");
+      go(`#/records?r=${Date.now()}`);
+    } }, `Download all for offline (${onlineOnly.length})`)));
+  }
+  card.append(list.length ? h("ul", { class: "clean", id: "records-list" }, ...list.map((r) => {
+    const offline = r.availability !== "needs-internet";
+    const openable = offline || live;
+    const rec = localById.get(r.id);
+    return h("li", { "data-record-id": r.id, "data-availability": r.availability },
+      openable ? h("a", { href: r.href }, h("strong", null, r.title)) : h("strong", null, r.title), " ",
+      h("span", { class: `badge ${offline ? "avail-offline" : "avail-online"}` }, AVAIL_TEXT[r.availability]),
+      r.availability === "waiting" ? h("span", null, " ", h("span", { class: "badge avail-waiting" }, "Waiting to sync")) : null,
+      h("div", { class: "muted" }, [r.source === "This device" ? "This device" : `From ${r.source}`, fmtTime(r.when),
+        r.syncNote ? STATUS_TEXT[r.syncNote] : null, `analysis: ${ANALYSIS_TEXT[r.analysis] ?? r.analysis}`, r.hasReport ? "report available" : null]
+        .filter(Boolean).join(" · ")),
+      h("div", { class: "row" },
+        r.availability === "needs-internet" && live ? h("button", { onclick: async (ev: Event) => {
+          (ev.currentTarget as HTMLButtonElement).disabled = true;
+          try { await d.put("remote", await fetchRemoteCopy(r.id, names, account)); toast("Available offline.", "ok"); }
+          catch (e) { toast(e instanceof AuthRequired ? "Sign in to Hermes first." : `Couldn't download: ${(e as Error).message}`, "error"); }
+          go(`#/records?r=${Date.now()}`);
+        } }, "Make available offline") : null,
+        r.availability === "kept-offline" ? h("button", { onclick: async () => {
+          await d.delete("remote", r.id); toast("Removed from this device. It's still in your Hermes account.", "ok"); go(`#/records?r=${Date.now()}`);
+        } }, "Remove offline copy") : null,
+        rec?.sync_status === "synced" ? h("button", { class: "danger", onclick: async () => {
+          await deleteRecord(r.id); toast("Removed from this device. It's still in your Hermes account.", "ok"); go(`#/records?r=${Date.now()}`);
+        } }, "Remove from device") : null));
+  })) : h("p", { class: "muted" }, "No records yet."));
+  main.append(card);
+  // Quietly refresh offline copies whose record changed on Hermes (e.g. a report arrived after it was downloaded).
+  if (live) {
+    const byId = new Map((index?.records ?? []).map((r: any) => [r.id, r]));
+    for (const c of copies) {
+      const s: any = byId.get(c.id);
+      if (s && (s.revision !== c.revision || (s.report_id && s.report_id !== c.report_id) || s.analysis_status !== c.analysis_status)) {
+        void fetchRemoteCopy(c.id, names, account).then((n) => d.put("remote", n)).catch(() => {});
+      }
+    }
+  }
+};
+
+/** Read-only view of a record from another device, with an optional offline copy (separate store). */
+export const remoteView: View = async (main, p) => {
+  const d = await db();
+  const id = p.id;
+  const copy = (await accountCopies()).find((c) => c.id === id);
+  let live: RemoteCopy | null = null;
+  try {
+    live = await fetchRemoteCopy(id);
+  } catch (e) {
+    if (!copy) {
+      main.append(h("div", { class: "banner warn" }, e instanceof AuthRequired ? "Sign in to Hermes to open records from other devices."
+        : "This record isn't kept on this device. Connect to the internet to open it."));
+      return;
+    }
+  }
+  const r = live ?? copy!;
+  const wf = (await d.get("workflows", r.workflow_id))?.definition;
+  const l = await lang();
+  main.append(h("div", { class: "card", id: "remote-record" }, h("h2", null, r.workflow_title),
+    h("div", { class: "banner local" }, h("strong", null, r.device_label === "This device" ? "Saved earlier on this device" : `From ${r.device_label || "another device"}`),
+      h("div", null, "In your Hermes account. Read-only here.")),
+    h("dl", { class: "kv" }, h("dt", null, "Completed"), h("dd", null, fmtTime(r.completed_at)),
+      h("dt", null, "Received by Hermes"), h("dd", null, fmtTime(r.received_at)),
+      h("dt", null, "Hermes analysis"), h("dd", null, ANALYSIS_TEXT[r.analysis_status] ?? r.analysis_status),
+      h("dt", null, "Availability"), h("dd", { "data-availability": copy ? "kept-offline" : "needs-internet" }, copy ? `Available offline (downloaded ${fmtTime(copy.downloaded_at)})` : "Needs internet"))));
+  const dl = h("dl", { class: "kv" });
+  for (const [k, v] of Object.entries(r.answers ?? {})) {
+    const f = wf?.fields.find((x) => x.id === k);
+    let shown = typeof v === "object" ? JSON.stringify(v) : String(v);
+    if (f?.type === "single_choice") shown = text(f.options?.find((o) => o.value === v)?.label, l) || shown;
+    else if (f?.type === "checkbox") shown = v ? "Yes" : "No";
+    else if (f?.type === "photo" || f?.type === "audio") shown = `${(Array.isArray(v) ? v : [v]).length} file(s), viewable in the dashboard`;
+    dl.append(h("dt", null, f ? text(f.label, l) : k), h("dd", null, shown));
+  }
+  main.append(h("div", { class: "card" }, h("h2", null, "Answers"), dl));
+  const rep = h("div", { class: "card", id: "remote-report" }, h("h2", null, h("span", { class: "tag-hermes" }, "Hermes report")));
+  if (r.report) reportBody(rep, r.report); else rep.append(h("p", { class: "muted" }, "No Hermes report yet."));
+  main.append(rep);
+  main.append(h("div", { class: "row" },
+    live ? h("button", { class: "primary", onclick: async () => {
+      await d.put("remote", live!);
+      toast(live!.report ? "Available offline, with its report." : "Available offline.", "ok");
+      go(`#/remote/${id}?r=${Date.now()}`);
+    } }, copy ? "Update offline copy" : "Make available offline") : null,
+    copy ? h("button", { onclick: async () => { await d.delete("remote", id); toast("Offline copy removed. The record is still on Hermes.", "ok"); go("#/records"); } }, "Remove offline copy") : null));
 };
 
 export const syncView: View = async (main) => {
@@ -643,9 +805,16 @@ export const reportsView: View = async (main) => {
       try { const n = await refreshReports(); toast(`${n} new report(s) downloaded.`, "ok"); go(`#/reports?r=${Date.now()}`); }
       catch (e) { toast(e instanceof AuthRequired ? "Sign in to Hermes first." : "Offline — showing downloaded reports.", "error"); }
     } }, "Check for new reports")));
+  const copies = (await accountCopies()).filter((c) => c.report);
+  if (copies.length) {
+    main.append(h("div", { class: "card", id: "other-device-reports" }, h("h2", null, "From your other devices (available offline)"),
+      h("ul", { class: "clean" }, ...copies.map((c) => h("li", null, h("a", { href: `#/remote/${c.id}` }, c.workflow_title),
+        h("div", { class: "muted" }, `${c.device_label} · kept ${fmtTime(c.downloaded_at)}${c.report.requires_review ? " · requires review" : ""}`),
+        h("div", null, String(c.report.summary ?? "").slice(0, 200)))))));
+  }
 };
 
-export async function whoAmI(): Promise<{ user_id: string; display_name: string } | null> {
+export async function whoAmI(): Promise<{ user_id: string; display_name: string; provider?: string } | null> {
   try { return await api("me"); } catch { return null; }
 }
 

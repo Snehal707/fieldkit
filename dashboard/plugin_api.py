@@ -299,7 +299,26 @@ def resolve_conflict(cid: str, request: Request, resolution: str = Body(...), me
 @router.get("/records")
 def list_records(request: Request, workflow_id: Optional[str] = None, limit: int = Query(50, le=500),
                  analysis_status: Optional[str] = None):
-    return {"records": get_store().list_records(_uid(request), workflow_id, limit, analysis_status)}
+    store = get_store()
+    rows = store.list_records(_uid(request), workflow_id, limit, analysis_status)
+    titles = {w["id"]: w["title"] for w in store.list_workflows(ALL)}
+    for r in rows:  # lets other devices show a readable name without downloading the record
+        r["workflow_title"] = titles.get(r["workflow_id"], r["workflow_id"])
+    return {"records": rows}
+
+
+@router.get("/devices")
+def list_devices(request: Request):
+    """The signed-in user's devices (each browser / Home Screen app has its own on-device storage and id)."""
+    return {"devices": get_store().list_devices(_uid(request))}
+
+
+@router.post("/devices")
+def register_device(request: Request, device_id: str = Body(...), label: str = Body("")):
+    try:
+        return get_store().register_device(_uid(request), device_id, label)
+    except Exception as exc:
+        _err(exc)
 
 
 @router.get("/records/{rid}")

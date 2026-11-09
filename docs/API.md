@@ -56,10 +56,16 @@ The same `idempotency_key` returns the stored response with `duplicate: true`. I
 - `GET sync/status`: per-user counts, outstanding attachments, open conflicts, devices and jobs.
 - `GET sync/conflicts`; `POST sync/conflicts/{id}/resolve` with `{resolution: keep_server|use_client|merge, merged_answers?}`.
 
+## Devices
+| Method | Path | Body | Result |
+|---|---|---|---|
+| GET | `devices` | | `{devices:[{id,label,first_seen,last_seen}]}`. The signed-in user's devices only |
+| POST | `devices` | `{device_id, label}` | Registers or renames this user's device. `device_id` must match `dev_<4-40 letters/digits>`, otherwise 422. Control characters are stripped from `label`; max 80 characters |
+
 ## Records, analysis, reports
 | Method | Path | Notes |
 |---|---|---|
-| GET | `records` | `workflow_id`, `analysis_status`, `limit` |
+| GET | `records` | `workflow_id`, `analysis_status`, `limit`. Summaries include `workflow_title` |
 | GET | `records/{id}` | Full record, including attachment metadata |
 | POST | `records/{id}/analyze` | Queues (or re-queues a failed or completed) durable job |
 | GET | `records/{id}/report` | Latest report version. The PWA downloads this for offline use |

@@ -70,6 +70,13 @@ export interface InstalledModel {
 }
 
 export interface StoredReport { record_id: string; report_id: string; version: number; downloaded_at: string; report: any }
+/** A read-only offline copy of a record made on ANOTHER device (kept apart from this device's own records). */
+export interface RemoteCopy {
+  id: string; workflow_id: string; workflow_title: string; workflow_version: number; device_id: string; device_label: string;
+  completed_at?: string; received_at?: number; revision: number; analysis_status: string; answers: Record<string, unknown>;
+  local_results: any; report: any | null; report_id?: string | null; downloaded_at: string;
+  owner?: string;        // Hermes account that downloaded it; only shown to that account
+}
 export interface StoredWorkflow { id: string; version: number; downloaded_at: string; definition: Workflow }
 
 interface FieldKitDB extends DBSchema {
@@ -82,10 +89,11 @@ interface FieldKitDB extends DBSchema {
   attachments: { key: string; value: Attachment; indexes: { by_record: string } };
   outbox: { key: number; value: OutboxOp; indexes: { by_record: string } };
   reports: { key: string; value: StoredReport };
+  remote: { key: string; value: RemoteCopy };
 }
 
 export const DB_NAME = "fieldkit";
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 let dbp: Promise<IDBPDatabase<FieldKitDB>> | null = null;
 
 export function db(): Promise<IDBPDatabase<FieldKitDB>> {
@@ -105,6 +113,11 @@ export function db(): Promise<IDBPDatabase<FieldKitDB>> {
           d.createObjectStore("attachments", { keyPath: "id" }).createIndex("by_record", "record_id");
           d.createObjectStore("outbox", { keyPath: "seq", autoIncrement: true }).createIndex("by_record", "record_id");
           d.createObjectStore("reports", { keyPath: "record_id" });
+        }
+        if (oldVersion < 2) {
+          // v2: offline copies of records from the user's OTHER devices. Separate store: never mixed with
+          // this device's own records, never queued for sync, never touched by the outbox.
+          d.createObjectStore("remote", { keyPath: "id" });
         }
       },
       blocked() { console.warn("FieldKit DB upgrade blocked by another tab"); },

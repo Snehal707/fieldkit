@@ -197,6 +197,24 @@ class Store:
                   "ON CONFLICT(owner_user_id, id) DO UPDATE SET last_seen=excluded.last_seen",
                   (device_id, owner, label, now, now))
 
+    def register_device(self, owner: str, device_id: str, label: str) -> dict:
+        """Name one of the signed-in user's devices. Scoped by (owner, id): a user can only ever name their own."""
+        import re as _re
+        if not isinstance(device_id, str) or not _re.fullmatch(r"dev_[A-Za-z0-9]{4,40}", device_id):
+            raise Invalid("device_id must look like dev_<letters/digits>")
+        label = _re.sub(r"[\x00-\x1f\x7f]", "", str(label or "")).strip()[:80]
+        now = _now()
+        with self.tx() as c:
+            c.execute("INSERT INTO devices(id, owner_user_id, label, first_seen, last_seen) VALUES (?,?,?,?,?) "
+                      "ON CONFLICT(owner_user_id, id) DO UPDATE SET label=excluded.label, last_seen=excluded.last_seen",
+                      (device_id, owner, label, now, now))
+        return {"id": device_id, "label": label}
+
+    def list_devices(self, owner: Any) -> list[dict]:
+        clause, args = self._owner_clause(owner)
+        sql = f"SELECT id, label, first_seen, last_seen FROM devices WHERE {clause} ORDER BY last_seen DESC LIMIT 100"
+        return [dict(r) for r in self._q(sql, args)]
+
     # ------------------------------------------------------------------ workflows
     def save_workflow(self, owner: Any, definition: dict, publish: bool, actor: Any = None) -> dict:
         """Store a new version of a workflow. Ownership of an existing id is enforced."""

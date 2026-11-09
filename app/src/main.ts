@@ -1,10 +1,12 @@
 import "./style.css";
 import { PUBLIC_APP_URL, RUNNING_FROM_LEGACY_PATH, takeReturn } from "./config";
+import { setSetting } from "./db";
+import { registerDevice } from "./device";
 import { isStandalone } from "./storage";
 import { refreshPending, onSyncState, restoreAuthFlag, startAutoSync, registerBackgroundSync, clearAuthRequired, getSyncState } from "./sync";
 import { clear, h, isOnline, toast } from "./util";
 import {
-  authBanner, homeView, recordsView, reportsView, resultsView, runView, syncView, workflowLinkView, workflowsView, whoAmI, type View,
+  authBanner, homeView, recordsView, remoteView, reportsView, resultsView, runView, syncView, workflowLinkView, workflowsView, whoAmI, type View,
 } from "./views_core";
 import { assistantView, diagnosticsView, dictionaryView, knowledgeView, ocrView, packsView, settingsView, translateView } from "./views_tools";
 
@@ -15,6 +17,7 @@ const routes: [RegExp, View, string][] = [
   [/^#\/run\/(?<id>[^/?]+)/, runView, "Workflow"],
   [/^#\/results\/(?<id>[^/?]+)/, resultsView, "Results"],
   [/^#\/records/, recordsView, "Saved Records"],
+  [/^#\/remote\/(?<id>[^/?]+)/, remoteView, "From another device"],
   [/^#\/sync/, syncView, "Pending Sync"],
   [/^#\/reports/, reportsView, "Reports"],
   [/^#\/assistant/, assistantView, "Offline Assistant"],
@@ -173,6 +176,10 @@ if (RUNNING_FROM_LEGACY_PATH) {
   if (isOnline()) {
     // A successful /me clears the paused-sync flag; the screen re-renders with fresh signed-in state.
     const me = await whoAmI();
+    if (me) {
+      await setSetting("last_account", { user_id: me.user_id, display_name: me.display_name, provider: (me as any).provider ?? "", at: new Date().toISOString() });
+      void registerDevice();   // readable device name on Hermes; separate from the sync queue
+    }
     if (me && getSyncState().auth_required) { await clearAuthRequired(); await route(); }
     if (me && back) toast(`Signed in as ${me.display_name || me.user_id}`, "ok");
     try { await navigator.storage?.persist?.(); } catch { /* optional */ }

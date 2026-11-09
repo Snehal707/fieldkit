@@ -345,3 +345,30 @@ def test_jobs_are_scoped_to_their_owner(env):
     b = env.client.get(f"{PREFIX}/jobs", headers=H("bob")).json()
     assert [j["record_id"] for j in a["jobs"]] == ["rec_alice_job_01"] and a["counts"] == {"pending": 1}
     assert [j["record_id"] for j in b["jobs"]] == ["rec_bob_job_0001"]
+
+
+# ----------------------------------------------------------------------------- devices & cross-device records
+def test_devices_are_named_and_scoped_per_user(env):
+    _install(env)
+    r = env.client.post(f"{PREFIX}/devices", headers=H(), json={"device_id": "dev_123456", "label": "iPhone · Home Screen app"})
+    assert r.status_code == 200 and r.json()["label"] == "iPhone · Home Screen app"
+    env.client.post(f"{PREFIX}/devices", headers=H(), json={"device_id": "dev_123456", "label": "iPhone · Safari\x00\x07"})
+    devs = env.client.get(f"{PREFIX}/devices", headers=H()).json()["devices"]
+    assert [d["label"] for d in devs] == ["iPhone · Safari"]                    # renamed, control chars stripped
+    assert env.client.get(f"{PREFIX}/devices", headers=H("bob")).json()["devices"] == []   # isolation
+    # bob using the same device id string never touches alice's row
+    env.client.post(f"{PREFIX}/devices", headers=H("bob"), json={"device_id": "dev_123456", "label": "Bob's laptop"})
+    assert env.client.get(f"{PREFIX}/devices", headers=H()).json()["devices"][0]["label"] == "iPhone · Safari"
+    assert env.client.post(f"{PREFIX}/devices", headers=H(), json={"device_id": "../etc", "label": "x"}).status_code == 422
+    long = env.client.post(f"{PREFIX}/devices", headers=H(), json={"device_id": "dev_999999", "label": "x" * 500}).json()
+    assert len(long["label"]) == 80
+    assert env.client.post(f"{PREFIX}/devices", json={"device_id": "dev_123456", "label": "x"}).status_code == 401
+
+
+def test_record_summaries_carry_device_and_title_and_stay_per_user(env):
+    _install(env)
+    _sync(env, _record(rid="rec_from_phone_01"), user="alice")
+    rec = env.client.get(f"{PREFIX}/records", headers=H()).json()["records"][0]
+    assert rec["workflow_title"] == "Equipment inspection" and rec["device_id"] == "dev-1"
+    assert "answers" not in rec                                                 # summaries only
+    assert env.client.get(f"{PREFIX}/records", headers=H("bob")).json()["records"] == []

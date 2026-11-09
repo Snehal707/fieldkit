@@ -63,6 +63,14 @@ Full instructions are in [docs/INSTALL.md](docs/INSTALL.md).
 - Photos are analysed through a separate vision model when one is configured (the `fieldkit_vision` slot). With a text-only default model, the report says "Photos not analysed".
 - The report is stored centrally. It is visible in the PWA (and downloadable for offline use), in the dashboard, and to Hermes Mobile through FieldKit tools.
 
+## Saved Records across your devices
+- Saved Records is one list for your whole signed-in Hermes account, across all devices. Each browser and each iPhone Home Screen app keeps its own offline storage, so each one counts as a device.
+- Each record appears once. If a record exists both on this device and on Hermes, this device's copy is shown.
+- Each record shows an availability badge: **Available offline** (saved here or downloaded), **Needs internet** (only on Hermes), or **Waiting to sync** (saved here, not yet confirmed by Hermes). Records from other devices show the device name, such as "From iPhone · Safari".
+- **Make available offline** and **Download all for offline** store a record and its Hermes report in a separate read-only store on the device. **Remove offline copy** deletes only that copy; the record stays on Hermes. Offline copies refresh automatically when the record or its report changes on Hermes.
+- The last list seen from Hermes is remembered. Offline, records that need internet are listed but cannot be opened.
+- On a shared browser, offline copies and the remembered list are tied to the Hermes account. Another account never sees them.
+
 ## Verification status (honest)
 See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anything not listed as verified below is pending.
 
@@ -87,12 +95,13 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 | Strict offline | No request leaves the device while offline; record survives restart; auto-sync on reconnect with no user action |
 | Install buttons | Switch to "Reinstall" immediately |
 | Update notice | Compact, never overlaps content (320 px screen, keyboard open) |
+| Saved Records across devices (two isolated profiles, same Hermes account) | One list with no duplicates, readable device names, badges, Download all, offline cold start, offline-saved record auto-syncs on reconnect and appears on the other client, same Account ID on both, Device ID only under Advanced, another account on the same browser sees no copies |
 
 ### Automated tests and security checks
 
 | Area | Status |
 |---|---|
-| Tests | 98 Python tests, 77 TypeScript tests, 10 Playwright E2E suites; every one of the 23 Hermes tools has a test |
+| Tests | 100 Python tests, 87 TypeScript tests, 11 Playwright E2E suites; every one of the 23 Hermes tools has a test |
 | Simulated Hermes Mobile conversation | Covered by a test: create, publish, app link, sync, process jobs, get record and report, compare and save report, follow-up, sync status, conflict resolution (simulated, not a real device conversation) |
 | Security | `hermes plugins validate` security scan: safe. `npm audit`: 0 vulnerabilities. `pip-audit`: 0 known vulnerabilities |
 | Access control | Every API route checks the signed-in user; the app page is public and contains no data. v0.1.7 fixed a cross-user leak where `GET /jobs` listed other users' jobs |
@@ -102,6 +111,7 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 | Area | Status |
 |---|---|
 | OCR, translation and speech-to-text on iPhone | Pending |
+| real iPhone check of the unified Saved Records (Safari + Home Screen app) | Pending |
 | Offline reports on iPhone | Pending |
 | Full Hermes Mobile conversation on a real device | Pending (needs the hosted instance and owner's permission) |
 | Hosted dashboard tab click-through | Pending |

@@ -6,8 +6,8 @@ Node 22. Anything not listed as run here is marked **unverified**.
 ## 1. Unit and API tests
 ```bash
 uv venv .venv --python 3.11 && uv pip install --python .venv fastapi httpx pytest jsonschema pyyaml python-multipart
-.venv/Scripts/python -m pytest            # 74 passed
-npm ci --legacy-peer-deps && npm test     # 58 passed (vitest)
+.venv/Scripts/python -m pytest            # 100 passed
+npm ci --legacy-peer-deps && npm test     # 87 passed (vitest)
 npm run typecheck
 ```
 
@@ -130,6 +130,7 @@ Real Hermes v0.23.0 (throwaway instance) + Playwright on **Chromium** and **WebK
 
 | Feature | Chromium | WebKit | Real iPhone |
 |---|---|---|---|
+| Saved Records across devices, one account, two isolated profiles (`accounts`) | ✅ | ✅ | ⏳ |
 | Offline workflow, saved & queued, restart, auto-sync on reconnect (`strict-offline` A) | ✅ | ✅ | ✅ (rec_6b0da392e6284a70ae1bd33b, received 41 s after completion) |
 | Network "up" but nothing reachable (`strict-offline` B) | ✅ | n/a (Playwright cannot block SW traffic in WebKit) | ✅ (user test) |
 | Offline OCR (eng), pinned core from FieldKit cache (`models`) | ✅ | ✅ | ⏳ |
@@ -146,7 +147,20 @@ Run the extra suites:
 FIELDKIT_E2E_PASS=<pw> FIELDKIT_E2E_DATA_DIR=<HERMES_HOME>/plugin-data/fieldkit npm run test:e2e -- reports.spec.ts dashboard.spec.ts
 FIELDKIT_E2E_MODELS=1 FIELDKIT_E2E_PASS=<pw> npm run test:e2e -- voice.spec.ts models.spec.ts
 FIELDKIT_E2E_BROWSER=webkit FIELDKIT_E2E_PASS=<pw> npm run test:e2e        # same suites on Safari's engine
+FIELDKIT_E2E_PASS=<pw> FIELDKIT_E2E_DATA_DIR=<HERMES_HOME>/plugin-data/fieldkit npm run test:e2e -- accounts.spec.ts
 ```
+
+### Saved Records across devices (`accounts.spec.ts`, 0.2.0)
+Two isolated browser profiles signed into the same Hermes account:
+- One Saved Records list with no duplicates, readable source names and availability badges; Download all works.
+- Offline cold start: kept copies are readable, including the report. Records that were not downloaded show "Needs internet" and cannot be opened.
+- A record saved offline syncs automatically on reconnect and appears on the other client.
+- Both clients show the same Account ID. The Device ID appears only under Advanced.
+- Another account on the same browser does not see the offline copies.
+
+Results this run:
+- **Chromium:** 16 passed, 3 skipped. The model and voice specs need `FIELDKIT_E2E_MODELS=1` (large downloads) and were not run this time.
+- **WebKit:** 14 passed, 5 skipped. The same 3 skipped, plus two that `route()` cannot run under WebKit.
 
 ## 5. Not yet verified (needs your hardware or permission)
 - A real model-generated report (needs a provider; it would run on the hosted instance).

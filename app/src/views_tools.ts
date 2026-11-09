@@ -16,6 +16,7 @@ import {
 import { getSyncState } from "./sync";
 import { clear, fmtBytes, fmtTime, h, isOnline, toast } from "./util";
 import { authBanner, go, lang, readiness, whoAmI, type View } from "./views_core";
+import { currentDeviceLabel, registerDevice } from "./device";
 import { languageLabel, requestOutcome, requestProtection, storageMessage, storageState, summarizeVoices } from "./storage";
 
 // ------------------------------------------------------------------ assistant
@@ -277,12 +278,40 @@ export const settingsView: View = async (main) => {
     h("select", { onchange: async (e: Event) => { await setSetting("lang", (e.target as HTMLSelectElement).value); toast("Saved"); } },
       ...[["en", "English"], ["hi", "हिंदी"]].map(([v, n]) => h("option", { value: v, selected: v === l }, n))),
     h("dl", { class: "kv", style: "margin-top:.8rem" },
-      h("dt", null, "Account"), h("dd", null, me ? `${me.display_name || me.user_id}` : getSyncState().auth_required ? "Session expired" : isOnline() ? "Not signed in" : "Offline"),
-      h("dt", null, "Device"), h("dd", null, dev), h("dt", null, "App version"), h("dd", null, APP_VERSION),
+      h("dt", null, "App version"), h("dd", null, APP_VERSION),
       h("dt", null, "Offline ready"), h("dd", null, checks.slice(0, 3).every((c) => c.ok !== false) ? "yes" : "no")),
     h("div", { class: "row", style: "margin-top:.8rem" },
       h("button", { onclick: () => signIn("#/settings") }, "Sign in to Hermes"),
       h("a", { class: "btn", href: "#/diagnostics" }, "Connection diagnostics"))));
+
+  // ---- Hermes account + this device
+  const last = await getSetting<{ user_id: string; display_name: string; provider: string; at: string } | null>("last_account", null);
+  const acct = me ?? null;
+  const shownAccount = acct ?? last;
+  const devName = await currentDeviceLabel();
+  const nameInput = h("input", { value: devName, maxlength: 80, "aria-label": "Device name" }) as HTMLInputElement;
+  main.append(h("div", { class: "card", id: "account-card" }, h("h2", null, "Hermes account"),
+    h("dl", { class: "kv" },
+      h("dt", null, "Status"), h("dd", { "data-account-status": acct ? "signed-in" : getSyncState().auth_required ? "expired" : isOnline() ? "signed-out" : "offline" },
+        acct ? "Signed in" : getSyncState().auth_required ? "Session expired — sign in again" : isOnline() ? "Not signed in" : "Offline (not checked)"),
+      h("dt", null, acct ? "Signed in as" : "Last signed in as"), h("dd", null, shownAccount ? (shownAccount.display_name || shownAccount.user_id) : "—"),
+      h("dt", null, "Account ID"), h("dd", { "data-account-id": shownAccount?.user_id ?? "" }, shownAccount ? shownAccount.user_id : "—"),
+      h("dt", null, "Sign-in method"), h("dd", null, shownAccount?.provider || "—")),
+    h("p", { class: "muted" }, "Every browser and Home Screen app signs in separately, but the same Account ID means the same Hermes account: records from all of them are on Hermes together."),
+    acct ? null : h("button", { class: "primary", onclick: () => signIn("#/settings") }, "Sign in to Hermes")));
+  main.append(h("div", { class: "card", id: "device-card" }, h("h2", null, "This device"),
+    h("dl", { class: "kv" }, h("dt", null, "Name"), h("dd", { "data-device-name": devName }, devName)),
+    h("p", { class: "muted" }, "Saved Records shows every record in your Hermes account, from all your devices. On iPhone, Safari and the Home Screen app keep separate offline storage."),
+    h("label", { class: "q" }, "Rename this device"),
+    h("div", { class: "row" }, h("div", { class: "grow" }, nameInput), h("button", { onclick: async () => {
+      await setSetting("device_name", nameInput.value.trim().slice(0, 80));
+      await registerDevice(true);
+      toast("Device name saved", "ok");
+      go(`#/settings?r=${Date.now()}`);
+    } }, "Save")),
+    h("details", { id: "advanced", style: "margin-top:.8rem" }, h("summary", null, "Advanced"),
+      h("dl", { class: "kv" }, h("dt", null, "Device ID"), h("dd", { "data-device-id": dev }, dev)),
+      h("p", { class: "muted" }, "Technical identifier for this browser's offline storage. Only needed for troubleshooting."))));
 
   // ---- Storage: three clearly different states, calm wording, no false promises (see storage.ts)
   const ss = await storageState();
