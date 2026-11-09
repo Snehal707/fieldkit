@@ -16,7 +16,7 @@ LLM, writes structured reports and follow-ups, and answers questions about them 
 downloaded reports for the next offline shift. It's one plugin, with unlimited workflows and knowledge domains.
 
 ## Demo script (3–4 minutes)
-Steps 1–9 are the core demo. Step 10 is optional. Verified on iPhone: the offline inspection, automatic sync, the AI report and photo analysis. Verified in Chromium and WebKit only: OCR, translation, speech-to-text and downloaded reports. Pending on iPhone: OCR, translation, speech, offline reports and the full Hermes Mobile conversation.
+Steps 1–9 are the core demo. Step 10 is optional. Verified by the owner on a real iPhone with the hosted Hermes and the Hermes mobile app (0.2.4): every step, including OCR, translation, speech-to-text, photos, voice notes, signatures, the AI report, offline reports and the Hermes Mobile conversation.
 
 1. **Create and publish (Hermes Mobile).** "Create an equipment inspection workflow with troubleshooting instructions and photographs, in English and Hindi, and publish it."
    - Tools: `fieldkit_create_workflow` → `fieldkit_publish_workflow`. Hermes returns a tappable app link.
@@ -34,7 +34,6 @@ Steps 1–9 are the core demo. Step 10 is optional. Verified on iPhone: the offl
    - Tools: `fieldkit_list_records`, `fieldkit_get_report`, `fieldkit_get_record`.
 9. **Follow up in Hermes Mobile.** "Analyse my latest FieldKit inspection", "What should I do next?", and create a follow-up.
    - Tools: `fieldkit_save_report`, `fieldkit_create_followup`.
-   - Pending: the full Hermes Mobile conversation on a real device.
 10. **Offline again (optional).** Turn on airplane mode. The downloaded Hermes report is still readable. Optionally repeat steps 1–5 with *Classroom observation* (education) or *Crop health survey* (agriculture) to show domain independence.
 
 ## Catalog entry (draft — do not open the PR without the owner's go-ahead)
@@ -60,10 +59,9 @@ network_disclosure: "PWA downloads pinned on-device model files from huggingface
 ## Checklist before submitting
 - [ ] Confirm the deadline (reported as Nov 11 2026, 5 PM ET) and the submission format (catalog PR, form, or both) against the official announcement.
 - [ ] Push to the public GitHub repo at https://github.com/Snehal707/fieldkit.
-- [ ] Run `hermes plugins validate .` and `hermes plugins doctor . --ci` on the final commit. Both pass on v0.1.7 (security scan safe; doctor: 23 tools, 1 hook). Re-run on the exact commit you submit.
+- [ ] Run `hermes plugins validate .` and `hermes plugins doctor . --ci` on the final commit. Both pass on v0.2.4 (security scan safe; doctor: 23 tools, 1 hook). Re-run on the exact commit you submit.
 - [ ] Run `npm run build` and commit `dashboard/dist` and `dashboard/app_dist`.
-- [ ] Pending, with the owner's permission: on the hosted instance, confirm a full Hermes Mobile conversation, the hosted dashboard tab click-through, and the device checklist in TESTING.md.
-- [ ] Pending on iPhone: OCR, translation and speech-to-text; offline reports.
-- [ ] Pending: Android Chrome; connection diagnostics; app-link auto-detection; deferred analysis (cron).
+- [x] Real iPhone + hosted Hermes + Hermes mobile app: everything checked and working (owner, 0.2.4).
+- [ ] Optional: hosted dashboard tab click-through in a desktop browser; Android Chrome; scheduled analysis (cron).
 - [ ] Record the demo video (3–4 minutes).
 - [ ] Open the catalog PR only with the owner's go-ahead.

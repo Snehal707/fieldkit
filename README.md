@@ -84,7 +84,7 @@ Full instructions are in [docs/INSTALL.md](docs/INSTALL.md).
 - Operators can turn Hermes-side transcription off with the plugin setting `voice_transcription: false` (or the environment variable `FIELDKIT_VOICE_TRANSCRIPTION=false`). It is on by default.
 - Reports have an **Evidence** section: a summary, the voice-note transcripts and where each came from, each signature with its time, an integrity check against the stored file, and a **Show signature** button.
 - Records from other devices (shown as "From …") load their photos, voice notes and signatures from Hermes on demand. This needs internet, and each file is checked against its SHA-256.
-- **Not yet verified on an iPhone.** The exact iOS cause of the broken thumbnail and audio error could not be reproduced on desktop WebKit. The fixes target the known causes (files stored in IndexedDB shown through object URLs, and WebM playback). They are verified in Chromium and WebKit only.
+- **Verified on the owner's iPhone with 0.2.4** (photos, voice notes, signatures, Results, reports). The exact iOS cause of the original broken thumbnail and audio error was never reproduced on desktop WebKit; the fixes target the known causes (files stored in IndexedDB shown through object URLs, and WebM playback), and the owner confirmed both problems are gone on the iPhone.
 
 ## Verification status (honest)
 See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anything not listed as verified below is pending.
@@ -98,6 +98,11 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 | Automatic AI report | Generated automatically (GLM 5.3, text-only fallback) |
 | Automatic photo analysis | Runs through the configurable `fieldkit_vision` model slot |
 | Sign-in and plugin lifecycle | Sign-in returns to FieldKit; plugin install, enable and update work without a restart |
+| Full Hermes Mobile conversation (0.2.4, owner-reported, 2026-11-09) | Owner checked FieldKit end to end through the Hermes mobile app on iPhone and reported everything working |
+| OCR, translation and speech-to-text on iPhone (0.2.4, owner-reported, 2026-11-09) | Working on the owner's iPhone. The accuracy numbers in this README come from synthetic test material, not from these device checks |
+| Photos, voice notes, signatures, Results and Evidence on iPhone (0.2.4, owner-reported, 2026-11-09) | The broken photo thumbnail and audio playback error are gone; signatures and voice notes reach Hermes and the reports |
+| Offline reports on iPhone (owner-reported, 2026-11-09) | Working |
+| Saved Records across Safari and the Home Screen app (owner-reported, 2026-11-09) | Working |
 
 ### Verified in Chromium + WebKit (WebKit is Safari's engine, not iOS itself; real Hermes v0.23.0)
 
@@ -105,7 +110,7 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 |---|---|
 | Offline OCR (English) and English↔Hindi translation | Work after a cold restart with no network; model files verified by SHA-256 on install |
 | Offline speech-to-text (Whisper) | Verified in Chromium only (WebKit cannot simulate a microphone) |
-| OCR, speech-to-text and translation accuracy (0.2.4, synthetic test material, see [tests/eval/README.md](tests/eval/README.md)) | OCR: Chromium and WebKit. Speech-to-text and translation: measured in Node with the same ONNX files, not in a browser. Not measured on a phone |
+| OCR, speech-to-text and translation accuracy (0.2.4, synthetic test material, see [tests/eval/README.md](tests/eval/README.md)) | OCR: Chromium and WebKit. Speech-to-text and translation: measured in Node with the same ONNX files, not in a browser. The features were then checked working on the owner's iPhone; the error rates themselves were not measured on a phone |
 | Photos, voice notes, signatures and Evidence (`media.spec.ts`, 0.2.4; real Hermes v0.23.0) | Chromium: passed (voice note via fake microphone). WebKit: passed (photo and signature; WebKit has no fake microphone). Real Hermes speech-to-text of uploaded spoken voice notes: passed on the local Hermes in both runs |
 | Downloaded Hermes reports | Readable offline after a cold restart |
 | Dashboard tab | Works inside the real Hermes dashboard, all 7 sections |
@@ -119,7 +124,7 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 | Area | Status |
 |---|---|
 | Tests | 114 Python tests, 110 TypeScript tests, 16 Playwright E2E spec files; every one of the 23 Hermes tools has a test |
-| Simulated Hermes Mobile conversation | Covered by a test: create, publish, app link, sync, process jobs, get record and report, compare and save report, follow-up, sync status, conflict resolution (simulated, not a real device conversation) |
+| Simulated Hermes Mobile conversation | Covered by a test: create, publish, app link, sync, process jobs, get record and report, compare and save report, follow-up, sync status, conflict resolution. The real conversation was also checked on the owner's iPhone (see above) |
 | Security | `hermes plugins validate` security scan: safe. `npm audit`: 0 vulnerabilities. `pip-audit`: 0 known vulnerabilities |
 | Access control | Every API route checks the signed-in user; the app page is public and contains no data. v0.1.7 fixed a cross-user leak where `GET /jobs` listed other users' jobs |
 
@@ -127,17 +132,10 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 
 | Area | Status |
 |---|---|
-| OCR, translation and speech-to-text on iPhone | Pending |
-| real iPhone check of 0.2.4 photo/voice/signature fixes | Pending |
-| Hindi Whisper small on iPhone (memory, speed) | Pending |
-| real iPhone check of the unified Saved Records (Safari + Home Screen app) | Pending |
-| Offline reports on iPhone | Pending |
-| Full Hermes Mobile conversation on a real device | Pending (needs the hosted instance and owner's permission) |
-| Hosted dashboard tab click-through | Pending |
+| Hosted dashboard tab click-through (desktop browser) | Pending (the dashboard tab is verified on the local Hermes) |
 | Android Chrome | Pending |
-| Connection diagnostics screen, app-link auto-detection and `public_url` | Pending |
-| Deferred analysis (`fieldkit_process_pending_jobs`, `retry_failed`, cron job) | Pending |
-| `hermes plugins doctor . --ci` | Pass (v0.1.7: 23 tools, 1 hook) |
+| Scheduled analysis via a Hermes cron job | Pending |
+| `hermes plugins doctor . --ci` | Pass (v0.2.4: 23 tools, 1 hook) |
 
 ### Known limitations
 - The small OPUS-MT model mistranslates some technical terms (for example "bearing" → "bear"). Dictionary terms help when an installed dictionary has the term, but general quality is still limited.

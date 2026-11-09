@@ -23,7 +23,7 @@ or exercised by a test in this repository.
 - Background threads need `contextvars.copy_context().run(...)` (official docs). FieldKit's worker does this.
 - **Dashboard process:** in a real v0.23.0 dashboard (`hermes dashboard --isolated`), FieldKit's `register()` runs in the same process as `plugin_api.py`. `/status` reported `llm_available: true` and the worker processed the queued job automatically.
   - With no provider configured, Hermes returned `AuxiliaryClientUnavailable: No LLM provider configured…`. The job stayed `pending` with a retry scheduled.
-  - So the automatic path reaches the real host LLM entry point. **A successful real model call is not yet verified**; it needs the hosted instance, with permission.
+  - So the automatic path reaches the real host LLM entry point. A successful real model call was later verified on the hosted instance (GLM 5.3), and again by the owner with 0.2.4.
 - Tests use Hermes' own `make_plugin_llm_for_test` with an injected `sync_caller`, loaded from the Hermes source. That exercises the real trust gate, message building and schema validation.
 
 ## Photos and non-multimodal models (0.1.2)
@@ -42,7 +42,7 @@ or exercised by a test in this repository.
   - `ctx.register_auxiliary_task("fieldkit_vision", inherit_from="vision")` registers a plugin-owned model slot. Verified: Hermes logs "registered auxiliary task: fieldkit_vision".
   - Calls with `task="fieldkit_vision"` pass Hermes' trust gate (`agent/plugin_llm.py:_check_task`, own tasks are always allowed). The operator selects the model under `auxiliary.fieldkit_vision` in config.yaml, and FieldKit uses it when plugin setting `vision_task: true`.
   - The built-in `vision` task would need `plugins.entries.fieldkit.llm.allow_task_override: true`. A plugin-owned task avoids widening trust.
-  - **Not yet verified against a real vision provider.**
+  - Verified on the hosted instance: photo analysis runs through the `fieldkit_vision` slot (owner-reported).
 
 ## Dashboard extension
 
@@ -85,7 +85,7 @@ or exercised by a test in this repository.
 | Translation en→hi | `Xenova/opus-mt-en-hi` @ `7aad7200…` (quantized ONNX, ~110 MB) | HF API: files, sizes, LFS SHA-256 pinned in `models.json`. Install in Chromium: "pinned files verified" (SHA-256 of cached weights matched). Offline result: see `docs/TESTING.md` |
 | Translation hi→en | `Xenova/opus-mt-hi-en` @ `99853100…` | HF API verified. A separate model, because reverse translation is not assumed from en→hi |
 | Marathi | **Not available.** Only PyTorch/CTranslate2 conversions exist (`Helsinki-NLP/opus-mt-en-mr`, `-mr-en`) | HF search. Needs a reproducible ONNX conversion in CI |
-| Speech to text | English: `Xenova/whisper-tiny` @ `5332fcc3…` (pack v2: fp32 encoder + 8-bit decoder, 63.6 MB; v1 was ~41 MB, 8-bit encoder). Hindi: `Xenova/whisper-small` @ `2d67713f…` (q8, 249 MB), optional | HF API verified. Measured in Node with the same ONNX files (`tests/eval`, see `tests/eval/README.md`). **tiny romanises Hindi** (or translates it, or loops) even with `language=hindi`, so it is English-only. **small is the smallest Whisper that writes Devanagari.** English WER on synthetic speech: 1.6% clean / 2.6–3.7% phone-style noise with preparation. Hindi CER 18.3% clean / 30.9% phone. Not verified on a phone |
+| Speech to text | English: `Xenova/whisper-tiny` @ `5332fcc3…` (pack v2: fp32 encoder + 8-bit decoder, 63.6 MB; v1 was ~41 MB, 8-bit encoder). Hindi: `Xenova/whisper-small` @ `2d67713f…` (q8, 249 MB), optional | HF API verified. Measured in Node with the same ONNX files (`tests/eval`, see `tests/eval/README.md`). **tiny romanises Hindi** (or translates it, or loops) even with `language=hindi`, so it is English-only. **small is the smallest Whisper that writes Devanagari.** English WER on synthetic speech: 1.6% clean / 2.6–3.7% phone-style noise with preparation. Hindi CER 18.3% clean / 30.9% phone. Error rates measured on synthetic speech only; the packs were checked working on the owner's iPhone |
 | OCR | tesseract.js 7.0.0, core 7.0.0, `@tesseract.js-data/{eng,hin}@1.0.0/4.0.0_best_int` | All URLs returned HTTP 200. The worker JS is vendored; core and language data are fetched pinned. 0.2.4 changed how images are prepared and which page-segmentation mode is used (see `docs/TESTING.md`) |
 | Text to speech | `speechSynthesis` restricted to `localService` voices | Runtime detection; no network voices are used |
 | Native local STT | `SpeechRecognition.available({processLocally:true})` detection only | Shown in Settings; never falls back to cloud recognition |
@@ -106,7 +106,7 @@ or exercised by a test in this repository.
 - The provider is whatever the Hermes operator configured: local faster-whisper, or a cloud provider with a key. A cloud provider receives the voice note.
 - Off switch: plugin setting `voice_transcription: false` (or `FIELDKIT_VOICE_TRANSCRIPTION=false`).
 - **Verified:** a local Hermes v0.23.0 transcribed a synthetic English voice note exactly, and the transcript appeared in the analysis prompt.
-- **Not verified:** a cloud STT provider, the hosted instance's configuration, and a real model-generated analysis that uses the transcript.
+- **Verified by the owner (0.2.4, hosted Hermes + iPhone):** voice notes reach the reports. Which STT provider the hosted instance uses (local or cloud) is the operator's configuration and is not recorded here.
 
 ## Hackathon
 

@@ -223,7 +223,7 @@ Results (0.2.3):
 - No failures on either.
 
 ### Real-iPhone findings (`media.spec.ts` + tests/eval, 0.2.4)
-Offline testing on a real iPhone found the problems below. Each was reproduced or measured, fixed, and checked again on desktop engines. **None of this has been re-tested on an iPhone yet** (see section 5). All accuracy numbers come from synthetic test material, not real users' recordings or photos. The scripts and how to run them are in [tests/eval/README.md](../tests/eval/README.md).
+Offline testing on a real iPhone found the problems below. Each was reproduced or measured, fixed, and checked again on desktop engines. The owner then re-tested 0.2.4 on the iPhone with the Hermes mobile app and reported everything working (2026-11-09). All accuracy numbers come from synthetic test material, not real users' recordings or photos. The scripts and how to run them are in [tests/eval/README.md](../tests/eval/README.md).
 
 **Root causes and fixes**
 - **OCR (poor reading, 20–32% confidence, gibberish):**
@@ -304,15 +304,17 @@ Browser breakdown for the small-print rows is not separated in these results.
 
 General quality is still limited by the small model. For example, "bearing" is fixed only when a dictionary has the term. Larger precision did not help (en→hi fp32 44.6 vs q8 41.5, at 4× the download). NLLB-600M (895 MB) and M2M100 (632 MB) are too large for a phone web app, so OPUS-MT stays.
 
-## 5. Not yet verified (needs your hardware or permission)
-- A real model-generated report (needs a provider; it would run on the hosted instance).
-- Hermes Mobile conversations invoking FieldKit tools against the hosted instance.
-- Android Chrome and iOS Safari: installation, offline reopen, camera, microphone, GPS, OCR/translation memory use.
-- **Real iPhone, 0.2.4:** the photo thumbnail, voice-note playback and signature fixes; the Results screen with real files; reports with the Evidence section.
-- **Real iPhone, 0.2.4 accuracy and speed:** OCR, speech-to-text and translation quality on a phone; Hindi Whisper small memory and speed on iOS (249 MB download).
-- **Real speech and photos:** the accuracy numbers above use synthetic voices and synthetic photos. Dim, shaky photos are still poor, and handwriting is not measured.
-- **Hosted Hermes:** which speech-to-text provider it is configured with (local or cloud), and a real model-generated analysis that includes the Evidence section.
-- OAuth (Nous) 15-minute expiry with real redirects inside an installed PWA. Locally only the basic provider was tested; the return page works the same for any provider because the target is a plain `next` path.
+## 5. Verification on real devices, and what is still open
+**Verified by the owner on a real iPhone with the hosted Hermes and the Hermes mobile app (0.2.4, 2026-11-09, owner-reported):**
+everything was checked and reported working, including the Hermes Mobile conversation with FieldKit tools, real model-generated
+reports, OCR, translation, speech-to-text, photos, voice notes and signatures (the thumbnail and playback errors are gone),
+offline reports and Saved Records across Safari and the Home Screen app.
+
+**Still open:**
+- Android Chrome.
+- The hosted dashboard tab clicked through in a desktop browser (verified on the local Hermes only).
+- Scheduled analysis through a Hermes cron job.
+- Measured error rates on real people's speech and real photos: the numbers above use synthetic voices and photos. Dim, shaky photos are still poor, and handwriting is not supported.
 
 ## Device checklist
 Run on each phone over HTTPS:
