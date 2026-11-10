@@ -24,7 +24,7 @@ const routes: [RegExp, View, string][] = [
   [/^#\/remote\/(?<id>[^/?]+)/, remoteView, "From another device"],
   [/^#\/sync/, syncView, "Pending Sync"],
   [/^#\/reports/, reportsView, "Reports"],
-  [/^#\/assistant/, assistantView, "Offline Assistant"],
+  [/^#\/assistant/, assistantView, "Workspace Assistant"],
   [/^#\/guide\/(?<ws>[^/?]+)\/(?<gid>[^/?]+)/, assistantView, "Decision guide"],
   [/^#\/knowledge\/(?<key>[^?]+)/, knowledgeView, "Knowledge"],
   [/^#\/knowledge/, knowledgeView, "Knowledge"],

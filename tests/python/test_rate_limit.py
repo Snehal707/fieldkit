@@ -45,3 +45,25 @@ def test_rate_limit_delay_parsing():
     assert analysis.rate_limit_delay(Exception("rate limit exceeded")) == analysis.RATE_LIMIT_DEFAULT_S
     assert analysis.rate_limit_delay(Exception("retry-after: 999999 rate limit")) == analysis.RATE_LIMIT_MAX_S
     assert analysis.rate_limit_delay(Exception("timeout")) is None
+
+
+def test_schema_mismatch_gets_one_corrective_retry():
+    """Seen with openai/gpt-5.4-mini: an extra top-level key made Hermes reject the report; one retry with the error."""
+    calls = []
+
+    class Llm:
+        def complete_structured(self, **kw):
+            calls.append(kw["instructions"])
+            if len(calls) == 1:
+                raise ValueError("Plugin LLM structured output did not match schema: Additional properties are not allowed "
+                                 "('suggested_actions' was unexpected)")
+            return {"ok": True}
+    assert analysis._structured_call(Llm(), {"record": {}}, [], None) == {"ok": True}
+    assert len(calls) == 2 and "suggested_actions" in calls[1] and "ONLY the keys" in calls[1]
+
+    class Broken:
+        def complete_structured(self, **kw):
+            raise TimeoutError("timed out")
+    import pytest
+    with pytest.raises(TimeoutError):
+        analysis._structured_call(Broken(), {"record": {}}, [], None)

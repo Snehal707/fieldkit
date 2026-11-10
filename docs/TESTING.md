@@ -549,3 +549,20 @@ local score was inconsistent with the evidence.
     report, "what first / why / is it safe" answer from the on-phone result, labelled as such; "by when" with a report
     uses its actions. Re-run: 13 of 16 right, 8 of 8 record questions answered. Still open: a Hindi transliteration
     ("पेस्ट" for pest) was not understood, and "write me a poem" gets a translation hint instead of a refusal.
+
+### 0.2.6: modes, offline summary, plain UI (2026-11-10)
+- **Report model.** The local test Hermes had no main model configured, so plugin reports fell back to a free model
+  that Nous rate-limited. With `model: {default: openai/gpt-5.4-mini, provider: nous}` a real report arrived in
+  **57 s** (decision "stop", 4 concrete actions). That model added an extra top-level key once, which Hermes rejects;
+  FieldKit now retries once with the exact schema error (`tests/python/test_rate_limit.py`).
+- **After-sync mode per workspace** (`report_policy.after_sync`: save / summarize / analyze): only `analyze` creates
+  automatic report jobs; a "save" record can still be analysed on request; `fieldkit_list_records(include_answers)`
+  lets Hermes summarise many records (`tests/python/test_after_sync.py`).
+- **Offline workspace summary** ("On this phone": records, today, flagged by worst severity, unfinished, waiting to
+  sync, reports), calculated on the phone (`tests/app/local_summary.test.ts`).
+- **UI review** from phone-size screenshots: Home leads with "Record: <workflow>", readiness and tools folded when
+  ready; the workspace page shows "Record a visit" and guides first, gaps as "Not covered yet", sources folded under
+  "Where your rules come from"; workflow titles instead of ids; "Offline Assistant" renamed "Workspace Assistant" with
+  a one-line description; the knowledge pack source no longer says "Researched by Hermes" for the user's own rules.
+- **Results:** pytest 194 passed; vitest 129 passed; typecheck clean; doctor 35 tools, 1 hook; E2E spot checks
+  `workspace.spec` and `login.spec` passed in Chromium (full suites not re-run for these changes).

@@ -163,7 +163,8 @@ def search_knowledge(a: dict) -> str:
 
 # ----------------------------------------------------------------------------- records & reports
 def list_records(a: dict) -> str:
-    rows = get_store().list_records(ALL, a.get("workflow_id"), int(a.get("limit", 20)), a.get("analysis_status"))
+    full = bool(a.get("include_answers"))
+    rows = get_store().list_records(ALL, a.get("workflow_id"), int(a.get("limit", 20)), a.get("analysis_status"), full=full)
     return _ok(records=rows)
 
 
@@ -298,8 +299,10 @@ TOOLS: list[tuple[dict, Callable[[dict], str]]] = [
         {"kind": {"type": "string", "enum": ["knowledge", "dictionary", "classification", "model"]}}), list_knowledge_packs),
     (_s("fieldkit_search_knowledge", "Search FieldKit knowledge packs for grounded reference passages.",
         {"query": STR, "pack_ids": {"type": "array", "items": STR}, "limit": INT, "language": STR}, ["query"]), search_knowledge),
-    (_s("fieldkit_list_records", "List synchronised FieldKit records (newest first) with sync and analysis status.",
-        {"workflow_id": STR, "limit": INT,
+    (_s("fieldkit_list_records", "List synchronised FieldKit records (newest first) with sync and analysis status. "
+        "include_answers=true returns each record's answers, for summaries, counts, trends and comparisons across records "
+        "(e.g. 'summarize my 50 survey visits').",
+        {"workflow_id": STR, "limit": INT, "include_answers": {"type": "boolean"},
          "analysis_status": {"type": "string", "enum": ["not_requested", "pending", "processing", "completed", "failed", "requires_review"]}}),
      list_records),
     (_s("fieldkit_get_record", "Get one synchronised FieldKit record with answers, local findings and attachments.",

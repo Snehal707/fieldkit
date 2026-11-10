@@ -55,7 +55,13 @@ plugins:
 The app header shows the device network, Hermes reachability, records awaiting confirmation and "N not submitted" drafts. Tap the status pill to open **Connection diagnostics**, which runs a live connection test and shows evidence of every request.
 
 ## 5. Automatic analysis
-After a sync, FieldKit queues a durable `analyze` job.
+After a sync, FieldKit queues a durable `analyze` job, unless the workspace's after-sync mode says otherwise. Each workspace sets `report_policy.after_sync`:
+- `save`: records only. No AI analysis unless you ask on a record ("Ask Hermes to analyze this record").
+- `summarize`: no per-record reports. Ask Hermes in chat for summaries, counts and comparisons (`fieldkit_list_records` with `include_answers`).
+- `analyze`: a Hermes report for every record. This is also used for workspaces without the setting and for workflows outside a workspace.
+
+Reports use Hermes' main model. Check which main model your Hermes uses. On a local test install without a configured main model, Hermes fell back to a free model that was rate-limited. With `openai/gpt-5.4-mini` via Nous, a real report took 57 s. If the provider rate-limits a report (HTTP 429 with `retry_after`), FieldKit waits as long as it is told, and the record stays "pending" rather than failed.
+
 - **Automatic mode** (`/status` → `analysis_mode: automatic`): a background worker in the dashboard process runs the job with Hermes' own LLM.
 - **Deferred mode** (no LLM handle in that process): ask Hermes to "process pending FieldKit jobs", or add a cron job:
   ```bash
@@ -66,14 +72,14 @@ After a sync, FieldKit queues a durable `analyze` job.
 ## 6. Build your workspace
 A workspace is your job turned into an offline kit: workflows, decision guides, knowledge and sources. Hermes builds it.
 1. In Hermes (Mobile, chat or dashboard), ask: "Set up FieldKit for my work."
-2. Hermes interviews you, shows you a brief to confirm, researches the rules and procedures for your region and country, and builds the workspace. Research needs web search configured in Hermes, because the research step uses Hermes' own `web_search` and `web_extract` tools.
+2. Hermes interviews you about the job (the decisions each task needs, what is recorded, the rules you already use, documents, languages, escalation, and what should happen after sync), shows you a brief to confirm, and builds the workspace straight away. There is no up-front web research. Your own rules are labelled "Your procedure". Checking a rule against official sources is optional. A source check uses Hermes' own `web_search` and `web_extract` tools, so it needs web search configured in Hermes.
 3. Hermes publishes the workspace only after you approve it. It then returns an app link.
 4. Open the link on your phone (it opens `#/workspace/<id>`) and tap **Download everything for offline**.
-5. In **Offline Packs**, install the optional **Question understanding — English and Hindi** pack (about 118 MB). Without it, the assistant uses basic word search.
+5. In **Offline Packs**, install the optional **Question understanding — English and Hindi** pack (about 118 MB). Without it, the Workspace Assistant uses basic word search.
 
-The bundled examples are starter workspaces, labelled synthetic.
+The bundled examples are starter workspaces, labelled synthetic. In local tests on a local test Hermes, a build took about 2.5 minutes on average. Workspace builds are not yet verified on the owner's iPhone or the hosted Hermes.
 
-To have Hermes check each day for workspace changes that need a decision (not verified; the interview and live research are not yet verified on the hosted Hermes):
+To have Hermes check each day for workspace changes that need a decision (not verified; not yet verified on the hosted Hermes):
 ```bash
 hermes cron create "every 24h" "Call fieldkit_propose_workspace_changes for my FieldKit workspaces and tell me what needs a decision." --skill fieldkit-workspace-builder
 ```

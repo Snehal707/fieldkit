@@ -49,7 +49,11 @@ export const assistantView: View = async (main, p) => {
   let state: State = newState(l);
   let corpus: Corpus | null = null;
 
-  const header = h("div", { class: "card" }, h("h2", null, "Offline Assistant"), status);
+  const header = h("div", { class: "card" }, h("h2", null, "Workspace Assistant"),
+    h("p", { class: "muted", id: "assistant-about" }, l === "hi"
+      ? "आपकी प्रक्रियाओं, नियमों और इस फ़ोन पर सहेजी गई मुलाकातों से उत्तर देता है। बाकी प्रश्न ऑनलाइन होने पर हर्मीस के लिए सहेजे जाते हैं।"
+      : "Answers from your procedures, rules and the visits saved on this phone. Anything else is saved for Hermes to answer when you're online."),
+    status);
   if (ctx.record) {
     const fid = ctx.workflow ? subjectField(ctx.workflow) : undefined;
     header.append(h("div", { class: "banner local", id: "assistant-context" },

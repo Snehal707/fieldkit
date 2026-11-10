@@ -427,7 +427,7 @@ def knowledge_pack(bundle: dict, statuses: dict, pid: str) -> Optional[dict]:
         out.append({**e, "evidence_status": statuses.get(best, "unverified") if best else "unverified"})
     return {"kind": "knowledge", "id": pid, "title": f"{engine.text(bundle['title'])} — knowledge",
             "languages": (bundle.get("languages") or {}).get("content", []), "domain": (bundle.get("profile") or {}).get("industry", ""),
-            "entries": out, "source": {"title": "Researched by Hermes for this workspace"}}
+            "entries": out, "source": {"title": "Your workspace (built with Hermes)"}}
 
 
 def dictionary_pack(bundle: dict, pid: str) -> Optional[dict]:

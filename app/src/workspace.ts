@@ -78,3 +78,35 @@ export async function rememberWorkspaceForWorkflow(workflowId: string): Promise<
     if (hit) rememberWorkspace(hit.manifest.workspace_id);
   } catch { /* no workspaces on this device */ }
 }
+
+/** Offline summary for a workspace, calculated on the phone from what is stored here (no AI, no network). */
+export interface LocalSummary {
+  total: number; today: number; flagged: number; bySeverity: Record<string, number>; unfinished: number;
+  waiting: number; reports: number; latest?: string;
+}
+
+export function summarizeLocal(workflowIds: string[], records: { workflow_id: string; completed_at: string; sync_status: string;
+  report_id?: string | null; local_results?: { findings?: { severity: string }[] } }[], drafts: { workflow_id: string }[],
+  now: Date = new Date()): LocalSummary {
+  const ids = new Set(workflowIds);
+  const mine = records.filter((r) => ids.has(r.workflow_id));
+  const day = now.toISOString().slice(0, 10);
+  const bySeverity: Record<string, number> = {};
+  let flagged = 0;
+  for (const r of mine) {
+    const sev = (r.local_results?.findings ?? []).map((f) => f.severity).filter((x) => x !== "info");
+    if (sev.length) {
+      flagged++;
+      const order = ["critical", "high", "medium", "low"];
+      const worst = order.find((o) => sev.includes(o)) ?? sev[0];
+      bySeverity[worst] = (bySeverity[worst] ?? 0) + 1;
+    }
+  }
+  return {
+    total: mine.length, today: mine.filter((r) => String(r.completed_at).slice(0, 10) === day).length, flagged, bySeverity,
+    unfinished: drafts.filter((d) => ids.has(d.workflow_id)).length,
+    waiting: mine.filter((r) => !["synced", "received"].includes(r.sync_status)).length,
+    reports: mine.filter((r) => r.report_id).length,
+    latest: mine.map((r) => r.completed_at).sort().pop(),
+  };
+}

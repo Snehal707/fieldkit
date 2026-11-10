@@ -3,17 +3,24 @@
 **Event:** Hermes Agent Plugin Hackathon. The deadline is reported as **Nov 11 2026, 5 PM ET**. Confirm it against the official Nous Research announcement before submitting.
 
 ## Pitch (short)
-FieldKit makes Hermes useful where there is no internet. In 0.2.5, Hermes first builds a **workspace** for your actual
-job: it interviews you, researches the rules and procedures from reliable sources, quotes each source with its location,
-and labels how well each item is evidenced. The workspace is published only after you approve it, and the phone
-downloads it for offline use. On the phone, FieldKit then helps you decide with no internet:
+**Observe anywhere. Understand more when connected. Act better next time.**
+
+FieldKit is an offline fieldwork platform powered by Hermes. It is not an offline Google or an AI diagnosis tool. The
+phone records and applies your own rules offline. Hermes analyses, explains and follows up after sync, where you want it.
+
+FieldKit makes Hermes useful where there is no internet. In 0.2.6, Hermes first builds a **workspace** for your actual
+job: it interviews you about the decisions, records, rules and escalation for your work, and builds the workspace
+straight away. Your own rules are labelled "Your procedure". Each item is labelled by how well it is evidenced. The
+workspace is published only after you approve it, and the phone downloads it for offline use. On the phone, FieldKit
+then helps you decide with no internet:
 - decision guides that ask only for what is missing;
-- an assistant that answers from the workspace, your records and reports, with citations, in English and Hindi;
+- the Workspace Assistant, which answers from your procedures, rules, the workspace, your records and reports, with citations, in English and Hindi;
+- an "On this phone" summary of your records;
 - branching questions, photos, GPS, voice notes and signatures;
 - instant local findings, a dictionary, sentence translation, OCR and speech-to-text, all on the device.
 
 Back online, records sync securely and idempotently through the plugin API. Hermes then analyses them with its own
-LLM and writes **decision-focused reports**: a decision, why, what is uncertain, ordered next actions with a way to
+LLM (or saves or summarises them, as the workspace's after-sync mode sets) and writes **decision-focused reports**: a decision, why, what is uncertain, ordered next actions with a way to
 verify each, and checks for the next inspection. Those checks are asked on the next inspection, and verified outcomes
 help the workspace improve, after you confirm each change. It's one plugin, with unlimited workflows and knowledge domains.
 
@@ -22,14 +29,15 @@ Steps 1–9 are the core demo. Step 10 is optional.
 
 **What is verified.** The owner verified 0.2.4 on a real iPhone with the hosted Hermes and the Hermes mobile app: every
 step of the earlier demo, including OCR, translation, speech-to-text, photos, voice notes, signatures, the AI report,
-offline reports and the Hermes Mobile conversation. **0.2.5 is verified only on a local throwaway Hermes v0.23.0** (Chromium,
-and WebKit where [docs/TESTING.md](TESTING.md) says so). It is **not yet verified** on the owner's iPhone or the hosted
-Hermes, including the live interview and web research.
+offline reports and the Hermes Mobile conversation. **0.2.5 and 0.2.6 are verified only on a local test Hermes** (Chromium,
+and WebKit where [docs/TESTING.md](TESTING.md) says so). They are **not yet verified** on the owner's iPhone or the hosted
+Hermes, including the live interview.
 
 1. **Set up for my work (Hermes Mobile).** "Set up FieldKit for my work." Hermes interviews you about the job, shows you
-   the brief to confirm, researches it with cited sources (the exact clause and where it appears), shows the research
-   report, and publishes the workspace after you approve. Hermes returns a tappable app link.
-   - Tools: `fieldkit_save_workspace_brief` → `fieldkit_build_workspace` → `fieldkit_publish_workspace`. Research uses Hermes' own `web_search` and `web_extract`.
+   the brief to confirm, and builds the workspace straight away (about 2.5 minutes on average in local tests). Checking
+   a rule against official sources is optional. Hermes publishes the workspace after you approve it, and returns a
+   tappable app link.
+   - Tools: `fieldkit_save_workspace_brief` → `fieldkit_build_workspace` → `fieldkit_publish_workspace`. A source check, when used, uses Hermes' own `web_search` and `web_extract`.
 2. **Download on the phone.** Open the link over HTTPS and sign in. Tap **Download everything for offline**. In **Offline Packs**, install the **Question understanding — English and Hindi** pack, and the translation, OCR (English) and speech-to-text packs.
 3. **Install and go offline.** Share → **Add to Home Screen**, then sign in once inside the installed app. Turn on airplane mode, with Wi-Fi and mobile data both off. Reopen FieldKit from the home screen.
 4. **Decide offline.**
@@ -57,7 +65,7 @@ Repository must be public; `sha` must be the full 40-character commit; `version`
 name: fieldkit
 repo: https://github.com/Snehal707/fieldkit
 sha: "<40-char commit sha>"
-version: "0.2.5"
+version: "0.2.6"
 requires_hermes: ">=0.23.0"
 description: "Offline mobile field workflows with local findings, knowledge Q&A, translation, OCR and voice; secure sync and Hermes analysis/reports."
 network_disclosure: "PWA downloads pinned on-device model files from huggingface.co and cdn.jsdelivr.net only when the user installs a model pack. Backend makes no third-party calls."
@@ -69,7 +77,7 @@ network_disclosure: "PWA downloads pinned on-device model files from huggingface
 - iOS PWAs have separate storage from Safari. Sign in once inside the installed app.
 - Uploads run while the app is open. There is no background upload from a closed app.
 - Hermes OAuth sessions last 15 minutes. Sync pauses and asks you to sign in; nothing is lost.
-- The offline assistant answers only from workspace content, records and reports. Without the 118 MB understanding pack it uses basic word search.
+- The Workspace Assistant answers only from workspace content, your procedures and rules, records and reports. Without the 118 MB understanding pack it uses basic word search.
 - Local-practice learning needs at least 3 consistent verified outcomes.
 - PDF sources are checked with Hermes' own document extractor; a scanned PDF with a damaged text layer may only give an approximate match (numbers must still match exactly), reported for checking by eye.
 
@@ -81,7 +89,7 @@ network_disclosure: "PWA downloads pinned on-device model files from huggingface
 - [ ] Run `npm run build` and commit `dashboard/dist` and `dashboard/app_dist`.
 - [x] Real iPhone + hosted Hermes + Hermes mobile app: everything checked and working (owner, 0.2.4).
 - [x] Hosted dashboard tab: all sections working (owner, 0.2.4).
-- [ ] 0.2.5 on the owner's iPhone and the hosted Hermes: workspace setup, decision guides, assistant (Hindi included), decision reports, follow-up checks and learning candidates.
+- [ ] 0.2.5 and 0.2.6 on the owner's iPhone and the hosted Hermes: workspace setup, decision guides, Workspace Assistant (Hindi included), after-sync modes, decision reports, follow-up checks and learning candidates.
 - [ ] Optional: Android Chrome; scheduled analysis (cron); scheduled workspace proposals (cron, not verified).
 - [ ] Record the demo video (3–4 minutes).
 - [ ] Open the catalog PR only with the owner's go-ahead.

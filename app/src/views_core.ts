@@ -24,7 +24,7 @@ const STATUS_TEXT: Record<string, string> = {
   conflict: "Conflict — needs your decision", error: "Hermes didn't accept it — try again",
 };
 const ANALYSIS_TEXT: Record<string, string> = {
-  not_requested: "Not requested", pending: "Pending", processing: "Processing", completed: "Completed",
+  not_requested: "Not requested (saved without AI analysis)", pending: "Pending", processing: "Processing", completed: "Completed",
   failed: "Failed", requires_review: "Completed — requires human review",
 };
 
@@ -129,25 +129,31 @@ export const homeView: View = async (main) => {
   main.append(h("div", { class: "card", id: "home-workspaces" }, h("h2", null, "Your workspace"),
     own.length ? h("ul", { class: "clean" }, ...own.map((p) => h("li", null, h("a", { href: `#/workspace/${p.content.workspace_id}` },
       h("strong", null, text(p.content.title, "en")), h("div", { class: "muted" }, [p.content.profile?.role, p.content.profile?.region, p.content.profile?.country].filter(Boolean).join(" · "))))))
-      : h("p", { class: "muted" }, "Ask Hermes: “Set up FieldKit for my work.” It interviews you, researches your rules and procedures, and builds a workspace for your job."),
+      : h("p", { class: "muted" }, "Ask Hermes: “Set up FieldKit for my work.” It asks about your job and the rules you use, and builds your workspace in a few minutes."),
+    own.length ? h("div", { class: "row" }, ...own.flatMap((p) => (p.content.workflows ?? []).slice(0, 3).map((w: any) =>
+      h("a", { class: "btn primary", href: `#/workflow/${encodeURIComponent(w.id)}` }, `Record: ${wfTitles.get(w.id) ?? w.id}`)))) : null,
     h("a", { class: "btn", href: "#/workspaces" }, own.length ? "All workspaces" : "Browse workspaces")));
   main.append(
     h("div", { class: `banner ${ready ? "hermes" : "warn"}` },
       h("strong", null, ready ? "Ready to work offline" : "Not ready for offline use yet"),
       h("div", { class: "muted" }, ready ? "Workflows, packs and the app itself are stored on this device." : "Connect once, sign in, and download workflows in Offline Packs.")),
-    h("div", { class: "card" }, h("h2", null, "Offline readiness"), ...checks.map(checkRow),
+    h(ready ? "details" : "div", { class: "card", id: "home-readiness" },
+      ready ? h("summary", null, h("strong", null, "Offline readiness"), h("span", { class: "muted" }, " · all set")) : h("h2", null, "Offline readiness"),
+      ...checks.map(checkRow),
       h("div", { class: "row", style: "margin-top:.5rem" }, h("a", { class: "btn", href: "#/packs" }, "Offline Packs"))),
     h("div", { class: "grid" },
       tile("#/workflows", "My Workflows", `${(await installedWorkflows()).length} downloaded`),
       recordsTile(acct),
       tile("#/sync", "Pending Sync", pending ? `${pending} awaiting confirmation` : "All confirmed"),
       tile("#/reports", "Reports", `${(await d.getAll("reports")).length + copiesWithReports} available offline`),
-      tile("#/assistant", "Offline Assistant", "Ask your knowledge packs"),
-      tile("#/translate", "Translate", "Sentence translation"),
-      tile("#/dictionary", "Dictionary", "Terms & definitions"),
-      tile("#/knowledge", "Knowledge", "Browse topics"),
-      tile("#/ocr", "Scan text (OCR)", "From camera or photo"),
-      tile("#/settings", "Settings", "Storage, export, account")));
+      tile("#/assistant", "Workspace Assistant", "Your procedures and visits")),
+    h("details", { class: "card", id: "home-tools" }, h("summary", null, h("strong", null, "Tools"),
+      h("span", { class: "muted" }, " · translate, scan text, dictionary, knowledge")),
+      h("div", { class: "grid" },
+        tile("#/translate", "Translate", "Sentence translation"),
+        tile("#/ocr", "Scan text (OCR)", "From camera or photo"),
+        tile("#/dictionary", "Dictionary", "Terms & definitions"),
+        tile("#/knowledge", "Knowledge", "Browse topics"))));
   if (drafts.length) {
     main.append(h("div", { class: "card" }, h("h2", null, "Unfinished drafts"),
       h("ul", { class: "clean" }, ...drafts.map((dr) => h("li", null, h("a", { href: `#/run/${dr.id}` }, `${wfTitles.get(dr.workflow_id) ?? dr.workflow_id} — started ${fmtTime(dr.started_at)}`))))));
@@ -748,7 +754,7 @@ function hermesSection(rec: LocalRecord, stored: StoredReport | undefined) {
       ["not_requested", "failed"].includes(rec.analysis_status) ? h("button", { onclick: async () => {
         try { await requestAnalysis(rec.id); toast("Analysis requested.", "ok"); go(`#/results/${rec.id}?r=${Date.now()}`); }
         catch (e) { toast((e as Error).message, "error"); }
-      } }, "Request Hermes analysis") : null));
+      } }, "Ask Hermes to analyze this record") : null));
   }
   return box;
 }

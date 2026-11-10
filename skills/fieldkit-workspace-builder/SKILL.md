@@ -20,6 +20,9 @@ the web before building. The user's own rules and documents are the source for t
 - **The rules they already use**, in their words: limits, thresholds, steps ("we reject below 8.3 SNF", "spray only
   after the KVK says so"). Ask for any SOP, checklist, form or photo of their paper form: build from it.
 - Country/region, languages (reading, speaking, text in photos), who they escalate to (roles), how long offline.
+- **What should happen after records sync?** Save them only (surveys, attendance, documentation), summaries when they
+  ask, or a Hermes report for every record (inspections and checks that need a decision). Put the answer in
+  `report_policy.after_sync` (`save` / `summarize` / `analyze`); it can be changed later.
 
 Call `fieldkit_save_workspace_brief`; show the returned `summary`; call again with `confirmed: true` only after the user
 confirms. Keep each responsibility's `id` short (e.g. `r_accept`).

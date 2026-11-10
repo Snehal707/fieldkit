@@ -210,7 +210,17 @@ def _structured_call(llm: Any, context: dict, images: list[dict], task: Optional
                   temperature=0.2, max_tokens=1800, purpose="fieldkit.analyze_record", timeout=120)
     if task:
         kwargs["task"] = task
-    return llm.complete_structured(**kwargs)
+    try:
+        return llm.complete_structured(**kwargs)
+    except Exception as exc:  # noqa: BLE001
+        # Some models add keys the schema does not allow (seen: gpt-5.4-mini added "suggested_actions"), and Hermes
+        # rejects the whole answer. Ask once more, quoting the problem; anything else propagates unchanged.
+        msg = str(exc)
+        if "did not match schema" not in msg and "does not match schema" not in msg:
+            raise
+        kwargs["instructions"] += (" Your previous answer was rejected: " + msg[:300] + ". Use ONLY the keys defined in "
+                                   "the schema, with exactly those names; put any extra advice inside next_actions.")
+        return llm.complete_structured(**kwargs)
 
 
 _DEFAULT = object()

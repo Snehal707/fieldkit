@@ -98,6 +98,14 @@ the report as `local_findings`.
    - `requires_review` is set only when there is a review trigger (`review_triggers`): a high or critical finding
      (from Hermes or the phone's local rules), Hermes' own flag with a stated reason, a critical decision, or a
      report that still fails a quality check after the repair pass.
+   - A provider rate limit (HTTP 429 or `retry_after`) makes the job wait as long as the provider asks. The record
+     stays `pending` and is not marked failed. A model reply with extra keys that do not match the report schema is
+     retried once with the exact error.
+
+Which jobs are queued depends on the workspace's `report_policy.after_sync` mode (0.2.6). `analyze` (the default for
+workflows outside a workspace, and for workspaces without the setting) queues a job for every record. `summarize`
+queues none, and answers come from Hermes on request, through `fieldkit_list_records` with `include_answers`. `save`
+stores the record only, and analysis runs when the user asks for it on a record.
 
 ## Workspaces, evidence and learning (0.2.5)
 
@@ -107,7 +115,7 @@ report policy. Hermes builds it. FieldKit validates it, computes its evidence st
 ```text
 Interview (Hermes, skill fieldkit-workspace-builder)
   → fieldkit_save_workspace_brief (the user confirms the brief; incomplete briefs are refused)
-  → research (Hermes' web_search and web_extract; quotes copied with their location)
+  → optional source check (Hermes' web_search and web_extract; quotes copied with their location; 0.2.6: not run by default)
   → fieldkit_build_workspace: bundle validated, source tiers checked against domains,
     web pages re-fetched and quotes dropped if not found, evidence status computed by FieldKit
   → review of the research report → fieldkit_publish_workspace (requires user_approved)
@@ -127,9 +135,9 @@ Interview (Hermes, skill fieldkit-workspace-builder)
 | `fieldkit_core/workspace_tools.py` | The 12 workspace, build and learning tools (schemas and handlers): 9 from 0.2.5, 3 build tools from 0.2.6 |
 | `fieldkit_core/decision.py` | Decision scale, report v2 schema additions, deterministic report checks, follow-ups from next actions |
 | `fieldkit_core/learning.py` | Learning events (idempotent per key), verified outcomes from follow-up checks, candidate clustering, confirmation rules |
-| `app/src/workspace.ts` | Installs and lists workspaces on the phone, with SHA-256 checked packs |
+| `app/src/workspace.ts` | Installs and lists workspaces on the phone, with SHA-256 checked packs; the on-phone summary counts (0.2.6, no AI) |
 | `app/src/guides.ts` | Runs decision guides offline (typed answers, outcome with each action's evidence status) |
-| `app/src/assistant.ts`, `assistant_core.ts`, `assistant_intents.ts`, `views_assistant.ts` | Grounded assistant: intent by meaning and cues, dialogue state, retrieval, answers with citations, knowledge gaps |
+| `app/src/assistant.ts`, `assistant_core.ts`, `assistant_intents.ts`, `views_assistant.ts` | Workspace Assistant (grounded): intent by meaning and cues, dialogue state, retrieval, answers with citations, knowledge gaps |
 | `app/src/followups.ts` | Follow-up checks asked by the next inspection of the same subject |
 | `app/src/learning.ts` | Queue of learning events, uploaded after each sync |
 

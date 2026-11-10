@@ -637,10 +637,28 @@ class Store:
         pending = c.execute("SELECT COUNT(*) FROM attachments WHERE record_id=? AND status!='stored'", (rid,)).fetchone()[0]
         if pending:
             return
-        row = c.execute("SELECT revision, sync_status FROM records WHERE id=?", (rid,)).fetchone()
+        row = c.execute("SELECT revision, sync_status, workflow_id FROM records WHERE id=?", (rid,)).fetchone()
         c.execute("UPDATE records SET sync_status='complete', updated_at=? WHERE id=?", (_now(), rid))
-        if auto_analyze:
+        if auto_analyze and self.after_sync_mode(row["workflow_id"], c) == "analyze":
             self._enqueue(c, rid, row["revision"])
+
+    def after_sync_mode(self, workflow_id: str, c: Any = None) -> str:
+        """What the workspace owning this workflow wants after sync: 'save' (records only), 'summarize' (no per-record
+        reports; summaries on request in Hermes) or 'analyze' (a report per record). Workflows outside any built
+        workspace, and workspaces without the setting, keep the old behaviour: 'analyze'."""
+        conn = c or self.conn
+        try:
+            rows = conn.execute("SELECT v.bundle FROM workspaces w JOIN workspace_versions v ON v.workspace_id=w.id "
+                                "AND v.version=w.published_version WHERE w.published_version IS NOT NULL").fetchall()
+        except sqlite3.Error:
+            return "analyze"
+        for (raw,) in rows:
+            b = _uj(raw) or {}
+            ids = {w.get("id") for w in b.get("workflows") or [] if isinstance(w, dict)} | set(b.get("workflow_refs") or [])
+            if workflow_id in ids:
+                mode = (b.get("report_policy") or {}).get("after_sync")
+                return mode if mode in ("save", "summarize", "analyze") else "analyze"
+        return "analyze"
 
     def _enqueue(self, c, rid: str, revision: int) -> str:
         existing = c.execute("SELECT id FROM jobs WHERE kind='analyze' AND record_id=? AND revision=?", (rid, revision)).fetchone()

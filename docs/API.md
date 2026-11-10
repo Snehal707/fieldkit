@@ -40,6 +40,13 @@ Base path: `/api/plugins/fieldkit/`.
 Workspaces are built and published by Hermes through the workspace tools (see [Hermes tools](#hermes-tools)).
 The phone opens them at `#/workspace/<id>`, the link Hermes returns.
 
+**`report_policy.after_sync` (0.2.6).** Each workspace sets what happens when its records sync:
+- `save`: records only, no AI analysis unless the user asks on a record.
+- `summarize`: no per-record reports. Summaries, counts and comparisons are asked of Hermes in chat.
+- `analyze`: a report for every record.
+
+Workspaces without the setting, and workflows outside a workspace, use `analyze`.
+
 ## Learning (0.2.5)
 `POST learning/events`
 ```json
@@ -162,7 +169,7 @@ Workspace build tools (0.2.6, 3 new):
 Workspaces and learning (0.2.5, 9 tools):
 - `fieldkit_workspace_format`: takes `part` (`sources`, `evidence`, `report_policy`, `workflows`, `guides`, `knowledge`, `vocabulary`, `intents`, `gaps` or `traceability`) and returns that part's JSON Schema, a valid example and its rules. The evidence rules FieldKit enforces are included.
 - `fieldkit_save_workspace_brief`: saves the interview result. An incomplete brief cannot be confirmed.
-- `fieldkit_build_workspace`: takes `workspace_id` (assembles the parts saved for the build) or the older `brief_id` and `bundle`. Validates and stores a draft. Quote checks run in the background: the call waits at most 20 s and reports `checks_pending`. Cited web pages are re-fetched and quotes that are not on them are dropped. PDFs are marked not checked. Private, loopback and metadata addresses are never fetched.
+- `fieldkit_build_workspace`: takes `workspace_id` (assembles the parts saved for the build) or the older `brief_id` and `bundle`. Validates and stores a draft. Quote checks run in the background: the call waits at most 20 s and reports `checks_pending`. Cited web pages are re-fetched and quotes that are not on them are dropped. PDFs are checked with Hermes' own document extractor. Private, loopback and metadata addresses are never fetched.
 - `fieldkit_publish_workspace`: publishes a valid draft. Requires `user_approved`. Refused while any quote check is pending.
 - `fieldkit_get_workspace`, `fieldkit_list_workspaces`: read workspace versions and their research report.
 - `fieldkit_propose_workspace_changes`: turns learning events into candidates (research gaps, local practices, reviews).
@@ -170,6 +177,8 @@ Workspaces and learning (0.2.5, 9 tools):
 - `fieldkit_decide_candidate`: accepts or rejects a candidate. Requires `user_confirmed`. An accepted candidate creates a validated new workspace version with a changelog.
 
 With these, FieldKit has 35 Hermes tools (32 in 0.2.5, 23 before 0.2.5).
+
+**`fieldkit_list_records` `include_answers` (0.2.6).** Set `include_answers: true` to get each record's answers in the result. Use it for summaries, counts, trends and comparisons across records, which is how the `summarize` mode is used. Without it, the result lists record summaries only.
 
 All tools return a JSON string `{ok: true, …}` or `{ok: false, error}`. They act as the instance owner.
 
