@@ -64,7 +64,7 @@ test("photo, voice note and signature: playable on the entry, intact on Hermes, 
   await page.locator("#f-guard_ok label", { hasText: "No" }).click();
 
   // Photo (EXIF-rotated): stored upright, i.e. portrait.
-  await page.locator('#f-photos input[type="file"]').setInputFiles(await iphonePhoto());
+  await page.locator('#f-photos input[data-source="camera"]').setInputFiles(await iphonePhoto());
   await expect(page.locator('#f-photos .media[data-media-state="ok"] img')).toHaveCount(1, { timeout: 20_000 });
   const dims = await page.locator("#f-photos .media img").evaluate((img: HTMLImageElement) => [img.naturalWidth, img.naturalHeight]);
   expect(dims[1]).toBeGreaterThan(dims[0]);                                        // EXIF orientation applied

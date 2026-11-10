@@ -82,7 +82,8 @@ def readable_answers(wf: dict, answers: dict, lang: str = "en") -> list[dict]:
         v = answers[f["id"]]
         if f["type"] in ("photo", "audio", "signature"):
             items = [x for x in (v if isinstance(v, list) else [v]) if isinstance(x, dict)]
-            v = [{k: x[k] for k in ("attachment_id", "caption", "transcript", "ocr_text", "signed_at") if x.get(k)} for x in items]
+            v = [{k: x[k] for k in ("attachment_id", "caption", "transcript", "ocr_text", "signed_at", "taken_at", "source")
+                  if x.get(k)} for x in items]
         elif f["type"] in ("single_choice", "multi_choice"):
             labels = {o.get("value"): engine.text(o.get("label"), lang) for o in f.get("options") or [] if isinstance(o, dict)}
             v = [labels.get(x, x) for x in v] if isinstance(v, list) else labels.get(v, v)

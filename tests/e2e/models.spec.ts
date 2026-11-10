@@ -61,7 +61,7 @@ test("offline translation (en→hi) and OCR after cold restart with no network",
   await expect(page.locator("text=no network used")).toBeVisible();
 
   await page.goto(`${APP}#/ocr`);
-  await expect(page.locator('main input[type="file"]')).toHaveCount(1, { timeout: 20_000 });   // screen rendered
+  await expect(page.locator('main input[type="file"]')).toHaveCount(2, { timeout: 20_000 });   // camera + Photos
   await page.evaluate(async () => {
     const c = document.createElement("canvas");
     c.width = 900; c.height = 200;

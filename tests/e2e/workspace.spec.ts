@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import sharp from "sharp";
 import { signIn } from "./auth";
 
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
@@ -86,6 +87,10 @@ test("a workspace downloads in one tap, works offline, files entries under it an
   await page.locator("#f-concern label", { hasText: "Water" }).click();
   await page.locator("#in-concern_notes").fill("Tank leaking");
   await page.locator("#in-concern_notes").blur();
+  // A close-up taken with the Camera app (macro), attached from Photos: same compression and storage, offline.
+  const jpeg = await sharp({ create: { width: 800, height: 600, channels: 3, background: "#6b8e23" } }).jpeg().toBuffer();
+  await page.locator('#f-photos input[data-source="library"]').setInputFiles({ name: "IMG_1234.JPG", mimeType: "image/jpeg", buffer: jpeg });
+  await expect(page.locator("#f-photos .thumbs img, #f-photos .media")).not.toHaveCount(0, { timeout: 15_000 });
   await page.getByRole("button", { name: "Complete workflow" }).click();
   await expect(page.locator("text=Saved locally. Pending synchronization.")).toBeVisible({ timeout: 15_000 });
   const rid = page.url().split("#/results/")[1].split("?")[0];
@@ -118,7 +123,12 @@ test("a workspace downloads in one tap, works offline, files entries under it an
   page = await ctx.newPage();
   await page.goto(`${APP}#/sync`);
   await expect.poll(async () => (await ctx.request.get(`${API}/records/${rid}`)).status(), { timeout: 60_000 }).toBe(200);
-  expect((await (await ctx.request.get(`${API}/records/${rid}`)).json()).workspace_id).toBe(WID);
+  await expect.poll(async () => (await (await ctx.request.get(`${API}/records/${rid}`)).json()).sync_status,
+    { timeout: 60_000, intervals: [1_000] }).toBe("complete");
+  const visit = await (await ctx.request.get(`${API}/records/${rid}`)).json();
+  expect(visit.workspace_id).toBe(WID);
+  expect(visit.answers.photos[0].source).toBe("photo_library");
+  expect(visit.attachments.map((a: any) => [a.kind, a.status])).toEqual([["photo", "stored"]]);
   await expect.poll(async () => (await (await ctx.request.get(`${API}/records/${ridSigned}`)).json()).sync_status,
     { timeout: 60_000, intervals: [1_000] }).toBe("complete");
   const signed = await (await ctx.request.get(`${API}/records/${ridSigned}`)).json();
@@ -126,7 +136,7 @@ test("a workspace downloads in one tap, works offline, files entries under it an
   const sigAtt = signed.attachments.find((a: any) => a.kind === "signature");
   expect(sigAtt.status).toBe("stored");
   expect(sigAtt.signed_at).toBeTruthy();
-  expect((await (await ctx.request.get(`${API}/records/${rid}`)).json()).attachments).toEqual([]);   // unsigned form: no files
+  expect(visit.attachments.filter((a: any) => a.kind === "signature")).toEqual([]);   // unsigned form: no signature file
 
   // An edit published from Hermes: the phone shows the update and its change list; the old entry keeps its answers.
   const edited = { ...FORM, fields: FORM.fields.filter((f) => f.id !== "concern_notes").concat([{ id: "follow_up", type: "checkbox", label: { en: "Follow-up needed" } } as any]) };

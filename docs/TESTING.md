@@ -715,3 +715,18 @@ All on a local test Hermes v0.23.0 (Windows 11, model `openai/gpt-5.4-mini` via 
 owner updates it), the owner's iPhone with 0.3.0 (Safari and the Home Screen app), Hermes Mobile, Android, and real
 speech or photos from a phone camera. The owner's 0.2.4 iPhone run covered offline recording, sync, media and Saved
 Records; that collection code is unchanged apart from the focus fix above.
+
+### Close-up photos on iPhone (2026-11-11)
+
+**Reported:** photos taken through FieldKit were blurry at close distance; the Camera app was sharp.
+**Cause (from code and public reports; not reproduced on a device here):** the photo field used only
+`<input type="file" accept="image/*" capture="environment">`, which opens iOS's camera sheet. FieldKit sets no focus,
+zoom or lens. That sheet does not switch to the ultra-wide (macro) lens the way the Camera app does, and Pro iPhones'
+main camera cannot focus closer than about 15-20 cm. Compression (2048 px, JPEG 0.85) applies at every distance and is
+unchanged.
+**Change:** photo fields and Scan text now offer "Take photo" (unchanged) and "Choose from Photos" (same input without
+`capture`), so a close-up taken with the Camera app can be attached. Same compression, storage, offline capture and sync;
+a library photo is stored with `source: "photo_library"` and its file time as `taken_at`.
+**Verified locally:** a library photo attached offline, synced, stored and marked `photo_library` (Chromium and WebKit);
+the camera path and offline OCR unchanged. **Not verified:** on the owner's iPhone (the camera sheet and Photos picker
+only exist on the device).

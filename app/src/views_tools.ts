@@ -54,7 +54,7 @@ export const ocrView: View = async (main) => {
   const out = h("textarea", { placeholder: "Recognised text appears here (editable)" }) as HTMLTextAreaElement;
   const status = h("div", { class: "muted", id: "ocr-status" });
   const prog = h("progress", { max: 1, value: 0 }) as HTMLProgressElement;
-  const file = h("input", { type: "file", accept: "image/*", capture: "environment", onchange: async (e: Event) => {
+  const read = async (e: Event) => {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (!f) return;
     status.textContent = "Reading text on this device…";
@@ -66,8 +66,14 @@ export const ocrView: View = async (main) => {
       status.setAttribute("data-confidence", String(r.confidence));
       status.textContent = `Done offline · confidence ${r.confidence}%${r.rotation ? ` · photo was rotated ${r.rotation}°` : ""}${r.note ? ` · ${r.note}` : ""}`;
     } catch (err) { status.textContent = (err as Error).message; }
-  } });
-  main.append(h("div", { class: "card" }, h("h2", null, "Scan text (OCR, offline)"), h("div", { class: "row" }, sel, file), prog, status, out,
+  };
+  // Camera sheet (quick) or a photo from the library (e.g. a sharp close-up taken with the Camera app's macro).
+  const camera = h("input", { type: "file", accept: "image/*", capture: "environment", style: "display:none", "data-source": "camera", onchange: read }) as HTMLInputElement;
+  const library = h("input", { type: "file", accept: "image/*", style: "display:none", "data-source": "library", onchange: read }) as HTMLInputElement;
+  main.append(h("div", { class: "card" }, h("h2", null, "Scan text (OCR, offline)"),
+    h("div", { class: "row" }, sel, h("button", { onclick: () => camera.click() }, "📷 Take photo"),
+      h("button", { onclick: () => library.click() }, "🖼 Choose from Photos"), camera, library),
+    h("div", { class: "muted" }, "For small print, a close-up from the Camera app (macro) reads best."), prog, status, out,
     h("button", { onclick: async () => {
       try { await navigator.clipboard.writeText(out.value); toast("Copied", "ok"); } catch { out.select(); toast("Select the text and copy it", "info"); }
     } }, "Copy")));

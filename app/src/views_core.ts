@@ -427,17 +427,27 @@ export const runView: View = async (main, p) => {
       });
     }
     const max = f.validation?.max_items ?? 10;
-    const fileIn = h("input", { type: "file", accept: "image/*", capture: "environment", style: "display:none", onchange: async (e: Event) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
+    // Two native ways in. "Take photo" opens iOS's camera sheet directly (capture), which does not switch to the
+    // macro lens, so very close subjects can be blurry on Pro iPhones. "Choose from Photos" lets the user shoot with
+    // the Camera app (automatic macro) and attach that photo. Both go through the same compression and storage.
+    const add = async (file: File | undefined, fromLibrary: boolean) => {
       if (!file) return;
       try {
         const c = await compressPhoto(file);
         const att = await saveAttachment(draft.id, f.id, "photo", c.blob, { width: c.width, height: c.height });
-        await set(f.id, [...items, { attachment_id: att.id, taken_at: nowIso() }]);
+        const shot = fromLibrary && file.lastModified && file.lastModified <= Date.now() ? new Date(file.lastModified).toISOString() : nowIso();
+        await set(f.id, [...items, fromLibrary ? { attachment_id: att.id, taken_at: shot, source: "photo_library" } : { attachment_id: att.id, taken_at: nowIso() }]);
       } catch (err) { toast(`Could not read photo: ${(err as Error).message}`, "error"); }
-    } }) as HTMLInputElement;
-    return h("div", null, thumbs, items.length < max ? h("div", { class: "row" },
-      h("button", { onclick: () => fileIn.click() }, "📷 Take / add photo"), fileIn) : h("div", { class: "muted" }, `Maximum ${max} photos.`));
+    };
+    const cameraIn = h("input", { type: "file", accept: "image/*", capture: "environment", style: "display:none", "data-source": "camera",
+      onchange: (e: Event) => add((e.target as HTMLInputElement).files?.[0], false) }) as HTMLInputElement;
+    const libraryIn = h("input", { type: "file", accept: "image/*", style: "display:none", "data-source": "library",
+      onchange: (e: Event) => add((e.target as HTMLInputElement).files?.[0], true) }) as HTMLInputElement;
+    return h("div", null, thumbs, items.length < max ? h("div", null, h("div", { class: "row" },
+      h("button", { onclick: () => cameraIn.click() }, "📷 Take photo"), h("button", { onclick: () => libraryIn.click() }, "🖼 Choose from Photos"),
+      cameraIn, libraryIn),
+      h("div", { class: "muted" }, "For close-ups, take the photo with the Camera app (it switches to macro), then choose it here."))
+      : h("div", { class: "muted" }, `Maximum ${max} photos.`));
   };
 
   const audioInput = (f: Field) => {

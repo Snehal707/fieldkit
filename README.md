@@ -101,6 +101,8 @@ fix (the form keeps the cursor in a field while another answer is saved), so thi
 checked on the iPhone or the hosted Hermes.
 
 ## Known limitations
+- Close-ups on Pro iPhones: "Take photo" opens iOS's camera sheet, which does not switch to the macro lens like the
+  Camera app, so very close subjects can be blurry. Take the close-up with the Camera app and use "Choose from Photos".
 - Hermes must run on one machine with one persistent volume. Data lives in `<HERMES_HOME>/plugin-data/fieldkit/data.db`.
 - After `hermes plugins update fieldkit`, restart the Hermes dashboard **and** any running Hermes gateway. A running gateway keeps the old plugin code loaded.
 - iOS Home Screen apps have storage separate from Safari: sign in once inside the app.
