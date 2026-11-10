@@ -25,7 +25,7 @@ STATUSES = ("verified", "user_procedure", "supported", "local_practice", "confli
 STATUS_RANK = {"verified": 4, "user_procedure": 4, "supported": 3, "local_practice": 3, "conflicting": 2, "unverified": 1}
 MIN_PRACTICE_OUTCOMES = 3   # a "local practice" needs this many verified follow-up outcomes, ≥80% successful
 SOURCE_TYPES = {
-    "regulator": 1, "government": 1, "standards_body": 1, "manufacturer": 1, "user_document": 1,
+    "regulator": 1, "government": 1, "standards_body": 1, "manufacturer": 1, "user_document": 1, "user_statement": 1,
     "academic": 2, "extension_or_ngo": 2, "international_body": 2,
     "industry_body": 3, "trade_media": 3, "reference_work": 3,
     "forum": 0, "blog": 0, "social": 0, "other": 0,
@@ -40,6 +40,10 @@ OFFICIAL_SUFFIXES = (".gov", ".gov.in", ".nic.in", ".gov.uk", ".gc.ca", ".gov.au
                      ".gov.ph", ".go.id", ".gov.sg", ".who.int", ".fao.org", ".ilo.org", ".un.org", ".int")
 GUIDANCE_ENTRY_TYPES = ("procedure", "troubleshooting")   # instructions: need evidence ≥ supported
 MIN_EXCERPT = 20
+MIN_USER_EXCERPT = 3       # the user's own words ("reject below 8.3 SNF") are short and are not checked against a page
+# The user's own process: their documents, or rules they stated (or approved) in the conversation. Authoritative for
+# their own procedure only; never presented as an external standard.
+USER_SOURCE_TYPES = ("user_document", "user_statement")
 
 
 def _host(url: str) -> str:
@@ -59,7 +63,7 @@ def source_tier(src: dict) -> tuple[int, list[str]]:
     stype = src.get("type", "other")
     tier = SOURCE_TYPES.get(stype, 0)
     host = _host(src.get("url", ""))
-    if stype == "user_document":
+    if stype in USER_SOURCE_TYPES:
         return 1, notes
     if not host:
         return 0, ["no usable URL"]
@@ -80,7 +84,9 @@ def text_langs(v: Any) -> set[str]:
 def evidence_status(ev: dict, sources: dict[str, dict]) -> tuple[str, list[str]]:
     """Compute verified / user_procedure / supported / conflicting / unverified from the recorded evidence."""
     notes: list[str] = []
-    excerpts = [x for x in ev.get("excerpts", []) if isinstance(x, dict) and len(str(x.get("quote", "")).strip()) >= MIN_EXCERPT
+    def _min(x: dict) -> int:
+        return MIN_USER_EXCERPT if (sources.get(x.get("source_id")) or {}).get("type") in USER_SOURCE_TYPES else MIN_EXCERPT
+    excerpts = [x for x in ev.get("excerpts", []) if isinstance(x, dict) and len(str(x.get("quote", "")).strip()) >= _min(x)
                 and x.get("source_id") in sources and x.get("check") != "not_found"]
     dropped = len(ev.get("excerpts", [])) - len(excerpts)
     if dropped:
@@ -90,8 +96,7 @@ def evidence_status(ev: dict, sources: dict[str, dict]) -> tuple[str, list[str]]
         t, _ = source_tier(sources[x["source_id"]])
         if t:
             tiers[x["source_id"]] = t
-    if not tiers and any(sources[x["source_id"]].get("type") == "user_document" for x in excerpts):
-        tiers = {x["source_id"]: 1 for x in excerpts}
+    user_cited = any(sources[x["source_id"]].get("type") in USER_SOURCE_TYPES for x in excerpts)
     if ev.get("local_practice"):
         o = ev.get("outcomes") or {}
         n, done = int(o.get("n") or 0), int(o.get("done") or 0)
@@ -99,10 +104,11 @@ def evidence_status(ev: dict, sources: dict[str, dict]) -> tuple[str, list[str]]
             return "local_practice", notes + [f"learned from {done} of {n} verified follow-up outcomes (not a standard)"]
         notes.append("local practice without enough verified outcomes")
         return "unverified", notes
-    if ev.get("user_procedure"):
-        if any(sources[s].get("type") == "user_document" for s in tiers):
-            return "user_procedure", notes
-        notes.append("marked as the user's procedure but cites no user document")
+    external = {s: t for s, t in tiers.items() if sources[s].get("type") not in USER_SOURCE_TYPES}
+    if user_cited and not external:
+        return "user_procedure", notes          # the user's own rule (document or stated/approved in the interview)
+    if ev.get("user_procedure") and not user_cited:
+        notes.append("marked as the user's procedure but cites no user document or statement")
     if ev.get("conflicts"):
         if any(isinstance(c, dict) and c.get("source_id") in sources for c in ev["conflicts"]):
             return "conflicting", notes
@@ -584,10 +590,10 @@ def prompt_section(store: Any) -> str:
     if not built:
         return (resume + "FieldKit (offline field-work plugin) is installed, but no workspace has been built for this user yet. "
                 "When the user talks about their field work, inspections, surveys or FieldKit, offer once to build a "
-                "FieldKit workspace for their actual job, following the fieldkit-workspace-builder skill: interview, "
-                "confirm the brief (fieldkit_save_workspace_brief), fieldkit_start_workspace_build, research with "
-                "web_search and web_extract quoting the exact source text, add each part with fieldkit_add_workspace_parts, "
-                "fieldkit_build_workspace, show the research report, and publish only after the user approves.")[:1500]
+                "FieldKit workspace for their actual job, following the fieldkit-workspace-builder skill: a short interview "
+                "(including the rules they already use), confirm the brief, then build straight away from their answers and "
+                "documents (no up-front web research), show what the phone will do, and publish only after the user "
+                "approves.")[:1500]
     parts = []
     for w in built[:6]:
         try:
@@ -850,8 +856,10 @@ def check_excerpts(bundle: dict, fetch: Any = None, limit: int = 80, wait_s: Opt
             src = sources.get(x.get("source_id"))
             url = (src or {}).get("url", "")
             why = ""
-            if not src or src.get("type") == "user_document" or not url:
-                why = "user document or no URL"
+            if src and src.get("type") in USER_SOURCE_TYPES:
+                why = "the user's own words or document (their procedure; not a published source)"
+            elif not src or not url:
+                why = "no URL"
             elif url not in todo and len(todo) >= limit:
                 why = "check limit reached"
             if why:

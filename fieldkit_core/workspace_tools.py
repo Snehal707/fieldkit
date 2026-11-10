@@ -202,6 +202,21 @@ def _forged_practice(store: Any, wid: str, item: Any) -> bool:
 
 
 def add_parts(a: dict) -> str:
+    if isinstance(a.get("parts"), dict) and a["parts"]:
+        # Several parts in one call (fewer model round-trips): applied in the standard order.
+        results, ok = {}, True
+        for p in [x for x in wsc.PARTS if x in a["parts"]]:
+            r = json.loads(add_parts({"workspace_id": a.get("workspace_id"), "part": p, "items": a["parts"][p],
+                                      "dry_run": a.get("dry_run")}))
+            if not r.get("ok"):
+                return _fail(r.get("error", "failed"), part=p, done=results)
+            results[p] = {k: r[k] for k in ("accepted", "rejected", "fixed_automatically", "quote_check", "quotes_not_found",
+                                            "evidence_status") if r.get(k)}
+            ok = ok and not r["rejected"]
+        unknown = [p for p in a["parts"] if p not in wsc.PARTS]
+        return _ok(results=results, unknown_parts=unknown, dry_run=bool(a.get("dry_run")),
+                   next=("Fix each rejected item using its errors and hints, then add it again." if not ok else
+                         "Saved. When all parts are in, call fieldkit_build_workspace(workspace_id)."))
     store = get_store()
     wid, part = a.get("workspace_id"), a.get("part")
     build = store.get_workspace_build(wid or "")
@@ -348,7 +363,8 @@ def build(a: dict) -> str:
                                if x.get("check") == "approximate"][:20],
         "quotes_not_checked": [{"evidence_id": e.get("id"), "source_id": x.get("source_id"), "note": x.get("check_note")}
                                for e in bundle.get("evidence") or [] for x in e.get("excerpts") or []
-                               if x.get("check") == "not_checked"][:20],
+                               if x.get("check") == "not_checked"
+                               and not str(x.get("check_note", "")).startswith("the user's own")][:20],
         "excluded_sources": [s for s in rr["sources"] if s["tier"] == 0],
         "downgraded_sources": [s for s in rr["sources"] if s["notes"]], "gaps": rr["gaps"],
     }
@@ -456,9 +472,10 @@ TOOLS = [
         "report_policy, workflows, guides, knowledge, vocabulary, intents, gaps or traceability. Each item is checked against "
         "the part's schema, the rest of the build (evidence ids, fields, decisions) and value types; unambiguous shape "
         "mistakes are repaired and reported. Evidence quotes are checked against their pages. dry_run=true checks without "
-        "saving.", {"workspace_id": STR, "part": {"type": "string", "enum": list(wsc.PARTS)},
-                    "items": {"type": "array", "items": OBJ}, "remove": {"type": "array", "items": STR}, "dry_run": BOOL},
-        ["workspace_id", "part"]), add_parts),
+        "saving. To add several parts in one call, pass parts={part: [items], ...} instead of part/items.",
+        {"workspace_id": STR, "part": {"type": "string", "enum": list(wsc.PARTS)},
+         "items": {"type": "array", "items": OBJ}, "parts": OBJ, "remove": {"type": "array", "items": STR}, "dry_run": BOOL},
+        ["workspace_id"]), add_parts),
     (_s("fieldkit_workspace_build_status", "Workspace builds in progress: parts added so far, what is missing, evidence "
         "status counts and item ids. Use it to continue a build in a new chat.", {"workspace_id": STR}), build_status),
     (_s("fieldkit_build_workspace", "Assemble the parts of a build (workspace_id), validate everything, check source quotes "

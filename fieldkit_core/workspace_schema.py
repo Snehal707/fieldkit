@@ -98,7 +98,7 @@ SOURCE = {
     "properties": {"id": ID, "url": {"type": "string", "maxLength": 2000}, "title": STR, "publisher": {"type": "string"},
                    "type": {"enum": list(SOURCE_TYPES)}, "published_at": {"type": "string"}, "retrieved_at": {"type": "string"},
                    "language": {"type": "string"}, "notes": {"type": "string"}},
-    "if": {"properties": {"type": {"not": {"const": "user_document"}}}}, "then": {"required": ["url"]},
+    "if": {"properties": {"type": {"not": {"enum": ["user_document", "user_statement"]}}}}, "then": {"required": ["url"]},
 }
 EVIDENCE = {
     "type": "object", "required": ["id", "claim", "applicability"], "additionalProperties": False,
@@ -106,7 +106,7 @@ EVIDENCE = {
         "id": ID, "claim": STR,
         "excerpts": {"type": "array", "items": {
             "type": "object", "required": ["source_id", "quote"], "additionalProperties": False,
-            "properties": {"source_id": ID, "quote": {"type": "string", "minLength": 20, "maxLength": 3000},
+            "properties": {"source_id": ID, "quote": {"type": "string", "minLength": 3, "maxLength": 3000},
                            "locator": {"type": "string"}, "language": {"type": "string"},
                            "check": {"type": "string"}, "check_note": {"type": "string"}}}},
         "applicability": {"type": "object", "required": ["matches_profile"], "additionalProperties": False,
@@ -272,9 +272,11 @@ EXAMPLES: dict[str, Any] = {
 }
 
 RULES = {
-    "sources": "type is one of " + ", ".join(SOURCE_TYPES) + ". Forums, Q&A, social media and unattributed blogs are "
-               "excluded. 'regulator'/'government' on a non-official domain is downgraded. url is required except for "
-               "user_document. Add only pages/documents you actually opened.",
+    "sources": "type is one of " + ", ".join(SOURCE_TYPES) + ". For the user's own rules use one source "
+               "{\"id\": \"s_user\", \"type\": \"user_statement\", \"title\": \"Stated by the user in the setup interview\"} "
+               "(no url). Forums, Q&A, social media and unattributed blogs are excluded. 'regulator'/'government' on a "
+               "non-official domain is downgraded. url is required except for user_document and user_statement. Add only "
+               "pages/documents you actually opened.",
     "evidence": "Each excerpt quote must be copied verbatim from the page you opened with web_extract (FieldKit re-fetches "
                 "web pages in the background and drops quotes it cannot find; PDFs are read with Hermes' extractor). source_id must be "
                 "added in sources first. Do NOT send a status: FieldKit computes it. If sources disagree, add conflicts. "
@@ -702,7 +704,8 @@ def normalize(part: str, item: Any) -> tuple[Any, list[str]]:
                  "law": "regulator", "standard": "standards_body", "standards": "standards_body", "manual": "manufacturer",
                  "university": "academic", "research": "academic", "journal": "academic", "ngo": "extension_or_ngo",
                  "extension": "extension_or_ngo", "intergovernmental": "international_body", "news": "trade_media",
-                 "sop": "user_document", "user": "user_document", "industry": "industry_body"}.get(t.strip().lower())
+                 "sop": "user_document", "user": "user_statement", "interview": "user_statement",
+                 "user_stated": "user_statement", "stated": "user_statement", "industry": "industry_body"}.get(t.strip().lower())
             if m:
                 item["type"] = m
                 fixes.append(f"type {t!r} → {m!r}")
@@ -874,6 +877,10 @@ def check_item(part: str, item: Any, ctx: dict) -> list[dict]:
     statuses = ctx.get("statuses") or {}
     if part == "evidence":
         for i, x in enumerate(item.get("excerpts") or []):
+            src = (ctx.get("sources") or {}).get(x["source_id"]) or {}
+            if src and src.get("type") not in ("user_document", "user_statement") and len(x["quote"].strip()) < 20:
+                errs.append({"path": f"excerpts/{i}/quote", "error": "a quote from a published source must be at least 20 "
+                             "characters, copied exactly", "hint": HINTS["excerpt"]})
             if x["source_id"] not in (ctx.get("sources") or {}):
                 errs.append({"path": f"excerpts/{i}/source_id", "error": f"unknown source {x['source_id']!r}; add it to sources first. "
                              f"Known: {sorted(ctx.get('sources') or {})[:40]}", "hint": HINTS["excerpt"]})
@@ -987,10 +994,12 @@ def format_doc(part: str | None = None) -> dict:
                     "and COMPUTES evidence status from your sources: labels you assign are ignored and unverified model "
                     "knowledge can never become an instruction or threshold.",
         "steps": ["fieldkit_start_workspace_build(brief_id, workspace_id, title, languages)",
-                  "for each part in order: fieldkit_workspace_format(part) once, then fieldkit_add_workspace_parts(workspace_id, "
-                  "part, items) — use dry_run=true to check items before saving; fix every error it returns",
-                  "fieldkit_build_workspace(workspace_id) → validation + research report (source quotes are checked in the "
-                  "background; if checks are pending, call it again after a minute)",
+                  "build from the interview, no up-front web research: the user's stated rules are a 'user_statement' source "
+                  "(quote their words) and their documents 'user_document'; both count as their procedure",
+                  "add parts in one or two calls: fieldkit_add_workspace_parts(workspace_id, parts={part: [items], ...}) "
+                  "(fieldkit_workspace_format(part) gives each part's schema and example); fix every rejected item",
+                  "fieldkit_build_workspace(workspace_id) → validation + report (quotes from web sources, if any, are checked "
+                  "in the background; if checks are pending, call it again after a minute)",
                   "show the research report; fieldkit_publish_workspace(workspace_id, user_approved=true) only after approval",
                   "a new chat can continue any time: fieldkit_workspace_build_status()"],
         "part_order": list(PARTS),
@@ -1000,7 +1009,8 @@ def format_doc(part: str | None = None) -> dict:
                         "own document) quoted and applicable to the profile, or two independent tier-2 publishers",
             "supported": "one tier-2/3 source, or a tier-1 source that does not fully apply",
             "conflicting": "applicable sources disagree (record both); guide actions must name escalate_to",
-            "user_procedure": "from the user's documents (source type user_document)",
+            "user_procedure": "the user's own process: their documents (user_document) or rules they stated or approved "
+                              "in the conversation (user_statement, quote their words). Labelled 'Your procedure' on the phone",
             "unverified": "no qualifying quoted source: background only, never an instruction or threshold",
         },
     }

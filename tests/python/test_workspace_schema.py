@@ -157,7 +157,7 @@ def test_evidence_status_labels_are_dropped_and_ids_must_exist():
     errs = S.check_item("evidence", item, _example_ctx())
     assert errs[0]["path"] == "excerpts/0/source_id" and "add it to sources first" in errs[0]["error"]
     short = dict(item, excerpts=[{"source_id": "s_fssai_dairy", "quote": "too short"}])
-    assert "too short" in S.check_item("evidence", short, _example_ctx())[0]["error"]
+    assert "at least 20 characters" in S.check_item("evidence", short, _example_ctx())[0]["error"]
 
 
 def test_knowledge_intents_vocabulary_and_traceability_rules():
@@ -313,3 +313,28 @@ def test_phone_guides_ask_record_fields_with_their_label_and_all_options():
     assert out["b"]["input"] == "yes_no" and out["b"]["question"]["en"] == "Smell OK"
     assert out["c"]["input"] == "number" and out["c"]["question"]["en"] == "Fat reading?" and out["c"]["unit"] == "%"
     assert "question" not in g["nodes"]["a"]                                    # the stored bundle is unchanged
+
+
+def test_rules_the_user_states_are_their_procedure_and_can_drive_the_guide():
+    """Fast setup (0.2.6): no web research needed for the user's own rules; labelled 'Your procedure', never verified."""
+    src = {"id": "s_user", "type": "user_statement", "title": "Stated by the user in the setup interview", "retrieved_at": "2026-11-10"}
+    ev = {"id": "ev_union_snf", "claim": "Our union rejects cow milk below 8.3% SNF",
+          "excerpts": [{"source_id": "s_user", "quote": "reject below 8.3"}], "applicability": {"matches_profile": True}}
+    assert S.check_item("sources", src, _ctx()) == []
+    c = _ctx(sources={"s_user": src})
+    assert S.check_item("evidence", ev, c) == []
+    assert ws.evidence_status(ev, {"s_user": src})[0] == "user_procedure"
+    # Not checked against any page, and a published source still needs a real quote.
+    b = {"sources": [src], "evidence": [copy.deepcopy(ev)]}
+    ws.check_excerpts(b, fetch=lambda u: (_ for _ in ()).throw(AssertionError("must not fetch")))
+    assert b["evidence"][0]["excerpts"][0]["check"] == "not_checked"
+    ext = {"id": "s_web", "type": "academic", "url": "https://a.example.org/x", "title": "x"}
+    c2 = _ctx(sources={"s_web": ext})
+    assert "at least 20" in S.check_item("evidence", dict(ev, excerpts=[{"source_id": "s_web", "quote": "8.3"}]), c2)[0]["error"]
+    # A guide action backed by the user's procedure is allowed (it is their own rule, labelled as such).
+    c3 = _example_ctx()
+    c3["evidence"]["ev_union_snf"] = ev
+    c3["statuses"]["ev_union_snf"] = "user_procedure"
+    g = copy.deepcopy(S.EXAMPLES["guides"])
+    g["nodes"]["o_accept"]["outcome"]["actions"][0]["evidence_ids"] = ["ev_union_snf"]
+    assert S.check_item("guides", g, c3) == []

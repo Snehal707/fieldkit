@@ -58,8 +58,10 @@ become a decision action, a threshold or a procedure. Hermes publishes the works
 returns a link. Open the link on your phone and tap **Download everything for offline**. The three bundled examples
 are starter workspaces, labelled synthetic.
 
-Since 0.2.6, a large build no longer times out. Hermes saves the workspace part by part, FieldKit checks each part
-and repairs obvious shape mistakes, and quote checks run in the background. Publishing waits until they finish.
+Since 0.2.6, setup is fast: Hermes builds the workspace straight from the interview (your own rules and documents,
+shown on the phone as "Your procedure") in about two minutes, with no up-front web research. Checking a rule against
+official sources is optional and short. FieldKit checks every part and repairs obvious shape mistakes; quotes from web
+sources are checked in the background, and publishing waits until they finish.
 
 The workspace improves from your team's verified outcomes: a follow-up check answered on a later inspection counts
 as evidence. Hermes proposes changes, and nothing changes until you confirm. An accepted change creates a new,
@@ -171,7 +173,7 @@ Details and commands for each phase are in [docs/TESTING.md](docs/TESTING.md) (P
 
 | Area | Status |
 |---|---|
-| Tests | 187 Python tests, 126 TypeScript tests, 20 Playwright E2E spec files (per-browser results in [docs/TESTING.md](docs/TESTING.md)). Every one of the 35 Hermes tools has a test (guard: `test_every_registered_tool_is_exercised_by_tests`) |
+| Tests | 189 Python tests, 126 TypeScript tests, 20 Playwright E2E spec files (per-browser results in [docs/TESTING.md](docs/TESTING.md)). Every one of the 35 Hermes tools has a test (guard: `test_every_registered_tool_is_exercised_by_tests`) |
 | Simulated Hermes Mobile conversation | Covered by a test: create, publish, app link, sync, process jobs, get record and report, compare and save report, follow-up, sync status, conflict resolution. The real conversation was also checked on the owner's iPhone (see above) |
 | Security | `hermes plugins validate` security scan: safe. `npm audit`: 0 vulnerabilities. `pip-audit`: 0 known vulnerabilities |
 | Access control | Every API route checks the signed-in user; the app page is public and contains no data. v0.1.7 fixed a cross-user leak where `GET /jobs` listed other users' jobs |
@@ -185,7 +187,7 @@ Details and commands for each phase are in [docs/TESTING.md](docs/TESTING.md) (P
 | `hermes plugins doctor . --ci` | Pass (0.2.6: 35 tools, 1 hook; `hermes plugins validate` passed) |
 | 0.2.5 workspaces, reports, assistant and learning on iPhone and the hosted Hermes | Pending |
 | A full builder conversation with live web research on the hosted Hermes | Pending (done on a local Hermes logged into Nous, see below) |
-| Real Hermes builder conversation, local Hermes + Nous Portal (`x-ai/grok-4.7`, live web research) | Verified 2026-11-10: interview, research, part-by-part build, validation, resume in a new chat, review, publish, guide run offline on the phone ([docs/TESTING.md](docs/TESTING.md)) |
+| Real Hermes builder conversations, local Hermes + Nous Portal (`x-ai/grok-4.7`) | Verified 2026-11-10: dairy (research, resume in a new chat, publish) and a cotton farmer group (fast setup: build turn 140 s, no web calls); both guides run offline on the phone ([docs/TESTING.md](docs/TESTING.md)) |
 
 ### Known limitations
 - Saved Records loads the newest 500 records per account; with more, older ones are not listed and the "Hermes doesn't have these records" check pauses.

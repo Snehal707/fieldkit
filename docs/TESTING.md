@@ -488,7 +488,7 @@ local score was inconsistent with the evidence.
     guide keys written inside `nodes`, phone guide packaging.
   - `tests/python/test_plugin.py`: a part-by-part tool flow test (start, add parts, dry run, status, build, publish).
   - `tests/python/conftest.py`: clears the page cache between tests.
-- **Results:** pytest **187 passed**; vitest **126 passed**; typecheck clean. `hermes plugins validate .` passed;
+- **Results:** pytest **189 passed**; vitest **126 passed**; typecheck clean. `hermes plugins validate .` passed;
   `hermes plugins doctor . --ci`: fieldkit 0.2.6, **35 tools, 1 hook**.
 - **Real Hermes conversation (0.2.6, 2026-11-10).** Local throwaway Hermes v0.23.0 logged into Nous Portal (model
   `x-ai/grok-4.7`, web search and extract through the Nous Tool Gateway). The tester played a milk-collection-centre
@@ -514,3 +514,15 @@ local score was inconsistent with the evidence.
      to "Re-test once" for cow milk with fat 3.0 %. This step found the phone packaging bug above (raw field id and a
      single option shown); fixed and re-checked.
   The quotes in this run come from public regulator and standards pages; they are not committed to the repository.
+- **Fast setup (0.2.6, after the dairy run took ~17 min).** The research-first build spent ~12.5 min in 37 model calls
+  (context grew to ~127k tokens of page text) and ~4.3 min in 17 web calls; FieldKit itself took 0.4 s. Setup now builds
+  from the interview: the user's stated rules are a `user_statement` source and their documents `user_document`, both
+  shown as "Your procedure"; Hermes adds every part in one `fieldkit_add_workspace_parts(parts={...})` call; web research
+  is optional, targeted and short (skill sections 4-5).
+- **Real Hermes conversation, fast setup (2026-11-10, same local Hermes + Nous, `x-ai/grok-4.7`).** A cotton farmer
+  group (FPO) coordinator in Jalna, Maharashtra. Interview: 52 s + 85 s (Hermes asked for their decisions, records and
+  their own rules, and refused to guess what a "problem plot" is). Build turn, from "Yes, build it" to the review
+  message: **140 s**, with **0 web calls**; all ten parts in **one** add call, nothing rejected, first build valid
+  (5 rules as "Your procedure", 0 shown as verified, 2 gaps such as "no whitefly threshold given: ask the KVK"). Publish:
+  16 s. On the phone (WebKit, offline after download) the guide asked three yes/no questions and reached "Spray now",
+  citing "Your procedure" and telling the worker to ask the KVK for product and dose (no dose given).

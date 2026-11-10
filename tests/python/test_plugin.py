@@ -367,3 +367,36 @@ def test_workspace_built_part_by_part_survives_chats_and_rejects_bad_items(ctx, 
     upd = call(ctx, "fieldkit_start_workspace_build", brief_id=bid, workspace_id=b["id"])
     assert upd["from_version"] == out["version"] and upd["parts"]["guides"] == 1
     assert wst.BUILD_WAIT_S <= 25 and S.PARTS[0] == "sources"
+
+
+
+def test_fast_setup_from_the_interview_in_one_call(ctx):
+    """0.2.6 fast setup: the user's stated rules, the form, decisions and guide in ONE add call, then build: no web."""
+    import copy
+    from fieldkit_core import workspace_schema as S
+    brief = {"role": "Milk collection checker", "country": "IN", "region": "Maharashtra", "industry": "dairy",
+             "responsibilities": [{"id": "r_accept", "description": "Accept or reject milk", "decisions": ["accept", "reject"]}],
+             "languages": {"content": ["en", "hi"]}, "tools_and_instruments": [], "procedures_in_use": [], "escalation": ["in-charge"]}
+    bid = call(ctx, "fieldkit_save_workspace_brief", brief=brief, confirmed=True)["brief_id"]
+    call(ctx, "fieldkit_start_workspace_build", brief_id=bid, workspace_id="dairy-fast", title={"en": "Dairy", "hi": "डेयरी"},
+         languages={"content": ["en", "hi"]})
+    wf = copy.deepcopy(S.EXAMPLES["workflows"])
+    wf["classification"] = {"rules": [dict(S.EXAMPLES["workflows"]["classification"]["rules"][0], evidence_ids=["ev_user_snf"])]}
+    guide = copy.deepcopy(S.EXAMPLES["guides"])
+    for n in guide["nodes"].values():
+        for act in (n.get("outcome") or {}).get("actions") or []:
+            if act.get("evidence_ids"):
+                act["evidence_ids"] = ["ev_user_snf"]
+    r = call(ctx, "fieldkit_add_workspace_parts", workspace_id="dairy-fast", parts={
+        "sources": [{"id": "s_user", "type": "user_statement", "title": "Stated by the user in the setup interview"}],
+        "evidence": [{"id": "ev_user_snf", "claim": "Reject cow milk below 8.5% SNF", "applicability": {"matches_profile": True},
+                      "excerpts": [{"source_id": "s_user", "quote": "we reject cow milk below 8.5 SNF"}]}],
+        "report_policy": [S.EXAMPLES["report_policy"]], "workflows": [wf], "guides": [guide],
+        "traceability": [{"responsibility_id": "r_accept", "workflow_ids": ["milk-collection-check"], "guide_ids": ["g_accept"]}],
+        "nonsense": []})
+    assert r["ok"] and r["unknown_parts"] == ["nonsense"], r
+    assert all(not v.get("rejected") for v in r["results"].values()), r["results"]
+    assert r["results"]["evidence"]["evidence_status"] == {"ev_user_snf": "user_procedure"}
+    out = call(ctx, "fieldkit_build_workspace", workspace_id="dairy-fast")
+    assert out["valid"] is True and out["checks_pending"] == 0, out["errors"]
+    assert out["research_report"]["summary"]["user_procedure"] == 1 and out["research_report"]["summary"]["verified"] == 0
