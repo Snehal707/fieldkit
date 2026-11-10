@@ -95,3 +95,23 @@ def test_rate_limited_question_waits_and_model_without_images_answers_from_text(
     rec = Recorder({"default": ANSWER}, reject_images=RuntimeError("Error code: 400 - this model does not support image input"))
     assert questions.process_questions(store, make_llm(rec))[0]["status"] == "answered"
     assert store.get_question(db.ALL, "q_rl")["answer"]["photos_seen"] == 0
+
+
+def test_chat_question_uses_history_and_is_saved_on_the_visit(store, tmp_path, monkeypatch):
+    """"What do you think about this visit?" asked in Hermes chat: retrieves the photo and earlier visits of the same
+    asset by itself, and the answer is stored on that visit for the phone ("fieldkit_ask_about_record")."""
+    from fieldkit_core import runtime, tools
+    store.sync_record("alice", "k-old", "dev", {"id": "rec_q_old001", "workflow_id": "equipment-inspection", "workflow_version": 1,
+                                               "base_revision": 0, "completed_at": "2026-11-01T08:00:00Z",
+                                               "answers": {"asset_id": "PMP-0101", "condition": "fair", "bearing_temp": 70}}, auto_analyze=True)
+    rid = _visit(store, tmp_path)
+    store.conn.execute("UPDATE records SET completed_at='2026-11-10T08:00:00Z' WHERE id=?", (rid,))
+    store.conn.commit()
+    rec = Recorder({"default": ANSWER})
+    monkeypatch.setattr(runtime, "llm", make_llm(rec))
+    out = json.loads(tools.ask_about_record({"record_id": rid, "question": "What do you think about this visit?"}))
+    assert out["ok"] and out["answer"].startswith("The photo shows") and out["photos_seen"] == 1
+    sent = json.dumps(rec.calls[0]["messages"], ensure_ascii=False)
+    assert "history_of_this_subject" in sent and "rec_q_old001" in sent and "image_url" in sent
+    saved = store.list_questions("alice", rid)
+    assert saved[0]["question"] == "What do you think about this visit?" and saved[0]["status"] == "answered"

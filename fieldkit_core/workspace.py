@@ -574,6 +574,11 @@ def validate_brief(brief: Any) -> dict:
 
 
 # ----------------------------------------------------------------------------- Hermes onboarding prompt
+ASK_HINT = ("FieldKit: for any question about one observation/visit (\"what do you think about ...\", photos, is it worse), "
+            "find it with fieldkit_list_records and call fieldkit_ask_about_record: it looks at the photos, voice notes, "
+            "procedures and earlier visits itself. Syncing never triggers analysis; act only on what the user asks. ")
+
+
 def prompt_section(store: Any) -> str:
     """Bounded text added to each new Hermes session (ctx.register_system_prompt_section)."""
     try:
@@ -588,7 +593,7 @@ def prompt_section(store: Any) -> str:
             + "). If the user wants to continue, call fieldkit_workspace_build_status and carry on from there; never "
               "start over. ")
     if not built:
-        return (resume + "FieldKit (offline field-work plugin) is installed, but no workspace has been built for this user yet. "
+        return (ASK_HINT + resume + "FieldKit (offline field-work plugin) is installed, but no workspace has been built for this user yet. "
                 "When the user talks about their field work, inspections, surveys or FieldKit, offer once to build a "
                 "FieldKit workspace for their actual job, following the fieldkit-workspace-builder skill: a short interview "
                 "(including the rules they already use), confirm the brief, then build straight away from their answers and "
@@ -609,7 +614,7 @@ def prompt_section(store: Any) -> str:
                          f"{sm.get('conflicting', 0)} conflicting, {sm.get('gaps', 0)} gaps{extra})")
         except Exception:
             parts.append(f"{w['title']} (id {w['id']})")
-    return (resume + "FieldKit workspaces built for this user: " + "; ".join(parts) + ". Use the fieldkit-workspace-builder skill "
+    return (ASK_HINT + resume + "FieldKit workspaces built for this user: " + "; ".join(parts) + ". Use the fieldkit-workspace-builder skill "
             "to update them (new responsibilities, gaps, conflicting evidence, learning candidates).")[:1500]
 
 

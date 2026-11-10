@@ -3,20 +3,21 @@
 **Observe anywhere. Understand more when connected. Act better next time.**
 
 FieldKit is an offline fieldwork platform powered by Hermes. It is not an offline Google or an AI diagnosis tool. The
-phone records and applies your own rules offline. Hermes analyses, explains and follows up after sync, where you want it.
+phone records and applies your own rules offline. Hermes answers questions about a visit and writes reports when you ask.
+Saving data is the default; Hermes helps only when you ask.
 
 Hermes does the parts that need internet access and judgement. It interviews you about your work and builds the
 workspace from your answers. FieldKit stores the workspace, checks it, computes how well each item is evidenced, and
 runs it on the phone. Workflows, records and reports still work the same way: create a workflow, run it offline, sync,
-and read the analysis.
+and ask Hermes for an answer or a report when you want one.
 
 FieldKit is one Hermes plugin with three parts:
 
 | Part | What it is |
 |---|---|
-| **Native plugin** | 35 Hermes tools plus two bundled skills (`fieldkit`, `fieldkit-workspace-builder`). It creates, validates and publishes workflows and workspaces; turns documents into knowledge packs; builds dictionaries; retrieves, analyses, compares and reports on synchronised records; and manages follow-ups, learning candidates, sync status and conflicts. |
+| **Native plugin** | 37 Hermes tools plus two bundled skills (`fieldkit`, `fieldkit-workspace-builder`). It creates, validates and publishes workflows and workspaces; turns documents into knowledge packs; builds dictionaries; retrieves, answers questions about, analyses, compares and reports on synchronised records; and manages follow-ups, learning candidates, sync status and conflicts. |
 | **Dashboard tab** | A *FieldKit* tab in the Hermes dashboard: workflows, knowledge, records (with photos and audio), reports and follow-ups, synchronisation, offline packs, and a phone QR code. |
-| **Offline PWA** | An installable mobile app served by the plugin at `/dashboard-plugins/fieldkit/app_dist/index.html`. It handles workflows with branching, validation, photos, GPS, audio and signatures; local findings; decision guides; the Workspace Assistant over workspace content, records and reports; your workspace and its "On this phone" summary; dictionaries; sentence translation; OCR; speech-to-text; read-aloud; a durable sync queue; downloaded Hermes reports; connection diagnostics. |
+| **Offline PWA** | An installable mobile app served by the plugin at `/dashboard-plugins/fieldkit/app_dist/index.html`. It handles workflows with branching, validation, photos, GPS, audio and signatures; local findings; decision guides; the Workspace Assistant over workspace content, records and reports; questions for Hermes about a visit (kept offline until sync); your workspace and its "On this phone" summary; dictionaries; sentence translation; OCR; speech-to-text; read-aloud; a durable sync queue; downloaded Hermes reports; connection diagnostics. |
 
 It is **domain-independent**. Workflows, knowledge, dictionaries and classification rules are data, so a new
 domain needs no code changes. The demo ships three unrelated domains with equal weight:
@@ -25,7 +26,7 @@ domain needs no code changes. The demo ships three unrelated domains with equal 
 - **Agriculture:** crop health survey.
 
 ```text
-Create (Hermes Mobile) → Download (PWA) → Work offline → Local results → Sync → Hermes analysis → Reports → Offline again
+Create (Hermes Mobile) → Download (PWA) → Work offline → Local results → Sync → Hermes answers and reports (when asked) → Offline again
 ```
 
 ## Quick start
@@ -48,7 +49,7 @@ To set up FieldKit for your job, ask Hermes:
 > "Set up FieldKit for my work."
 
 Hermes interviews you about your job: the decisions each task needs, what is recorded, the rules you already use,
-your documents, your languages, who to escalate to, and what should happen after sync. It shows you a brief to
+your documents, your languages, and who to escalate to. It shows you a brief to
 confirm, then builds the workspace straight away. There is no up-front web research. Your own rules and documents are
 labelled **Your procedure**. Checking a rule against official sources is optional and short. When it is used, FieldKit
 re-fetches each cited web page and drops any quote it cannot find there. PDF sources are checked with Hermes' own
@@ -64,10 +65,7 @@ Setup is fast. In local tests with real conversations, a build took about 2.5 mi
 for five jobs in total). FieldKit checks every part and repairs obvious shape mistakes; quotes from web sources are
 checked in the background, and publishing waits until they finish.
 
-Each workspace also sets what happens after sync (`report_policy.after_sync`): **save** (records only, no AI analysis
-unless you ask on a record), **summarize** (no per-record reports; ask Hermes in chat for summaries and comparisons),
-or **analyze** (a Hermes report for every record). Workspaces without the setting, and workflows outside a workspace,
-use **analyze**.
+Older workspaces may contain `report_policy.after_sync`; it is accepted and ignored.
 
 The workspace improves from your team's verified outcomes: a follow-up check answered on a later inspection counts
 as evidence. Hermes proposes changes, and nothing changes until you confirm. An accepted change creates a new,
@@ -84,7 +82,7 @@ validated workspace version with a changelog, and the phone shows **Update avail
 - Your workspace (once downloaded): profile, workflows, decision guides, evidence summary, sources and gaps.
 - An **On this phone** summary on each workspace page: records saved (and today), records flagged by your rules with the worst severity, unfinished records, records waiting to sync, and Hermes reports. It is calculated on the phone, with no AI.
 - Decision guides, which run offline. They ask only for what is missing and show the outcome with the evidence status of each action.
-- The **Workspace Assistant** answers from your procedures, rules and the visits saved on the phone, with citations and evidence status. It answers from the workspace of the workflow or visit in use, and an "Answering from" picker appears when several workspaces are downloaded. Without a Hermes report, "what first", "why" and "is it safe" questions about a visit are answered from the on-phone result. Anything it cannot answer is saved for Hermes. Nothing is generated. It understands questions by meaning in English and Hindi when the optional "Question understanding" pack is installed (118 MB); without it, the assistant uses basic word search.
+- The **Workspace Assistant** answers from your procedures, rules and the visits saved on the phone, with citations and evidence status. It answers from the workspace of the workflow or visit in use, and an "Answering from" picker appears when several workspaces are downloaded. When a visit has no Hermes answer yet, "what first", "why" and "is it safe" questions about it are answered from the on-phone result. For a question about a visit, it can send the question to Hermes ("Ask Hermes about this visit"). Anything it cannot answer is saved for Hermes. Nothing is generated. It understands questions by meaning in English and Hindi when the optional "Question understanding" pack is installed (118 MB); without it, the assistant uses basic word search.
 - Follow-up checks. The next inspection of the same subject asks the previous report's checks (Done, Not done or Can't check).
 - A knowledge browser. Retrieval answers come with a source.
 - Dictionary search (exact, translation, prefix and fuzzy matches).
@@ -101,10 +99,20 @@ validated workspace version with a changelog, and the phone shows **Update avail
   - The server acknowledges each step, and revisions use optimistic concurrency.
   - Conflicts are shown for you to decide; nothing is silently overwritten.
 - An expired Hermes session pauses the queue (nothing is lost) and asks you to sign in. The queue resumes afterwards.
-- Unless the workspace's after-sync mode says otherwise, the server queues a durable analysis job. Hermes' own LLM (`ctx.llm`) produces a decision-focused report: a decision with its rationale, confidence and deadline; issues that cite the record's evidence; ordered next actions, each with a way to verify it; what is uncertain; and checks for the next inspection. If the model returns extra keys that do not match the report schema, FieldKit retries once with the exact error. FieldKit then checks the report after the model answers and asks for one repair. Any problem left is shown on the report and sends it for review. If the model provider rate-limits the request, FieldKit waits as long as the provider asks, and the record stays "pending" rather than failed.
+- Syncing uploads records and attachments. It does not start a report or an answer. Hermes speech-to-text runs after upload for a voice note with no phone transcript (`voice_transcription`, on by default).
+- A report is written only when you ask for one. When you ask, the server queues a durable analysis job. Hermes' own LLM (`ctx.llm`) produces a decision-focused report: a decision with its rationale, confidence and deadline; issues that cite the record's evidence; ordered next actions, each with a way to verify it; what is uncertain; and checks for the next inspection. If the model returns extra keys that do not match the report schema, FieldKit retries once with the exact error. FieldKit then checks the report after the model answers and asks for one repair. Any problem left is shown on the report and sends it for review. If the model provider rate-limits the request, FieldKit waits as long as the provider asks, and the record stays "pending" rather than failed.
 - Unanswered offline questions and your feedback are uploaded as learning events. They are never treated as evidence.
 - Photos are analysed through a separate vision model when one is configured (the `fieldkit_vision` slot). With a text-only default model, the report says "Photos not analysed".
-- The report is stored centrally. It is visible in the PWA (and downloadable for offline use), in the dashboard, and to Hermes Mobile through FieldKit tools.
+- Reports, once written, are stored centrally. They are visible in the PWA (and downloadable for offline use), in the dashboard, and to Hermes Mobile through FieldKit tools.
+
+## Questions about a visit (0.2.6)
+- While filling in a form, add one or more questions under **Questions for Hermes (optional)**. Afterwards, open the visit and tap **Ask Hermes about this visit**. Suggested questions (for example "What should I do next?" and "What do the photos show?") are offered, and you can write your own.
+- It works offline. Questions are kept on the phone with the visit, its workspace and its photos, and are sent after the visit syncs.
+- A queued question is the request. After sync, FieldKit's worker answers it from that visit's evidence: answers, photos, voice-note transcripts (made by Hermes speech-to-text if the phone had none), on-phone findings, the workspace's procedures, and up to 3 earlier visits of the same subject.
+- The answer (with confidence, uncertainty, what it was based on and next steps) returns to the same visit and can be read offline.
+- Answers are about that visit only. They never become workspace rules or learning events.
+- If the model provider rate-limits the request, the question waits as the provider says and stays queued.
+- In Hermes chat, ask about one visit, several, or a whole workspace. `fieldkit_ask_about_record` looks at the evidence itself, answers at once, and saves the answer on that visit for the phone. `fieldkit_list_questions` shows queued and answered questions.
 
 ## Saved Records across your devices
 - Saved Records is one list for your whole signed-in Hermes account, across all devices. Each browser and each iPhone Home Screen app keeps its own offline storage, so each one counts as a device.
@@ -123,7 +131,7 @@ validated workspace version with a changelog, and the phone shows **Update avail
 - A file that can't be shown or played gives a plain message instead of a broken icon or an audio error.
 - Results shows how many of each kind were captured (for example "1 photo · 1 voice note · 1 signature"), the field each one answers, and its upload status. Transcripts can be edited, and each signature shows when it was signed.
 - Voice notes are recorded as MP4/AAC on Apple devices and WebM elsewhere, using only formats the device can play back.
-- Analysis: only photos are sent to the vision model. Signatures are no longer counted as photos. For a voice note, the phone's transcript is used if there is one. Otherwise Hermes transcribes the voice note after upload, using the speech-to-text provider the Hermes operator configured. That may be a local engine or a cloud provider, if the operator set one up. The transcript, or the reason there is none, is stored with the record. Transcripts are included in the analysis, and a voice note without one is listed under missing information with the reason.
+- Analysis: only photos are sent to the vision model. Signatures are no longer counted as photos. For a voice note, the phone's transcript is used if there is one. Otherwise Hermes transcribes the voice note when someone asks about its visit (never just because it was uploaded; the plugin setting `transcribe_on_upload: true` restores transcription on upload), using the speech-to-text provider the Hermes operator configured. That may be a local engine or a cloud provider, if the operator set one up. The transcript, or the reason there is none, is stored with the record. Transcripts are included in the analysis, and a voice note without one is listed under missing information with the reason.
 - Operators can turn Hermes-side transcription off with the plugin setting `voice_transcription: false` (or the environment variable `FIELDKIT_VOICE_TRANSCRIPTION=false`). It is on by default.
 - Reports have an **Evidence** section: a summary, the voice-note transcripts and where each came from, each signature with its time, an integrity check against the stored file, and a **Show signature** button.
 - Records from other devices (shown as "From …") load their photos, voice notes and signatures from Hermes on demand. This needs internet, and each file is checked against its SHA-256.
@@ -138,15 +146,15 @@ See [docs/TESTING.md](docs/TESTING.md) for the exact commands and results. Anyth
 |---|---|
 | Offline inspection | Completed with no internet, saved locally, shows "1 awaiting confirmation" |
 | Automatic sync | After reconnecting, record `rec_6b0da392e6284a70ae1bd33b` was received 41 s after completion; all 11 answers and the photo uploaded |
-| Automatic AI report | Generated automatically (GLM 5.3, text-only fallback) |
-| Automatic photo analysis | Runs through the configurable `fieldkit_vision` model slot |
+| Automatic AI report (before 0.2.6) | Generated automatically after sync (GLM 5.3, text-only fallback). Since 0.2.6, sync does not start a report |
+| Automatic photo analysis (before 0.2.6) | Ran through the configurable `fieldkit_vision` model slot |
 | Sign-in and plugin lifecycle | Sign-in returns to FieldKit; plugin install, enable and update work without a restart |
 | Full Hermes Mobile conversation (0.2.4, owner-reported, 2026-11-09) | Owner checked FieldKit end to end through the Hermes mobile app on iPhone and reported everything working |
 | OCR, translation and speech-to-text on iPhone (0.2.4, owner-reported, 2026-11-09) | Working on the owner's iPhone. The accuracy numbers in this README come from synthetic test material, not from these device checks |
 | Photos, voice notes, signatures, Results and Evidence on iPhone (0.2.4, owner-reported, 2026-11-09) | The broken photo thumbnail and audio playback error are gone; signatures and voice notes reach Hermes and the reports |
 | Offline reports on iPhone (owner-reported, 2026-11-09) | Working |
 | Saved Records across Safari and the Home Screen app (owner-reported, 2026-11-09) | Working |
-| FieldKit dashboard tab on the hosted Hermes (owner-reported, 2026-11-09) | All 8 sections visible; analysis automatic with the LLM available; 7 records complete, 7 jobs completed, 0 conflicts; reports cite the photo and the inspector's voice note |
+| FieldKit dashboard tab on the hosted Hermes (owner-reported, 2026-11-09) | All 8 sections visible; analysis automatic with the LLM available (before 0.2.6); 7 records complete, 7 jobs completed, 0 conflicts; reports cite the photo and the inspector's voice note |
 
 ### Verified in Chromium + WebKit (WebKit is Safari's engine, not iOS itself; real Hermes v0.23.0)
 
@@ -183,14 +191,16 @@ Not yet verified on the owner's iPhone or on the hosted Hermes.
 | Area | Status |
 |---|---|
 | Fast workspace setup from the interview | Real conversations on a local test Hermes: average build about 2.5 minutes, about 4.3 minutes for 5 jobs (ASHA worker, electrical inspector, student survey, restaurant food safety, cotton farmer group) |
-| After-sync modes (`save`, `summarize`, `analyze`) | Covered by tests (`test_after_sync.py`) |
+| Saving and syncing never trigger AI work | Verified on a local test Hermes: an observation-only visit synced with no model call |
+| Questions about a visit (queued offline, answered after sync) | Verified locally on a local test Hermes: answers back on the phone in 32–37 s; Hermes read the photo and used the voice-note transcript and the user's own rule |
+| Chat question about one visit (`fieldkit_ask_about_record`) | Verified locally on a local test Hermes: "What do you think about my latest kitchen food-safety visit?" called `fieldkit_ask_about_record` and gave an assessment with uncertainty and a next step (44 s) |
 | Report rate-limit handling | A rate-limited report waited and stayed pending (observed in a local field trial; one deferred report then completed). With `openai/gpt-5.4-mini` via Nous, a real report took 57 s |
 
 ### Automated tests and security checks
 
 | Area | Status |
 |---|---|
-| Tests | 194 Python tests, 129 TypeScript tests, 20 Playwright E2E spec files (per-browser results in [docs/TESTING.md](docs/TESTING.md)). Every one of the 35 Hermes tools has a test (guard: `test_every_registered_tool_is_exercised_by_tests`) |
+| Tests | 200+ Python tests, 130 TypeScript tests, 20 Playwright E2E spec files (per-browser results in [docs/TESTING.md](docs/TESTING.md)). Every one of the 37 Hermes tools has a test (guard: `test_every_registered_tool_is_exercised_by_tests`) |
 | Simulated Hermes Mobile conversation | Covered by a test: create, publish, app link, sync, process jobs, get record and report, compare and save report, follow-up, sync status, conflict resolution. The real conversation was also checked on the owner's iPhone (see above) |
 | Security | `hermes plugins validate` security scan: safe. `npm audit`: 0 vulnerabilities. `pip-audit`: 0 known vulnerabilities |
 | Access control | Every API route checks the signed-in user; the app page is public and contains no data. v0.1.7 fixed a cross-user leak where `GET /jobs` listed other users' jobs |
@@ -201,7 +211,7 @@ Not yet verified on the owner's iPhone or on the hosted Hermes.
 |---|---|
 | Android Chrome | Pending |
 | Scheduled analysis via a Hermes cron job | Pending |
-| `hermes plugins doctor . --ci` | Pass (0.2.6: 35 tools, 1 hook; `hermes plugins validate` passed) |
+| `hermes plugins doctor . --ci` | Pass (0.2.6 final: 37 tools, 1 hook) |
 | 0.2.5 workspaces, reports, assistant and learning on iPhone and the hosted Hermes | Pending |
 | A full builder conversation with live web research on the hosted Hermes | Pending (done on a local Hermes logged into Nous, see below) |
 | Real Hermes builder conversations, local Hermes + Nous Portal (`x-ai/grok-4.7`) | Verified 2026-11-10: dairy (research, resume in a new chat, publish) and a cotton farmer group (fast setup: build turn 140 s, no web calls); both guides run offline on the phone ([docs/TESTING.md](docs/TESTING.md)) |
@@ -215,6 +225,7 @@ Not yet verified on the owner's iPhone or on the hosted Hermes.
 - Uploads run while the app is open. There is no background upload from a closed app.
 - Hermes OAuth sessions last 15 minutes. Sync pauses and asks you to sign in; nothing is lost.
 - The Workspace Assistant answers only from your procedures, rules, workspace content, records and reports. It never generates an answer, and it refuses off-topic questions.
+- A question about a visit needs Hermes' model to answer. It stays queued until then, and a rate-limited question waits as the provider says.
 - The "Question understanding" pack is 118 MB. Without it, the assistant uses basic word search.
 - Local-practice learning needs at least 3 consistent verified outcomes (at least 80% worked, from distinct records). Until then, no practice is proposed.
 

@@ -164,8 +164,19 @@ def search_knowledge(a: dict) -> str:
 # ----------------------------------------------------------------------------- records & reports
 def list_records(a: dict) -> str:
     full = bool(a.get("include_answers"))
-    rows = get_store().list_records(ALL, a.get("workflow_id"), int(a.get("limit", 20)), a.get("analysis_status"), full=full)
-    return _ok(records=rows)
+    store = get_store()
+    wfs = [a["workflow_id"]] if a.get("workflow_id") else [None]
+    if a.get("workspace_id"):                  # every workflow of that workspace
+        try:
+            b = store.get_workspace_version(a["workspace_id"])["bundle"]
+        except NotFound:
+            return _fail(f"unknown workspace {a['workspace_id']!r}")
+        wfs = [w.get("id") for w in b.get("workflows") or []] + list(b.get("workflow_refs") or [])
+    rows = []
+    for w in wfs:
+        rows += store.list_records(ALL, w, int(a.get("limit", 20)), a.get("analysis_status"), full=full)
+    rows.sort(key=lambda r: r.get("received_at") or 0, reverse=True)
+    return _ok(records=rows[: int(a.get("limit", 20)) if not a.get("workspace_id") else max(1, int(a.get("limit", 100)))])
 
 
 def get_record(a: dict) -> str:
@@ -254,6 +265,13 @@ def process_pending_jobs(a: dict) -> str:
                jobs=store.job_counts())
 
 
+def ask_about_record(a: dict) -> str:
+    from . import questions
+    out = questions.ask_now(get_store(), runtime.llm, a["record_id"], a["question"], a.get("language", "en"))
+    return _ok(**out, next="Tell the user the answer with its uncertainty and next steps. It is also saved on that visit "
+                           "in FieldKit (the phone shows it after sync). It is about this case only: never a workspace rule.")
+
+
 def list_questions(a: dict) -> str:
     """Questions users asked about specific visits, with Hermes' answers (case-specific; never workspace rules)."""
     rows = get_store().list_questions(ALL, a.get("record_id"), a.get("status"), int(a.get("limit", 50)))
@@ -308,10 +326,12 @@ TOOLS: list[tuple[dict, Callable[[dict], str]]] = [
         {"kind": {"type": "string", "enum": ["knowledge", "dictionary", "classification", "model"]}}), list_knowledge_packs),
     (_s("fieldkit_search_knowledge", "Search FieldKit knowledge packs for grounded reference passages.",
         {"query": STR, "pack_ids": {"type": "array", "items": STR}, "limit": INT, "language": STR}, ["query"]), search_knowledge),
-    (_s("fieldkit_list_records", "List synchronised FieldKit records (newest first) with sync and analysis status. "
+    (_s("fieldkit_list_records", "List synchronised FieldKit records (newest first) with sync and analysis status. To "
+        "answer a question about ONE of them (assessment, photos, voice notes, trend), follow up with "
+        "fieldkit_ask_about_record, which examines its evidence. "
         "include_answers=true returns each record's answers, for summaries, counts, trends and comparisons across records "
         "(e.g. 'summarize my 50 survey visits').",
-        {"workflow_id": STR, "limit": INT, "include_answers": {"type": "boolean"},
+        {"workflow_id": STR, "workspace_id": STR, "limit": INT, "include_answers": {"type": "boolean"},
          "analysis_status": {"type": "string", "enum": ["not_requested", "pending", "processing", "completed", "failed", "requires_review"]}}),
      list_records),
     (_s("fieldkit_get_record", "Get one synchronised FieldKit record with answers, local findings and attachments.",
@@ -338,6 +358,12 @@ TOOLS: list[tuple[dict, Callable[[dict], str]]] = [
     (_s("fieldkit_resolve_conflict", "Resolve a synchronisation conflict: keep_server, use_client, or merge (with merged_answers).",
         {"conflict_id": STR, "resolution": {"type": "string", "enum": ["keep_server", "use_client", "merge"]}, "merged_answers": OBJ},
         ["conflict_id", "resolution"]), resolve_conflict),
+    (_s("fieldkit_ask_about_record", "Answer any question about ONE FieldKit observation (record), e.g. 'what do you think "
+        "about this visit?', 'what do the photos show?', 'is it getting worse?'. Retrieves and uses the evidence itself: "
+        "answers, photos, voice-note transcripts, on-phone findings, the workspace's procedures and earlier visits of the "
+        "same subject. Returns an answer with confidence, uncertainty and next steps; the answer is also saved on that "
+        "visit for the phone. Case-specific: never a workspace rule.",
+        {"record_id": STR, "question": STR, "language": STR}, ["record_id", "question"]), ask_about_record),
     (_s("fieldkit_list_questions", "Questions users asked about a specific visit (record) from the phone, with status "
         "(queued / answering / answered / failed) and Hermes' answers. Answers are about that case only.",
         {"record_id": STR, "status": {"type": "string", "enum": ["queued", "answering", "answered", "failed"]}, "limit": INT}),

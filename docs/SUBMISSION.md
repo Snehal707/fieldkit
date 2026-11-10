@@ -6,7 +6,8 @@
 **Observe anywhere. Understand more when connected. Act better next time.**
 
 FieldKit is an offline fieldwork platform powered by Hermes. It is not an offline Google or an AI diagnosis tool. The
-phone records and applies your own rules offline. Hermes analyses, explains and follows up after sync, where you want it.
+phone records and applies your own rules offline. Hermes answers questions about a visit and writes reports when you ask.
+Saving data is the default; Hermes helps only when you ask.
 
 FieldKit makes Hermes useful where there is no internet. In 0.2.6, Hermes first builds a **workspace** for your actual
 job: it interviews you about the decisions, records, rules and escalation for your work, and builds the workspace
@@ -19,8 +20,9 @@ then helps you decide with no internet:
 - branching questions, photos, GPS, voice notes and signatures;
 - instant local findings, a dictionary, sentence translation, OCR and speech-to-text, all on the device.
 
-Back online, records sync securely and idempotently through the plugin API. Hermes then analyses them with its own
-LLM (or saves or summarises them, as the workspace's after-sync mode sets) and writes **decision-focused reports**: a decision, why, what is uncertain, ordered next actions with a way to
+Back online, records sync securely and idempotently through the plugin API. Syncing starts no AI work. A question a user
+asked on a visit is answered by Hermes from that visit's evidence, and the answer returns to the phone. When the user asks
+for a report, Hermes writes a **decision-focused report**: a decision, why, what is uncertain, ordered next actions with a way to
 verify each, and checks for the next inspection. Those checks are asked on the next inspection, and verified outcomes
 help the workspace improve, after you confirm each change. It's one plugin, with unlimited workflows and knowledge domains.
 
@@ -50,9 +52,10 @@ Hermes, including the live interview.
    - **Translate** "The pump is vibrating." → Hindi. **Scan text**: photograph a nameplate.
 6. **Local results.** Show local findings (safety guard problem, vibration above alarm level, risk score, recommended action), references and explanations, with the label "Saved locally. Pending synchronization." The header shows **1 awaiting confirmation**.
 7. **Close and reopen offline.** Fully close the app and reopen it. The record and its results are still there.
-8. **Reconnect.** Turn the network back on. Sync runs automatically with no user action. In the verified 0.2.4 run, the record was received 41 s after completion, with all 11 answers and the photo uploaded.
-9. **Decision-focused report.** Report v2 leads with the decision and its confidence, then the ordered next actions (who, by when, and how to verify each), what is uncertain, and checks for next time. Show it on the phone, in the FieldKit dashboard tab, and in Hermes Mobile. Tap **Download report**.
-   - Tools: `fieldkit_list_records`, `fieldkit_get_report`, `fieldkit_get_record`.
+8. **Reconnect.** Turn the network back on. Sync runs automatically with no user action and only uploads. In the verified 0.2.4 run, the record was received 41 s after completion, with all 11 answers and the photo uploaded.
+9. **Decision-focused report.** Ask Hermes for the report, since none is written on sync. Report v2 leads with the decision and its confidence, then the ordered next actions (who, by when, and how to verify each), what is uncertain, and checks for next time. Show it on the phone, in the FieldKit dashboard tab, and in Hermes Mobile. Tap **Download report**.
+   - Or, on the visit, tap **Ask Hermes about this visit**. The answer returns after sync (32–37 s in local test runs).
+   - Tools: `fieldkit_analyze_record`, `fieldkit_list_records`, `fieldkit_get_report`, `fieldkit_get_record`.
 10. **Follow-up check on the next inspection.** Start a new inspection of the same equipment. The phone asks the previous report's checks (Done, Not done, Can't check). Answer them. The answers travel with the new record.
 11. **Learning candidate.** In Hermes Mobile: "What needs a decision in my FieldKit workspace?" Hermes proposes candidates from unanswered questions (research gaps) or from verified outcomes (a local practice). A practice needs at least three consistent verified outcomes, so prepare them before the demo, or show a research gap. Confirm one. Hermes publishes a new validated workspace version with a changelog, and the phone shows **Update available**.
    - Tools: `fieldkit_propose_workspace_changes`, `fieldkit_list_learning`, `fieldkit_decide_candidate`.
@@ -67,7 +70,7 @@ repo: https://github.com/Snehal707/fieldkit
 sha: "<40-char commit sha>"
 version: "0.2.6"
 requires_hermes: ">=0.23.0"
-description: "Offline mobile field workflows with local findings, knowledge Q&A, translation, OCR and voice; secure sync and Hermes analysis/reports."
+description: "Offline mobile field workflows with local findings, knowledge Q&A, translation, OCR and voice; secure sync; Hermes answers and reports on request."
 network_disclosure: "PWA downloads pinned on-device model files from huggingface.co and cdn.jsdelivr.net only when the user installs a model pack. Backend makes no third-party calls."
 ```
 
@@ -84,12 +87,12 @@ network_disclosure: "PWA downloads pinned on-device model files from huggingface
 ## Checklist before submitting
 - [ ] Confirm the deadline (reported as Nov 11 2026, 5 PM ET) and the submission format (catalog PR, form, or both) against the official announcement.
 - [ ] Push to the public GitHub repo at https://github.com/Snehal707/fieldkit.
-- [ ] Run `hermes plugins validate .` and `hermes plugins doctor . --ci` on the final commit. Both pass on v0.2.4 (security scan safe; doctor: 23 tools, 1 hook). For 0.2.5, `validate` passed at phase C and the final doctor run (32 tools expected) is not recorded yet. Re-run on the exact commit you submit.
+- [ ] Run `hermes plugins validate .` and `hermes plugins doctor . --ci` on the final commit. Both pass on v0.2.4 (security scan safe; doctor: 23 tools, 1 hook). For 0.2.5, `validate` passed at phase C and the final doctor run (32 tools expected) is not recorded yet. For 0.2.6, the doctor run (37 tools expected) is not recorded yet. Re-run on the exact commit you submit.
 - [ ] Run the Python, TypeScript and Playwright suites on the final commit (see [docs/TESTING.md](TESTING.md)).
 - [ ] Run `npm run build` and commit `dashboard/dist` and `dashboard/app_dist`.
 - [x] Real iPhone + hosted Hermes + Hermes mobile app: everything checked and working (owner, 0.2.4).
 - [x] Hosted dashboard tab: all sections working (owner, 0.2.4).
-- [ ] 0.2.5 and 0.2.6 on the owner's iPhone and the hosted Hermes: workspace setup, decision guides, Workspace Assistant (Hindi included), after-sync modes, decision reports, follow-up checks and learning candidates.
+- [ ] 0.2.5 and 0.2.6 on the owner's iPhone and the hosted Hermes: workspace setup, decision guides, Workspace Assistant (Hindi included), questions about a visit, decision reports, follow-up checks and learning candidates.
 - [ ] Optional: Android Chrome; scheduled analysis (cron); scheduled workspace proposals (cron, not verified).
 - [ ] Record the demo video (3–4 minutes).
 - [ ] Open the catalog PR only with the owner's go-ahead.

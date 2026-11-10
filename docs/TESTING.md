@@ -582,3 +582,24 @@ local score was inconsistent with the evidence.
   "Can it stay in service until tomorrow?" with "No", citing the user's stop-and-isolate rule. Real Hermes chat then
   listed the questions and answers and summarised the visit (64 s, `fieldkit_list_records`, `fieldkit_list_questions`).
 - **Results:** pytest 199 passed; vitest 130 passed; typecheck clean; Chromium E2E 30 passed, 5 skipped.
+
+### 0.2.6 final: Hermes strictly on demand (2026-11-10)
+Supersedes the after-sync modes and the `review_every_record` setting described above: both are removed. Saving or
+syncing never triggers AI work (no report, no question, no speech-to-text; `report_policy.after_sync` in older
+workspaces is accepted and ignored). The phone's "Ask Hermes to analyze this record" button is removed. Interaction:
+questions about a visit (while filling in the form or afterwards, online or offline), and the Hermes chat
+(`fieldkit_ask_about_record`, 37 tools).
+- **Real Hermes + offline phone-sized Chromium, two Hermes-built workspaces, real photo and recorded voice note**
+  (local test Hermes, `openai/gpt-5.4-mini` via Nous): an observation-only electrical visit synced with no question
+  and no AI work; a kitchen visit with a photo, a voice note, a question written in the form and a suggested question
+  asked offline; repeated sync left exactly 2 questions; **during the whole run Hermes made exactly 2 model calls (one
+  per question)**; the voice note was transcribed by Hermes only while answering (8 s after the question arrived), not
+  on upload; both answers on the phone in **18 s** (32 s in an earlier run), readable offline, grounded in the reading,
+  the photo, the user's rule and the transcript; a question on the electrical visit landed on the electrical workspace.
+  One model glitch seen once: a stray Chinese word in an English answer.
+- **Real Hermes chat:** "What do you think about my latest kitchen food-safety visit?" → Hermes called
+  `fieldkit_list_records` then `fieldkit_ask_about_record` (after adding a system-prompt hint; without it, it answered
+  from the record list only) and gave an assessment with uncertainty and a next step (44 s).
+- Retries: rate-limited and schema-mismatch questions are covered by tests (`test_questions.py`, `test_rate_limit.py`),
+  not forced on the real provider.
+- **Results:** pytest 201 passed; vitest 130 passed; typecheck clean; Chromium E2E 30 passed, 5 skipped.

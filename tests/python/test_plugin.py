@@ -12,9 +12,9 @@ import yaml
 
 @pytest.fixture(autouse=True)
 def _review_every_record(monkeypatch):
-    """These tests exercise automatic report jobs, which since 0.2.6 run only when review is switched on."""
+    """These tests exercise the report job queue, which since 0.2.6 no sync triggers (test-only hook)."""
     from fieldkit_core import db as _db
-    monkeypatch.setattr(_db, "DEFAULT_AFTER_SYNC", "analyze")
+    monkeypatch.setattr(_db, "_AUTO_REVIEW_FOR_TESTS", True)
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).parent))
@@ -422,3 +422,20 @@ def test_questions_reach_hermes_chat_tools(ctx):
     r = call(ctx, "fieldkit_list_questions", record_id="rec_qv_000001")
     assert r["ok"] and r["questions"][0]["status"] == "queued" and r["questions"][0]["question"] == "Is anything missing?"
     assert call(ctx, "fieldkit_list_questions", status="answered")["questions"] == []
+
+
+def test_ask_about_record_tool_through_registration(ctx, monkeypatch):
+    """Hermes chat: "what do you think about this visit?" goes through "fieldkit_ask_about_record" (evidence retrieved
+    by the tool itself; full behaviour in test_questions.py). Without Hermes' model the tool says so clearly."""
+    from fieldkit_core import examples
+    store = db.get_store()
+    examples.install(store, db.ALL)
+    store.sync_record("alice", "k-ask", "dev", {"id": "rec_ask_000001", "workflow_id": "equipment-inspection", "workflow_version": 1,
+                                                "base_revision": 0, "answers": {"asset_id": "PMP-8"}}, auto_analyze=False)
+    monkeypatch.setattr(runtime, "llm", None)
+    r = call(ctx, "fieldkit_ask_about_record", record_id="rec_ask_000001", question="What do you think about this visit?")
+    assert r["ok"] is False and "not available" in r["error"]
+    monkeypatch.setattr(runtime, "llm", make_llm(Recorder({"default": {"answer": "Looks routine.", "confidence": "low",
+        "uncertainty": "No photos.", "evidence_used": ["asset_id"], "next_steps": []}})))
+    r = call(ctx, "fieldkit_ask_about_record", record_id="rec_ask_000001", question="What do you think about this visit?")
+    assert r["ok"] and r["answer"] == "Looks routine." and r["record_id"] == "rec_ask_000001"

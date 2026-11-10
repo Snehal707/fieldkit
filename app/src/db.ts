@@ -22,6 +22,7 @@ export interface LocalResults {
 export interface Draft {
   id: string; workflow_id: string; workflow_version: number; answers: Answers; started_at: string; updated_at: string; lang: string;
   followup_checks?: import("./followups").FollowupCheck[];
+  questions?: string[];        // questions for Hermes written while filling in the form (0.2.6)
 }
 
 export interface LocalRecord {

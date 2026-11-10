@@ -130,19 +130,9 @@ MIGRATIONS: list[str] = [
 ]
 
 
-# Records outside a workspace that opted in to review are only saved after sync (0.2.6). The plugin setting
-# review_every_record: true brings back the old behaviour (Hermes reviews every record).
-DEFAULT_AFTER_SYNC = "save"
-
-
-def default_after_sync() -> str:
-    try:
-        from . import runtime
-        if runtime.setting("review_every_record", False):
-            return "analyze"
-    except Exception:
-        pass
-    return DEFAULT_AFTER_SYNC
+# Saving or syncing a record never triggers AI work (0.2.6): Hermes analyses only what a user asks, a queued
+# question about a visit, or a request in the Hermes chat. Test-only hook for the legacy job-queue tests.
+_AUTO_REVIEW_FOR_TESTS = False
 
 
 def preview(text: str, n: int) -> str:
@@ -742,28 +732,8 @@ class Store:
             return
         row = c.execute("SELECT revision, sync_status, workflow_id FROM records WHERE id=?", (rid,)).fetchone()
         c.execute("UPDATE records SET sync_status='complete', updated_at=? WHERE id=?", (_now(), rid))
-        if auto_analyze and self.after_sync_mode(row["workflow_id"], c) == "analyze":
+        if auto_analyze and _AUTO_REVIEW_FOR_TESTS:
             self._enqueue(c, rid, row["revision"])
-
-    def after_sync_mode(self, workflow_id: str, c: Any = None) -> str:
-        """Whether Hermes reviews every record of this workflow's workspace automatically after sync ('analyze'), or
-        only saves it ('save', the default since 0.2.6). AI help is otherwise on request: a question about a visit,
-        "Ask Hermes to analyze this record", or the Hermes chat. 'summarize' (0.2.6 draft) behaves as 'save'."""
-        conn = c or self.conn
-        try:
-            rows = conn.execute("SELECT v.bundle FROM workspaces w JOIN workspace_versions v ON v.workspace_id=w.id "
-                                "AND v.version=w.published_version WHERE w.published_version IS NOT NULL").fetchall()
-        except sqlite3.Error:
-            return default_after_sync()
-        for (raw,) in rows:
-            b = _uj(raw) or {}
-            ids = {w.get("id") for w in b.get("workflows") or [] if isinstance(w, dict)} | set(b.get("workflow_refs") or [])
-            if workflow_id in ids:
-                mode = (b.get("report_policy") or {}).get("after_sync")
-                if mode in ("save", "summarize", "analyze"):
-                    return "analyze" if mode == "analyze" else "save"
-                return default_after_sync()
-        return default_after_sync()
 
     def _enqueue(self, c, rid: str, revision: int) -> str:
         existing = c.execute("SELECT id FROM jobs WHERE kind='analyze' AND record_id=? AND revision=?", (rid, revision)).fetchone()

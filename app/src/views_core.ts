@@ -25,7 +25,7 @@ const STATUS_TEXT: Record<string, string> = {
   conflict: "Conflict — needs your decision", error: "Hermes didn't accept it — try again",
 };
 const ANALYSIS_TEXT: Record<string, string> = {
-  not_requested: "No automatic review (ask Hermes about this visit below)", pending: "Pending", processing: "Processing", completed: "Completed",
+  not_requested: "No AI analysis (ask Hermes about this visit above)", pending: "Pending", processing: "Processing", completed: "Completed",
   failed: "Failed", requires_review: "Completed — requires human review",
 };
 
@@ -380,9 +380,29 @@ export const runView: View = async (main, p) => {
       if (!vis.has(f.id)) continue;
       form.append(fieldView(f, st, vis));
     }
-    form.append(h("div", { class: "row" },
+    form.append(questionsBox(),
+      h("div", { class: "row" },
       h("button", { class: "primary", onclick: finish }, "Complete workflow"),
       h("span", { class: "muted" }, `Draft saved on this device · ${Object.keys(st.errors).length} item(s) to fix`)));
+  };
+
+  /** Optional questions for Hermes, written while collecting; saved with the visit and sent after it syncs. */
+  const questionsBox = () => {
+    const qs = draft.questions ?? [];
+    const qin = h("input", { id: "draft-question", placeholder: l === "hi" ? "हर्मीस से प्रश्न (वैकल्पिक)…" : "Question for Hermes (optional)…", maxlength: "1000" }) as HTMLInputElement;
+    const add = async () => {
+      const t = qin.value.trim();
+      if (!t) return;
+      draft.questions = [...(draft.questions ?? []), t];
+      await save();
+      render();
+    };
+    return h("div", { class: "field card", id: "draft-questions" },
+      h("label", { class: "q", for: "draft-question" }, "Questions for Hermes (optional)"),
+      h("div", { class: "help" }, "Ask about this visit, e.g. what the photos show. Saved with the visit; Hermes answers after it syncs."),
+      qs.length ? h("ul", { class: "clean" }, ...qs.map((q, i) => h("li", { class: "row" }, h("span", { class: "grow" }, q),
+        h("button", { onclick: async () => { draft.questions = qs.filter((_, j) => j !== i); await save(); render(); } }, "Remove")))) : null,
+      h("div", { class: "row" }, h("div", { class: "grow" }, qin), h("button", { onclick: add }, "Add question")));
   };
 
   const fieldView = (f: Field, st: ReturnType<typeof computeState>, _vis: Set<string>) => {
@@ -603,6 +623,7 @@ export const runView: View = async (main, p) => {
     let rec;
     try {
       rec = await completeDraft(draft, wf);
+      for (const q of draft.questions ?? []) await askAboutRecord(rec.id, q, l);   // exact text, linked to this visit
     } catch (e) {
       notice.append(h("div", { class: "banner bad", role: "alert" }, h("strong", null, "Could not save this inspection"),
         h("div", null, `${(e as Error).message}. Your answers are still in the draft — nothing was lost.`)));
@@ -753,10 +774,7 @@ function hermesSection(rec: LocalRecord, stored: StoredReport | undefined) {
         try { const n = await refreshReports(rec.id); toast(n ? "Report downloaded for offline use." : "No new report yet.", n ? "ok" : "info"); go(`#/results/${rec.id}?r=${Date.now()}`); }
         catch (e) { toast(e instanceof AuthRequired ? "Sign in to Hermes first." : `Offline or unavailable: ${(e as Error).message}`, "error"); }
       } }, stored ? "Check for newer report" : "Download report"),
-      ["not_requested", "failed"].includes(rec.analysis_status) ? h("button", { onclick: async () => {
-        try { await requestAnalysis(rec.id); toast("Analysis requested.", "ok"); go(`#/results/${rec.id}?r=${Date.now()}`); }
-        catch (e) { toast((e as Error).message, "error"); }
-      } }, "Ask Hermes to analyze this record") : null));
+      null));
   }
   return box;
 }

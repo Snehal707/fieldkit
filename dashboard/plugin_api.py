@@ -297,7 +297,9 @@ async def put_attachment(aid: str, request: Request):
     except Exception as exc:
         _err(exc)
     _ensure_worker()
-    if mime.startswith("audio/") and not res.get("duplicate"):
+    # Since 0.2.6 an upload triggers no AI processing: a voice note is transcribed only when someone asks about its
+    # visit (question, chat or report). The plugin setting transcribe_on_upload: true restores eager transcription.
+    if mime.startswith("audio/") and not res.get("duplicate") and runtime.setting("transcribe_on_upload", False):
         _transcribe_soon(uid, res.get("record_id") or "")
     return res
 

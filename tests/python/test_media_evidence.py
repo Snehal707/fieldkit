@@ -20,9 +20,9 @@ from fieldkit_core import analysis, db, examples, media  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _review_every_record(monkeypatch):
-    """These tests exercise automatic report jobs, which since 0.2.6 run only when review is switched on."""
+    """These tests exercise the report job queue, which since 0.2.6 no sync triggers (test-only hook)."""
     from fieldkit_core import db as _db
-    monkeypatch.setattr(_db, "DEFAULT_AFTER_SYNC", "analyze")
+    monkeypatch.setattr(_db, "_AUTO_REVIEW_FOR_TESTS", True)
 
 JPEG = b"\xff\xd8\xff\xe0" + b"fake-photo-bytes" * 20
 PNG = b"\x89PNG\r\n\x1a\n" + b"fake-signature-strokes" * 10
@@ -210,8 +210,9 @@ def test_api_record_has_attachment_kinds_and_isolation(store, tmp_path, monkeypa
     assert c.get("/api/plugins/fieldkit/attachments/att_sign_000001", headers={"x-test-user": "mallory"}).status_code == 404
 
 
-def test_voice_note_is_transcribed_on_hermes_right_after_upload(store, tmp_path, monkeypatch):
-    """The dashboard transcribes a voice note when it arrives, so the transcript exists before any analysis."""
+def test_upload_triggers_no_transcription_unless_switched_on(store, tmp_path, monkeypatch):
+    """0.2.6: an upload triggers no AI processing; a voice note is transcribed when someone asks about its visit. The
+    plugin setting transcribe_on_upload: true restores transcription right after upload (checked below)."""
     import importlib.util
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -229,6 +230,12 @@ def test_voice_note_is_transcribed_on_hermes_right_after_upload(store, tmp_path,
 
     app.include_router(api.router, prefix="/api/plugins/fieldkit")
     c = TestClient(app)
+    from fieldkit_core import runtime
+    rid0 = _inspection(store, tmp_path, rid="rec_media_000008", upload=False)
+    assert c.put("/api/plugins/fieldkit/attachments/att_voice_000008", content=M4A, headers={"content-type": "audio/mp4"}).status_code == 200
+    assert api._STT_POOL is None and stt.paths == []          # default: nothing transcribed on upload
+    real_setting = runtime.setting
+    monkeypatch.setattr(runtime, "setting", lambda k, d=None: True if k == "transcribe_on_upload" else real_setting(k, d))
     rid = _inspection(store, tmp_path, rid="rec_media_000009", upload=False)
     for aid, body, mime in (("att_photo_000009", JPEG, "image/jpeg"), ("att_voice_000009", M4A, "audio/mp4")):
         assert c.put(f"/api/plugins/fieldkit/attachments/{aid}", content=body, headers={"content-type": mime}).status_code == 200

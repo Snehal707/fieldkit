@@ -133,18 +133,14 @@ test("photo, voice note and signature: playable on Results, intact on Hermes, ev
     const body = await (await A.ctx.request.get(`${API}/attachments/${a.id}`)).body();
     expect(sha(body)).toBe(a.sha256);
   }
-  if (!isWebkit) {
-    // Hermes transcribes the voice note right after upload, in the dashboard process, with its own speech-to-text.
-    // Whatever this Hermes can do, the outcome is recorded: a transcript, or the reason there isn't one.
-    const vn = await expect.poll(async () => {
-      const r = await (await A.ctx.request.get(`${API}/records/${id}`)).json();
-      const v = r.attachments.find((x: any) => x.kind === "audio");
-      return v.transcript || v.transcript_error ? v : null;
-    }, { timeout: 120_000, intervals: [2_000] }).not.toBeNull();
+  {
+    // 0.2.6: an upload triggers no AI processing. Hermes transcribes a voice note only when someone asks about its
+    // visit (a question, the Hermes chat or a requested report); tests/python covers that path.
+    await new Promise((done) => setTimeout(done, 5_000));
     const r2 = await (await A.ctx.request.get(`${API}/records/${id}`)).json();
     const v2 = r2.attachments.find((x: any) => x.kind === "audio");
-    console.log("Hermes speech-to-text on upload:", JSON.stringify({ transcript: v2.transcript, source: v2.transcript_source, error: v2.transcript_error }));
-    void vn;
+    expect(v2.transcript_source ?? null, "no Hermes speech-to-text on upload").not.toBe("hermes");
+    expect(v2.transcript_error ?? null).toBeNull();
   }
   const sig = rec.attachments.find((x: any) => x.kind === "signature");
   expect(sig.field_id).toBe("inspector_sign");

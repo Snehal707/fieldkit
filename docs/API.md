@@ -40,12 +40,7 @@ Base path: `/api/plugins/fieldkit/`.
 Workspaces are built and published by Hermes through the workspace tools (see [Hermes tools](#hermes-tools)).
 The phone opens them at `#/workspace/<id>`, the link Hermes returns.
 
-**`report_policy.after_sync` (0.2.6).** Each workspace sets what happens when its records sync:
-- `save`: records only, no AI analysis unless the user asks on a record.
-- `summarize`: no per-record reports. Summaries, counts and comparisons are asked of Hermes in chat.
-- `analyze`: a report for every record.
-
-Workspaces without the setting, and workflows outside a workspace, use `analyze`.
+Older workspaces may contain `report_policy.after_sync`; it is accepted and ignored. Syncing never starts AI work.
 
 ## Learning (0.2.5)
 `POST learning/events`
@@ -99,8 +94,10 @@ The same `idempotency_key` returns the stored response with `duplicate: true`. I
 |---|---|---|
 | GET | `records` | `workflow_id`, `analysis_status`, `limit`. Summaries include `workflow_title` |
 | GET | `records/{id}` | Full record, including attachment metadata. Each attachment has `kind` (`photo`, `audio` for a voice note, or `signature`), `field_label`, and `signed_at` (signatures). Voice notes also have `transcript`, `transcript_source` (`device` or `hermes`) and `transcript_error` (why there is no transcript). The record has `attachment_counts` (`{photo, audio, signature}`) and `attachment_summary` (for example "1 photo · 1 voice note"). |
-| POST | `records/{id}/analyze` | Queues (or re-queues a failed or completed) durable job |
+| POST | `records/{id}/analyze` | Queues (or re-queues a failed or completed) durable job. Only on request; sync never queues one |
 | GET | `records/{id}/report` | Latest report version. The PWA downloads this for offline use |
+| POST | `records/{id}/questions` | Queues a question about this record (0.2.6). Body `{id, question, lang, workspace_id, attachment_ids}`. Idempotent on `id` (the phone's id). Owner-checked: another user's record returns `404`. Answered after sync |
+| GET | `records/{id}/questions` | The record's questions (0.2.6), with `status` (`queued`, `answering`, `answered` or `failed`) and `answer` once answered. Owner-checked |
 | GET | `reports`, `reports/{id}` | |
 | GET/POST | `followups`, `followups/{id}` | `{title, detail?, record_id?, due_date?}`; `{status: open\|done}` |
 | GET | `jobs` | Recent jobs, counts and analysis mode |
@@ -156,7 +153,7 @@ are still written for older readers. The v2 fields are:
 `fieldkit_create_workflow`, `fieldkit_validate_workflow`, `fieldkit_publish_workflow`, `fieldkit_list_workflows`,
 `fieldkit_get_workflow`, `fieldkit_get_app_link`, `fieldkit_create_knowledge_pack`, `fieldkit_create_dictionary_pack`,
 `fieldkit_list_knowledge_packs`, `fieldkit_search_knowledge`, `fieldkit_list_records`, `fieldkit_get_record`,
-`fieldkit_analyze_record`, `fieldkit_generate_report`, `fieldkit_save_report`, `fieldkit_get_report`, `fieldkit_list_reports`,
+`fieldkit_analyze_record`, `fieldkit_ask_about_record`, `fieldkit_list_questions`, `fieldkit_generate_report`, `fieldkit_save_report`, `fieldkit_get_report`, `fieldkit_list_reports`,
 `fieldkit_create_followup`, `fieldkit_list_followups`, `fieldkit_get_sync_status`, `fieldkit_resolve_conflict`,
 `fieldkit_process_pending_jobs`, `fieldkit_install_examples`.
 
@@ -176,9 +173,13 @@ Workspaces and learning (0.2.5, 9 tools):
 - `fieldkit_list_learning`: learning events and candidates.
 - `fieldkit_decide_candidate`: accepts or rejects a candidate. Requires `user_confirmed`. An accepted candidate creates a validated new workspace version with a changelog.
 
-With these, FieldKit has 35 Hermes tools (32 in 0.2.5, 23 before 0.2.5).
+Questions about a visit (0.2.6, 2 new):
+- `fieldkit_ask_about_record`: answers a question about one visit (`record_id`, `question`, optional `language`). It looks at the record's evidence itself (photos, voice notes, procedures, earlier visits), returns the answer with uncertainty and next steps, and saves it on that visit for the phone. It answers at once and does not use the queue.
+- `fieldkit_list_questions`: lists questions asked about a visit from the phone, queued or answered.
 
-**`fieldkit_list_records` `include_answers` (0.2.6).** Set `include_answers: true` to get each record's answers in the result. Use it for summaries, counts, trends and comparisons across records, which is how the `summarize` mode is used. Without it, the result lists record summaries only.
+With these, FieldKit has 37 Hermes tools (32 in 0.2.5, 23 before 0.2.5; 0.2.6 adds 3 build tools and 2 question tools).
+
+**`fieldkit_list_records` `workspace_id` and `include_answers` (0.2.6).** `workspace_id` lists the records of every workflow in that workspace. Set `include_answers: true` to get each record's answers in the result. Use it for summaries, counts, trends and comparisons across records, when you ask Hermes in chat. Without it, the result lists record summaries only.
 
 All tools return a JSON string `{ok: true, …}` or `{ok: false, error}`. They act as the instance owner.
 
@@ -188,3 +189,4 @@ All tools return a JSON string `{ok: true, …}` or `{ok: false, error}`. They a
 | Setting | Default | Environment variable | Effect |
 |---|---|---|---|
 | `voice_transcription` | `true` | `FIELDKIT_VOICE_TRANSCRIPTION=false` | When on, Hermes transcribes voice notes that have no phone transcript (see `attachments/{id}` above). When off, each untranscribed voice note's `transcript_error` says that transcription is turned off, and the analysis lists those voice notes under missing information. |
+| `auto_analyze` | `true` | — | When on, a background worker in the dashboard process answers queued questions and runs requested reports. Sync never queues work, so this setting does not affect saving or syncing. |

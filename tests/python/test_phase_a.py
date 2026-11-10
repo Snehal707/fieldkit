@@ -14,9 +14,9 @@ from fieldkit_core import analysis, db, engine, examples  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _review_every_record(monkeypatch):
-    """These tests exercise automatic report jobs, which since 0.2.6 run only when review is switched on."""
+    """These tests exercise the report job queue, which since 0.2.6 no sync triggers (test-only hook)."""
     from fieldkit_core import db as _db
-    monkeypatch.setattr(_db, "DEFAULT_AFTER_SYNC", "analyze")
+    monkeypatch.setattr(_db, "_AUTO_REVIEW_FOR_TESTS", True)
 
 ROOT = Path(__file__).resolve().parents[2]
 WF = json.loads((ROOT / "examples" / "maintenance" / "workflow.json").read_text(encoding="utf-8"))

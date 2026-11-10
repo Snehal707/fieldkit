@@ -38,20 +38,29 @@ Workflow rules you must follow when writing a `definition` yourself:
 - `fieldkit_create_dictionary_pack` builds multilingual term lists (`term`, `lang`, `definition`, `translations`).
 - Reference the pack ids in the workflow's `knowledge_packs` / `dictionary_packs` so phones download them together.
 
-## Answering questions about results ("analyse my latest inspection", "what should I do next?", "compare my last five")
+## Answering questions about observations ("what do you think about observation 024?", "what do the photos show?", "compare my last five", "summarise this workspace")
 
-1. `fieldkit_list_records` (filter by `workflow_id`; newest first) to find the records.
-2. For one record:
-   - `fieldkit_get_report` with `record_id`.
-   - If there is none, `fieldkit_analyze_record` (stores a structured report the phone can download).
-   - Explain the summary, issues, missing information and suggested actions conversationally.
-3. To compare records:
+Syncing never triggers AI work: you act only on what the user asks. Interpret the request yourself; the user should not
+have to ask for photo analysis, transcription or history.
+1. Find the record(s): `fieldkit_list_records` (newest first; filter by `workflow_id` or a whole `workspace_id`; the
+   rows carry a `subject` such as an asset id or farmer code, so match the user's words to it).
+2. One observation, any question (including broad ones like "what do you think?"): `fieldkit_ask_about_record` with the
+   user's question. It retrieves the evidence itself (answers, photos, voice-note transcripts, on-phone findings, the
+   workspace's procedures and earlier visits of the same subject) and returns an answer with confidence, uncertainty
+   and next steps; it is also saved on that visit for the phone. Relay it conversationally.
+   - Only if the user explicitly wants a full structured report: `fieldkit_get_report`, or `fieldkit_analyze_record`.
+3. Several observations or a whole workspace (summaries, counts, trends, comparisons):
+   `fieldkit_list_records` with `include_answers: true` (and `workspace_id`), then reason over the answers; use
+   `fieldkit_ask_about_record` for individual visits whose photos or voice notes matter.
+4. Questions users asked on the phone about a visit are answered automatically after sync; see them with
+   `fieldkit_list_questions`. Answers about one case stay with that case: never turn them into workspace rules.
+5. To compare records:
    - Fetch each with `fieldkit_get_record` and/or `fieldkit_get_report`, then compare the answers and findings yourself.
    - If the user wants the comparison kept, store it against the most recent record with `fieldkit_save_report`.
-4. `fieldkit_create_followup` for any agreed next action; `fieldkit_list_followups` for open tasks.
-5. Always say which statements come from local findings, which from a stored Hermes report, and which are your new reasoning.
-6. Flag `requires_review` items as needing a qualified person.
-7. Attachments: `fieldkit_get_record` gives each file's `kind` (photo, voice note or signature) and `attachment_summary`
+6. `fieldkit_create_followup` for any agreed next action; `fieldkit_list_followups` for open tasks.
+7. Always say which statements come from local findings, which from a stored Hermes report, and which are your new reasoning.
+8. Flag `requires_review` items as needing a qualified person.
+9. Attachments: `fieldkit_get_record` gives each file's `kind` (photo, voice note or signature) and `attachment_summary`
    (for example "2 photos · 1 voice note · 1 signature"). Use those counts; a signature is not a photo.
    - Voice notes appear in `answers_readable` with their transcript (made on the phone or by Hermes speech-to-text),
      or with `not_transcribed_because`. Treat a transcript as the inspector's own words; never guess an
@@ -62,7 +71,8 @@ Workflow rules you must follow when writing a `definition` yourself:
 ## Sync and processing
 
 - `fieldkit_get_sync_status` shows records received, attachments still uploading, open conflicts and analysis jobs.
-- If jobs are `pending` and the analysis mode is `deferred`, call `fieldkit_process_pending_jobs`. A Hermes cron job can also call it periodically.
+- Syncing creates no analysis. Questions users queued about a visit are answered by FieldKit's worker; if the analysis
+  mode is `deferred` (no worker), call `fieldkit_process_pending_jobs`, which also answers queued questions.
 - Conflicts mean a phone edited an old revision. Show both versions, then call `fieldkit_resolve_conflict` with the user's choice. Never pick a resolution silently.
 
 ## Demo content

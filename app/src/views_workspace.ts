@@ -42,11 +42,6 @@ function evidenceBlock(m: WorkspaceManifest) {
       h("ul", null, ...m.sources.filter((x: any) => x.tier).map((x: any) => h("li", null, `${x.title || x.url} — ${x.publisher || ""} (tier ${x.tier})`)))) : null);
 }
 
-const AFTER_SYNC: Record<string, string> = {
-  save: "Records sync to Hermes. Nothing is analysed unless you ask: about a visit, or in the Hermes chat.",
-  summarize: "Records sync to Hermes. Nothing is analysed unless you ask: about a visit, or in the Hermes chat.",
-  analyze: "Hermes reviews every record after it syncs (switched on for this workspace).",
-};
 
 export const workspaceView: View = async (main, p) => {
   const l = await lang();
@@ -80,7 +75,7 @@ export const workspaceView: View = async (main, p) => {
       h("dt", null, "Role"), h("dd", null, prof.role || "—"),
       h("dt", null, "Where"), h("dd", null, [prof.region, prof.country].filter(Boolean).join(", ") || "—"),
       h("dt", null, "Version"), h("dd", null, String(m.version_of_workspace ?? m.version ?? 1)),
-      h("dt", null, "After sync"), h("dd", { id: "ws-after-sync" }, AFTER_SYNC[m.report_policy?.after_sync ?? "save"] ?? AFTER_SYNC.save)),
+      h("dt", null, "Hermes"), h("dd", { id: "ws-after-sync" }, "Syncing only saves your records. Hermes answers when you ask: about a visit, or in the Hermes chat.")),
     (prof.responsibilities ?? []).length ? h("div", null, h("h3", null, "Your responsibilities"),
       h("ul", null, ...prof.responsibilities.map((r: any) => h("li", null, r.description, (r.decisions ?? []).length ? h("div", { class: "muted" }, `Decides: ${r.decisions.join(", ")}`) : null)))) : null,
     h("div", { class: "row" }, isOnline() ? btn : null), status));

@@ -4,7 +4,7 @@ One Hermes plugin repository, three integrated components, one database.
 
 ```text
  Hermes Mobile app ──conversation──▶ Hermes Agent ──tools──▶ FieldKit plugin (Python)
-                                          │                    │  register(ctx): 35 tools, 2 skills, hook
+                                          │                    │  register(ctx): 37 tools, 2 skills, hook
                                           │ ctx.llm            │  fieldkit_core: engine, db, packs, analysis
                                           ▼                    ▼
                               Hermes dashboard ── /api/plugins/fieldkit/ (FastAPI router, auth-gated)
@@ -21,7 +21,7 @@ and FieldKit tools, the PWA through the authenticated plugin API.
 ## Components
 
 ### A. Native plugin (`__init__.py`, `fieldkit_core/`)
-- `register(ctx)` binds `ctx.llm` and plugin config into `fieldkit_core.runtime`, registers the 35 tools
+- `register(ctx)` binds `ctx.llm` and plugin config into `fieldkit_core.runtime`, registers the 37 tools
   (`tools.py` and `workspace_tools.py`), the bundled skills (`skills/fieldkit/SKILL.md` and
   `skills/fieldkit-workspace-builder/SKILL.md`), a system prompt section (`fieldkit.workspace`), and adds an
   `on_session_start` hook. It does no I/O.
@@ -34,6 +34,7 @@ and FieldKit tools, the PWA through the authenticated plugin API.
 - `analysis.py` handles generation and analysis. It builds a grounded context (answers, local findings,
   knowledge passages, up to 2 photos) → `ctx.llm.complete_structured` with `REPORT_SCHEMA` → normalises
   and stores the report. It also generates workflows and knowledge entries.
+- `questions.py` (0.2.6) answers a question about one visit from that record's evidence and stores the answer on the visit. The worker and `fieldkit_process_pending_jobs` run it; `fieldkit_ask_about_record` answers at once.
 - `runtime.py` holds the process-wide LLM handle and the background worker, a daemon thread running under
   a copied contextvars context.
 
@@ -52,7 +53,7 @@ and FieldKit tools, the PWA through the authenticated plugin API.
   - API traffic is never cached.
   - Pinned jsDelivr runtime files are cache-first.
 - IndexedDB (`db.ts`) has these stores: settings, workflows, packs, models, drafts, records, attachments
-  (Blobs), outbox, reports.
+  (Blobs), outbox, reports, and questions (added in IndexedDB v4, 0.2.6; existing stores are kept).
 - `sync.ts` is the durable outbox.
   - Idempotency keys are stable across retries.
   - Records are sent before attachments, with SHA-256 per file.
@@ -86,8 +87,8 @@ the report as `local_findings`.
 ## Processing after sync
 
 1. `POST /sync/records`, in one transaction: idempotency check → validate → store record and revision →
-   declare attachments → if no media is outstanding, enqueue an `analyze` job → acknowledge.
-2. Each `PUT /attachments/{id}` is verified by SHA-256. The last one marks the record `complete` and enqueues the job.
+   declare attachments → acknowledge. Sync never enqueues an analysis job.
+2. Each `PUT /attachments/{id}` is verified by SHA-256. The last one marks the record `complete`.
 3. Workers claim jobs atomically (`pending` → `processing`). Each job is retried up to 3 attempts with
    exponential backoff, then marked `failed`. Stale `processing` jobs are recovered after 15 minutes.
 4. Three paths can drain the queue:
@@ -102,10 +103,24 @@ the report as `local_findings`.
      stays `pending` and is not marked failed. A model reply with extra keys that do not match the report schema is
      retried once with the exact error.
 
-Which jobs are queued depends on the workspace's `report_policy.after_sync` mode (0.2.6). `analyze` (the default for
-workflows outside a workspace, and for workspaces without the setting) queues a job for every record. `summarize`
-queues none, and answers come from Hermes on request, through `fieldkit_list_records` with `include_answers`. `save`
-stores the record only, and analysis runs when the user asks for it on a record.
+Jobs are created only on request (0.2.6): a report asked for on a record (`POST records/{id}/analyze` or
+`fieldkit_analyze_record`), or a question about a visit (queued on the phone, then answered after sync). Sync never
+creates one. `fieldkit_list_records` with `include_answers` reads stored answers and does not call the model.
+Older workspaces may contain `report_policy.after_sync`; it is accepted and ignored.
+
+## Questions about a visit (0.2.6)
+
+- The phone keeps a question with its visit (IndexedDB `questions` store). After the visit syncs, the question is sent
+  with `POST /records/{id}/questions`. The call is idempotent on the phone's id and owner-checked. DB migration v6 adds
+  the `questions` table (additive only).
+- A queued question is the request. The worker (or `fieldkit_process_pending_jobs`) answers it from the record's
+  evidence: answers, photos, voice-note transcripts, on-phone findings, the workspace's procedures and up to 3 earlier
+  visits of the same subject.
+- A provider rate limit makes the question wait as told and stay queued. Other errors retry with backoff; after 3
+  attempts the question is marked `failed`.
+- The answer is stored on the visit and returned by `GET /records/{id}/questions`, so it is readable offline.
+- Answers are about that visit only. They never become workspace rules, decision actions or learning events.
+- `fieldkit_ask_about_record` answers in the Hermes chat at once and saves the answer on the same visit.
 
 ## Workspaces, evidence and learning (0.2.5)
 
@@ -121,7 +136,7 @@ Interview (Hermes, skill fieldkit-workspace-builder)
   → review of the research report → fieldkit_publish_workspace (requires user_approved)
   → normal workflows + packs ws-<id>, ws-<id>-knowledge, ws-<id>-dictionary (SHA-256, update detection)
   → phone: #/workspace/<id> → download everything for offline → decision guides, assistant, inspections
-  → records with follow-up checks → sync → Hermes analysis → decision-focused report (v2)
+  → records with follow-up checks → sync → report when asked (decision-focused, v2)
   → learning events from the phone (knowledge gaps, feedback); verified outcomes derived on Hermes
     from follow-up checks in synced records
   → fieldkit_propose_workspace_changes → candidates → user confirms (fieldkit_decide_candidate, user_confirmed)
@@ -140,6 +155,8 @@ Interview (Hermes, skill fieldkit-workspace-builder)
 | `app/src/assistant.ts`, `assistant_core.ts`, `assistant_intents.ts`, `views_assistant.ts` | Workspace Assistant (grounded): intent by meaning and cues, dialogue state, retrieval, answers with citations, knowledge gaps |
 | `app/src/followups.ts` | Follow-up checks asked by the next inspection of the same subject |
 | `app/src/learning.ts` | Queue of learning events, uploaded after each sync |
+| `fieldkit_core/questions.py` | Questions about one visit (0.2.6): validation, answering from the record's evidence, worker queue |
+| `app/src/questions.ts` | Questions about one visit on the phone (0.2.6): kept offline with the visit, sent after sync, answers shown on the visit |
 
 Rules that do not depend on the model:
 - The evidence status (verified, supported, conflicting, your procedure, learned local practice, unverified) is
@@ -149,8 +166,8 @@ Rules that do not depend on the model:
   Only follow-up checks answered on a later inspection count as verified outcomes, and a phone cannot submit them.
 - Accepting a candidate requires the user's confirmation. Rejected candidates are not proposed again.
 
-The phone and Hermes exchange only through the plugin API: `GET workspaces`, `GET workspaces/{id}` and
-`POST learning/events` (see [docs/API.md](docs/API.md)).
+The phone and Hermes exchange only through the plugin API: `GET workspaces`, `GET workspaces/{id}`,
+`POST learning/events`, and `POST` and `GET records/{id}/questions` (see [docs/API.md](docs/API.md)).
 
 ## Building in parts and background quote checks (0.2.6)
 

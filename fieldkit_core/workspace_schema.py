@@ -127,7 +127,7 @@ REPORT_POLICY = {
         "decision_scale": {"type": "array", "minItems": 2, "items": {
             "type": "object", "required": ["id", "label", "severity"], "additionalProperties": False,
             "properties": {"id": SLOT, "label": LABEL, "severity": {"enum": list(SEVERITIES)}, "description": LABEL}}},
-        "after_sync": {"enum": ["save", "summarize", "analyze"]},
+        "after_sync": {"enum": ["save", "summarize", "analyze"], "description": "Accepted for older workspaces and ignored: syncing never triggers AI work."},
         "review_triggers": {"type": "array", "items": {"type": ["string", "object"]}},
         "escalation_rules": {"type": "array", "items": {"type": ["string", "object"]}},
     },
@@ -283,8 +283,7 @@ RULES = {
                 "added in sources first. Do NOT send a status: FieldKit computes it. If sources disagree, add conflicts. "
                 "Model knowledge without a quote = no excerpts → 'unverified' (background only).",
     "report_policy": "One object. 2+ decisions ordered from most to least severe; decision ids are snake_case and are what "
-                     "guide outcomes and reports use. after_sync: leave it out (or 'save') so records only "
-                     "sync and Hermes helps when asked; set 'analyze' only if the user wants Hermes to review every record.",
+                     "guide outcomes and reports use. Syncing never triggers AI work; Hermes answers when the user asks.",
     "workflows": "Use the user's units and terms. Choice fields need options [{value, label}]. Conditions use field ids of "
                  "this workflow; numbers are compared with numbers, checkbox with true/false, choices with an option value. "
                  "Classification rules with thresholds cite evidence_ids (evidence must be at least 'supported').",

@@ -20,9 +20,6 @@ the web before building. The user's own rules and documents are the source for t
 - **The rules they already use**, in their words: limits, thresholds, steps ("we reject below 8.3 SNF", "spray only
   after the KVK says so"). Ask for any SOP, checklist, form or photo of their paper form: build from it.
 - Country/region, languages (reading, speaking, text in photos), who they escalate to (roles), how long offline.
-- **Should Hermes review every record automatically?** The default is no: records just sync, and the user asks Hermes
-  when they want help (about one visit on the phone, or here in chat). Only if the user wants every record reviewed
-  (e.g. every inspection), set `report_policy.after_sync` to `analyze`; otherwise leave it out or set `save`.
 
 Call `fieldkit_save_workspace_brief`; show the returned `summary`; call again with `confirmed: true` only after the user
 confirms. Keep each responsibility's `id` short (e.g. `r_accept`).
@@ -60,9 +57,9 @@ user whether their rule matches ("matches FSSAI") or differs. Never spend long b
 ## 5. After sync: answer what the user asks
 
 Syncing alone triggers no AI work. Users ask about a visit on the phone ("Ask Hermes about this visit"); FieldKit
-answers those from that record automatically, and you can see them with `fieldkit_list_questions`. In chat, users can
-ask for summaries or comparisons across visits: use `fieldkit_list_records` with `include_answers` and
-`fieldkit_get_record`. Answers about one case stay with that case; never turn them into workspace rules.
+answers those from that record automatically, and you can see them with `fieldkit_list_questions`. In chat, a question
+about one visit goes to `fieldkit_ask_about_record` (it gathers the photos, voice notes, procedures and history itself);
+summaries or comparisons across visits use `fieldkit_list_records` with `include_answers` (and `workspace_id`). Answers about one case stay with that case; never turn them into workspace rules.
 
 ### Solution first
 

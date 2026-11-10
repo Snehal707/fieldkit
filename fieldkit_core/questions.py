@@ -8,6 +8,8 @@ same visit on the phone. An answer is case-specific: it is never turned into a w
 from __future__ import annotations
 
 import json
+import re
+import uuid
 from typing import Any, Optional
 
 from . import analysis, media
@@ -28,11 +30,55 @@ ANSWER_SCHEMA = {
 }
 INSTRUCTIONS = (
     "Answer the user's QUESTION about this one field record. Use only this record's evidence: its answers, photos, "
-    "voice-note transcripts, on-phone findings and the workspace's procedures and rules given. Say plainly what the "
+    "voice-note transcripts, on-phone findings, the workspace's procedures and rules given, and the history of "
+    "earlier records of the same subject. A broad question (\"what do you think?\") gets a short assessment of what "
+    "matters, with uncertainties and next steps. Say plainly what the "
     "evidence cannot show and how to find out (uncertainty). Do not invent readings, sources or standards. Label "
     "anything that is your own suggestion as a suggestion. This answer is about this case only; do not state general "
     "rules for future records. Answer in the language of the question."
 )
+
+
+SUBJECT_HINT = re.compile(r"(^|_)(id|code|no|number|tag|asset|panel|farmer|household|plot|patient|woman|student|site|unit)(_|$)")
+
+
+def subject_field(wf: dict) -> Optional[str]:
+    """The field that names what a record is about (asset id, farmer code, household id...), for its history."""
+    texts = [f for f in wf.get("fields") or [] if f.get("type") == "text"]
+    for f in texts:
+        if SUBJECT_HINT.search(str(f.get("id", ""))):
+            return f["id"]
+    return texts[0]["id"] if texts else None
+
+
+def history(store: Store, record: dict, wf: dict, lang: str, limit: int = 3) -> list[dict]:
+    """Earlier records of the same subject (same workflow and subject value), newest first, with what Hermes said."""
+    fid = subject_field(wf)
+    subj = str((record.get("answers") or {}).get(fid, "")).strip().lower() if fid else ""
+    if not subj:
+        return []
+    out = []
+    for r in store.list_records(record["owner_user_id"], record["workflow_id"], 200, full=True):
+        if r["id"] == record["id"] or str((r.get("answers") or {}).get(fid, "")).strip().lower() != subj:
+            continue
+        if str(r.get("completed_at") or "") > str(record.get("completed_at") or "9999"):
+            continue
+        item = {"record_id": r["id"], "completed_at": r.get("completed_at"),
+                "answers": analysis._answers_for_prompt(wf, r.get("answers") or {}, lang),
+                "findings": [f.get("label") for f in (r.get("local_results") or {}).get("findings") or []][:8]}
+        try:
+            rep = store.get_report(ALL, record_id=r["id"])["report"]
+            item["hermes_decision"] = (rep.get("decision") or {}).get("outcome")
+        except Exception:
+            pass
+        answered = [{"question": q["question"], "answer": (q.get("answer") or {}).get("answer")}
+                    for q in store.list_questions(ALL, r["id"], "answered", 5)]
+        if answered:
+            item["earlier_questions"] = answered
+        out.append(item)
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _context(store: Store, q: dict) -> tuple[dict, list[dict]]:
@@ -53,6 +99,7 @@ def _context(store: Store, q: dict) -> tuple[dict, list[dict]]:
                             else (None, "voice-note transcription is turned off"))
         media.ensure_transcripts(store, files, transcriber, why)
     ctx = analysis.build_context(store, record, wf, lang, files)
+    ctx["history_of_this_subject"] = history(store, record, wf, lang)
     focus = set(q.get("attachment_ids") or [])
     photos = [f for f in files if f["kind"] == "photo" and (not focus or f.get("id") in focus)]
     images = analysis._image_inputs(photos) if photos else []
@@ -94,6 +141,21 @@ def answer_question(store: Store, llm: Any, qid: str) -> dict:
     meta = {"provider": getattr(result, "provider", "") or "", "model": getattr(result, "model", "") or "",
             "photos_seen": len(images) if "photos_not_seen" not in ctx else 0}
     return store.answer_question(qid, {**ans, **meta})
+
+
+def ask_now(store: Store, llm: Any, record_id: str, question: str, lang: str = "en") -> dict:
+    """A question asked in the Hermes chat about one record: answered right away from the same evidence (photos, voice
+    notes, procedures, history) and stored with the record, so the phone shows it too."""
+    rec = store.get_record(ALL, record_id)
+    q = store.save_question(ALL, record_id, validate_new({"id": "qc_" + uuid.uuid4().hex[:16], "question": question, "lang": lang}))
+    store.conn.execute("UPDATE questions SET status='answering', attempts=1 WHERE id=?", (q["id"],))
+    store.conn.commit()
+    try:
+        ans = answer_question(store, llm, q["id"])
+    except Exception as exc:
+        store.fail_question(dict(q, attempts=3), f"{type(exc).__name__}: {exc}")
+        raise
+    return {"question_id": q["id"], "record_id": rec["id"], **ans}
 
 
 def process_questions(store: Store, llm: Any, limit: int = 2) -> list[dict]:
