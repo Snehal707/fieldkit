@@ -9,7 +9,6 @@ import { KnowledgeIndex } from "./knowledge";
 import { attachmentUrl, captureGps, compressPhoto, getAttachment, hermesMediaUrl, saveAttachment, signaturePad, updateAttachment, VoiceRecorder } from "./media";
 import { installedPacks, installedWorkflows, installWorkflow, shellCached, storageInfo } from "./packs";
 import { completeDraft } from "./results";
-import { previousChecks, setCheck, type FollowupCheck } from "./followups";
 import { getSyncState, refreshPending, refreshReports, requestAnalysis, resendRecords, resolveConflict, retryRecords, runSync } from "./sync";
 import { rememberWorkspaceForWorkflow } from "./workspace";
 import { askAboutRecord, questionsFor, SUGGESTED_QUESTIONS, syncQuestions } from "./questions";
@@ -344,34 +343,10 @@ export const runView: View = async (main, p) => {
   };
 
   const notice = h("div");
-  const checksBox = h("div", { id: "followup-checks" });
-  let checksFor = "";
-  const renderChecks = async () => {
-    const prev = await previousChecks(wf, draft.answers, draft.id);
-    const key = prev ? prev.subject + prev.date : "";
-    if (key === checksFor) return;
-    checksFor = key;
-    clear(checksBox);
-    if (!prev) return;
-    const answered = new Map((draft.followup_checks ?? []).map((c) => [c.id, c] as [string, FollowupCheck]));
-    checksBox.append(h("div", { class: "card", "data-checks": String(prev.checks.length) },
-      h("h3", null, `Checks from the last report (${fmtTime(prev.date)})`),
-      h("p", { class: "muted" }, "Hermes asked for these to be verified. Your answers tell it what actually worked."),
-      ...prev.checks.map((c) => {
-        const cur = answered.get(c.id);
-        const value = h("input", { placeholder: "Reading or note (optional)", value: cur?.value ?? "",
-          oninput: async (e: Event) => { setCheck(draft, c, { value: (e.target as HTMLInputElement).value }); await save(); } }) as HTMLInputElement;
-        return h("div", { class: "field", "data-check": c.id }, h("div", null, h("strong", null, c.what)), c.how ? h("div", { class: "muted" }, `How: ${c.how}`) : null,
-          h("div", { class: "choices row" }, ...([["done", "Done"], ["not_done", "Not done"], ["cannot_check", "Can't check"]] as [FollowupCheck["result"], string][]).map(([v, lab]) =>
-            h("label", null, h("input", { type: "radio", name: `chk-${c.id}`, checked: cur?.result === v,
-              onchange: async () => { setCheck(draft, c, { result: v }); await save(); } }), lab))), value);
-      })));
-  };
   const render = () => {
     const st = computeState(wf, draft.answers, l);
     clear(form);
-    form.append(notice, checksBox);
-    void renderChecks();
+    form.append(notice);
     const vis = new Set(st.visible);
     for (const f of wf.fields) {
       if (!vis.has(f.id)) continue;
@@ -924,23 +899,6 @@ function reportV2(box: HTMLElement, r: any, tr: any, lg: string): void {
   if (r.quality?.problems?.length) box.append(h("div", { class: "banner warn" }, h("strong", null, "This report did not pass every quality check"),
     h("ul", null, ...r.quality.problems.map((q: string) => h("li", null, q)))));
   if (r.references?.length) box.append(h("h3", null, "Supporting references"), h("ul", null, ...r.references.map((x: any) => h("li", null, `${x.title}${x.source ? ` — ${x.source}` : ""}`))));
-  box.append(reportFeedback(r));
-}
-
-/** "Did this help you decide?" Feedback goes to Hermes as a user opinion: it can flag a report, never certify it. */
-function reportFeedback(r: any): HTMLElement {
-  const note = h("input", { placeholder: "What did you decide or do? (optional)", maxlength: 300 }) as HTMLInputElement;
-  const box = h("div", { class: "card report-feedback", id: "report-feedback" }, h("strong", null, "Did this report help you decide?"));
-  const send = async (helpful: boolean) => {
-    const { logEvent } = await import("./learning");
-    await logEvent("user_feedback", { report_id: r.report_id, record_id: r.record_id, helpful, note: note.value.trim(),
-      question: `report:${r.decision?.outcome ?? ""}`, answer: String(r.summary ?? "").slice(0, 300) },
-      { workspace_id: r.workspace?.id, ref_type: "report", ref_id: r.report_id });
-    clear(box);
-    box.append(h("div", { class: "muted", "data-sent": "true" }, "Thanks. Hermes uses this to improve your workspace (it never treats opinions as verified)."));
-  };
-  box.append(note, h("div", { class: "row" }, h("button", { onclick: () => send(true) }, "Yes, it helped"), h("button", { onclick: () => send(false) }, "No")));
-  return box;
 }
 
 function reportV1(box: HTMLElement, r: any): void {
@@ -954,7 +912,6 @@ function reportV1(box: HTMLElement, r: any): void {
   if (r.issues?.length) box.append(h("h3", null, "Issues identified"), h("ul", { class: "clean" }, ...r.issues.map((i: any) => h("li", null, sevBadge(i.severity), " ", h("strong", null, i.title), h("div", { class: "muted" }, i.evidence)))));
   if (r.missing_information?.length) box.append(h("h3", null, "Missing information"), h("ul", null, ...r.missing_information.map((m: string) => h("li", null, m))));
   if (r.suggested_actions?.length) box.append(h("h3", null, "Suggested actions"), h("ul", { class: "clean" }, ...r.suggested_actions.map((a: any) => h("li", null, h("span", { class: "badge" }, a.priority), " ", a.action))));
-  if (r.followups?.length) box.append(h("h3", null, "Follow-up tasks"), h("ul", { class: "clean" }, ...r.followups.map((f: any) => h("li", null, h("strong", null, f.title), f.due_date ? ` — due ${f.due_date}` : "", f.detail ? h("div", { class: "muted" }, f.detail) : null))));
   if (r.references?.length) box.append(h("h3", null, "Supporting references"), h("ul", null, ...r.references.map((x: any) => h("li", null, `${x.title}${x.source ? ` — ${x.source}` : ""}`))));
 }
 

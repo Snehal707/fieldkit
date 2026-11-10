@@ -267,8 +267,8 @@ export async function respond(corpus: Corpus, state: State, question: string, ct
   const threshold = corpus.mode === "meaning" ? SUPPORT_THRESHOLD : 0.3;
   if (!top || top.score < threshold) {
     return { reply: { kind: "not_covered", intent, gap: true, score: top?.score ?? 0, citations: [],
-      text: L(lang, "This isn't covered by the knowledge on this device, so I won't guess. I've noted the question for Hermes to research when you're back online.",
-        "यह इस डिवाइस के ज्ञान में शामिल नहीं है, इसलिए मैं अनुमान नहीं लगाऊँगा। ऑनलाइन होने पर हर्मीस इस पर शोध करेगा, मैंने प्रश्न नोट कर लिया है।"),
+      text: L(lang, "This isn't covered by your workspace on this phone, so I won't guess. About a visit, you can ask Hermes (\u201cAsk Hermes about this visit\u201d); anything else, ask Hermes in chat when you're online.",
+        "यह इस फ़ोन पर आपके कार्यक्षेत्र में शामिल नहीं है, इसलिए मैं अनुमान नहीं लगाऊँगा। किसी मुलाकात के बारे में हर्मीस से पूछ सकते हैं; बाकी के लिए ऑनलाइन होने पर हर्मीस से चैट में पूछें।"),
       suggestions: hits.slice(0, 3).filter((h) => h.score > threshold * 0.6).map((h) => ({ label: h.item.title, query: h.item.title })) }, state: st };
   }
   st.lastItems = hits.slice(0, 3).map((h) => h.item);

@@ -46,22 +46,6 @@ The phone opens them at `#/workspace/<id>`, the link Hermes returns.
 
 Older workspaces may contain `report_policy.after_sync`; it is accepted and ignored. Syncing never starts AI work.
 
-## Learning (0.2.5, earlier version)
-The learning loop is not part of the 0.2.6 story. This endpoint is kept for earlier data.
-
-`POST learning/events`
-```json
-{"device_id": "dev_…",
- "events": [{"kind": "knowledge_gap", "idempotency_key": "lev_…", "workspace_id": "ws-…", "ref_type": "question",
-             "ref_id": "…", "payload": {"text": "…"}, "created_at": "2026-11-10T09:00:00"}]}
-```
-- `kind` is `knowledge_gap` or `user_feedback` only. A phone cannot send `verified_outcome` or AI suggestions.
-  Verified outcomes are derived on Hermes from follow-up checks in synced records.
-- `idempotency_key` is required and makes each event idempotent. `workspace_id`, `ref_type`, `ref_id` and `created_at` are optional.
-- Up to 200 events per request. Each payload is limited to 8000 characters of JSON.
-
-**Response:** `{"saved": n, "duplicates": n, "rejected": [ids]}`. `rejected` lists events that were invalid (unknown kind, no idempotency key, or too large).
-
 ## Sync
 `POST sync/records`
 ```json
@@ -105,15 +89,8 @@ The same `idempotency_key` returns the stored response with `duplicate: true`. I
 | POST | `records/{id}/questions` | Queues a question about this record (0.2.6). Body `{id, question, lang, workspace_id, attachment_ids}`. Idempotent on `id` (the phone's id). Owner-checked: another user's record returns `404`. Answered after sync |
 | GET | `records/{id}/questions` | The record's questions (0.2.6), with `status` (`queued`, `answering`, `answered` or `failed`) and `answer` once answered. Owner-checked |
 | GET | `reports`, `reports/{id}` | Earlier version. Older reports stay readable |
-| GET/POST | `followups`, `followups/{id}` | Earlier version (not in the 0.2.6 story). `{title, detail?, record_id?, due_date?}`; `{status: open\|done}` |
 | GET | `jobs` | Recent jobs, counts and analysis mode |
 | POST | `examples/install` | Synthetic demo workflows and packs. Idempotent |
-
-**Follow-up checks in records (0.2.5, earlier version; not in the 0.2.6 story).** A record made for a subject that has a previous report carries
-`local_results.followup_checks`: a list of `{id, what, how, result, value?}`, where `result` is `done`, `not_done` or
-`cannot_check`, and `value` is the reading if one was given. Answers travel with the record. Only `done` and
-`not_done` count toward a verified outcome; `cannot_check` is stored but never counts. Hermes turns the answers into
-verified-outcome events when it syncs the record.
 
 ## PWA
 The app is served publicly at `/dashboard-plugins/fieldkit/app_dist/index.html`, outside Hermes' `/api` login gate. The page contains no data; every data call below still requires sign-in.

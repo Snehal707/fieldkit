@@ -119,9 +119,9 @@ or exercised by a test in this repository.
 | Skills (`ctx.register_skill`) | `fieldkit-workspace-builder`, next to the `fieldkit` skill, which resolves as `fieldkit:fieldkit` | Registered in `__init__.py`. `hermes plugins validate` passed at phase C |
 | `ctx.register_tool` | 9 new tools (32 in total) | Tool count: `hermes plugins doctor . --ci` reported 29 tools at phase C. The final count is not recorded |
 
-## Offline assistant model evaluation (0.2.5)
+## Workspace Assistant model evaluation (0.2.5)
 
-The offline assistant understands questions by meaning, which needs an on-device embedding model. Three methods were
+The Workspace Assistant understands questions by meaning, which needs an on-device embedding model. Three methods were
 compared on a synthetic question set written by the maintainers: keyword search, `Xenova/multilingual-e5-small`, and
 `Xenova/paraphrase-multilingual-MiniLM-L12-v2`.
 

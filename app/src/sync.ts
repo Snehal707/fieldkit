@@ -230,19 +230,6 @@ async function handleError(e: unknown, op: OutboxOp, recordId: string): Promise<
 
 /** Process the outbox once. Safe to call often; concurrent calls coalesce. */
 /** Upload queued knowledge gaps and feedback (idempotent on the server; verified outcomes travel inside records). */
-export async function sendLearning(dev: string): Promise<number> {
-  const { markSent, pendingEvents } = await import("./learning");
-  const evs = await pendingEvents();
-  let sent = 0;
-  for (let i = 0; i < evs.length; i += 50) {
-    const batch = evs.slice(i, i + 50);
-    await api("learning/events", { method: "POST", json: { device_id: dev, events: batch.map(({ sent: _s, ...e }) => e) } });
-    await markSent(batch.map((e) => e.id));
-    sent += batch.length;
-  }
-  return sent;
-}
-
 export async function runSync(opts: { force?: boolean } = {}): Promise<SyncState> {
   if (running) return state;
   running = true;
@@ -268,7 +255,6 @@ export async function runSync(opts: { force?: boolean } = {}): Promise<SyncState
       emit({ last_ok: nowIso() });
       await setSetting("auth_required", false);
       await refreshReports().catch(() => undefined);
-      await sendLearning(dev).catch(() => undefined);
       await import("./questions").then((m) => m.syncQuestions()).catch(() => undefined);
     }
   } finally {

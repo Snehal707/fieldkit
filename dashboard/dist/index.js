@@ -1733,104 +1733,6 @@
         )) : "No reports yet.")
       );
     }
-    function Workflows() {
-      var _a2;
-      const [data, err, reload] = useLoad(() => get("workflows?include_drafts=true"));
-      const [sel, setSel] = useState(null);
-      const [json, setJson] = useState("");
-      const [problems, setProblems] = useState(null);
-      const [msg, setMsg] = useState("");
-      const open = (id) => get(`workflows/${encodeURIComponent(id)}?draft=true`).then(setSel, (e) => setMsg(String(e)));
-      const save = (publish) => {
-        let def;
-        try {
-          def = JSON.parse(json);
-        } catch (e) {
-          setProblems([{ path: "", message: `Invalid JSON: ${e}` }]);
-          return;
-        }
-        post("workflows", { definition: def, publish }).then(
-          (r) => {
-            setProblems(null);
-            setMsg(`Saved ${r.workflow.id} v${r.workflow.version}`);
-            reload();
-          },
-          (e) => {
-            var _a3;
-            return setProblems([{ path: "", message: String((_a3 = e == null ? void 0 : e.message) != null ? _a3 : e) }]);
-          }
-        );
-      };
-      return h(
-        "div",
-        null,
-        h(
-          Section,
-          { title: "Workflows" },
-          h(Err, { msg: err }),
-          msg && h("div", null, msg),
-          ((_a2 = data == null ? void 0 : data.workflows) != null ? _a2 : []).map((w) => h(
-            "div",
-            { key: w.id, style: { ...box, ...row } },
-            h("div", { style: { flex: 1 } }, h("b", null, w.title), ` \xB7 ${w.domain || "general"} \xB7 latest v${w.latest_version} \xB7 published ${w.published_version ? `v${w.published_version}` : "no"}`),
-            h(Button, { onClick: () => open(w.id) }, "View"),
-            w.published_version !== w.latest_version && h(Button, { onClick: () => post(`workflows/${w.id}/publish`, {}).then(reload) }, "Publish latest"),
-            h("a", { href: `${APP_PATH}#/workflow/${encodeURIComponent(w.id)}`, target: "_blank", rel: "noopener" }, "Open in app")
-          ))
-        ),
-        sel && h(
-          Section,
-          { title: `Definition: ${sel.id} v${sel.version} (${sel.status})`, actions: h(Button, { onClick: () => setSel(null) }, "Close") },
-          h("pre", { style: pre }, JSON.stringify(sel, null, 2))
-        ),
-        h(
-          Section,
-          { title: "Import / edit workflow JSON" },
-          h("p", { style: { fontSize: 13, opacity: 0.8 } }, "Usually you create workflows by asking Hermes. Paste a FieldKit workflow definition to validate and save it here."),
-          h("textarea", { value: json, onChange: (e) => setJson(e.target.value), rows: 10, style: { width: "100%", fontFamily: "monospace" } }),
-          h("div", { style: row }, h(Button, { onClick: () => save(false) }, "Validate & save draft"), h(Button, { onClick: () => save(true) }, "Save & publish")),
-          problems && h("ul", { style: { color: "#b91c1c" } }, problems.map((p, i) => h("li", { key: i }, `${p.path || "/"}: ${p.message}`)))
-        )
-      );
-    }
-    function Knowledge() {
-      var _a2;
-      const [data, err, reload] = useLoad(() => get("packs"));
-      const [form, setForm] = useState({ pack_id: "", title: "", domain: "", language: "en", document: "" });
-      const [msg, setMsg] = useState("");
-      const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
-      const input = (k, ph) => h("input", { value: form[k], onChange: set(k), placeholder: ph, style: { flex: 1, minWidth: 140 } });
-      return h(
-        "div",
-        null,
-        h(
-          Section,
-          { title: "Knowledge & dictionary packs" },
-          h(Err, { msg: err }),
-          ((_a2 = data == null ? void 0 : data.packs) != null ? _a2 : []).filter((p) => p.kind !== "model" && p.kind !== "workspace").map((p) => h(
-            "div",
-            { key: p.id, style: { ...box, ...row } },
-            h("div", { style: { flex: 1 } }, h("b", null, p.title), ` \xB7 ${p.kind} v${p.version} \xB7 ${p.domain || "general"} \xB7 ${(p.size / 1024).toFixed(1)} KiB \xB7 sha256 ${p.sha256.slice(0, 10)}\u2026`),
-            h(Button, { onClick: () => del(`packs/${p.id}`).then(reload, (e) => setMsg(String(e))) }, "Delete")
-          ))
-        ),
-        h(
-          Section,
-          { title: "Import a document as a knowledge pack" },
-          h("p", { style: { fontSize: 13, opacity: 0.8 } }, "Deterministic import: headings become topics. For richer packs (FAQs, troubleshooting), ask Hermes to run fieldkit_create_knowledge_pack on the document."),
-          h("div", { style: row }, input("pack_id", "pack-id (slug)"), input("title", "Title"), input("domain", "Domain (any)"), input("language", "Language code")),
-          h("textarea", { value: form.document, onChange: set("document"), rows: 10, placeholder: "Paste text or markdown\u2026", style: { width: "100%", marginTop: 8 } }),
-          h(Button, { onClick: () => post("packs/from-document", form).then((r) => {
-            setMsg(`Created ${r.pack.id} with ${r.entries} entries`);
-            reload();
-          }, (e) => {
-            var _a3;
-            return setMsg(String((_a3 = e == null ? void 0 : e.message) != null ? _a3 : e));
-          }) }, "Create pack"),
-          msg && h("div", { style: { marginTop: 8 } }, msg)
-        )
-      );
-    }
     const STATE_WORDS = {
       complete: "complete",
       received: "files still uploading",
@@ -2040,40 +1942,6 @@
         h(RecordList, { records: (_a2 = data == null ? void 0 : data.records) != null ? _a2 : [] })
       );
     }
-    function Reports() {
-      const [data, err, reload] = useLoad(() => Promise.all([get("reports?limit=100"), get("followups")]));
-      const [open, setOpen] = useState(null);
-      const [full, setFull] = useState(null);
-      useEffect(() => {
-        if (open) get(`reports/${open}`).then(setFull);
-      }, [open]);
-      if (!data) return h(Err, { msg: err }) || h("div", null, "Loading\u2026");
-      const [reps, fus] = data;
-      return h(
-        "div",
-        null,
-        h(Section, { title: "Reports" }, reps.reports.length ? reps.reports.map((r) => h(
-          "div",
-          { key: r.id, style: box },
-          h(
-            "div",
-            { style: row },
-            h("div", { style: { flex: 1 } }, h("b", null, `${title(r)} \xB7 report v${r.version}`), h("div", { style: small }, r.record_id)),
-            r.requires_review && h(Badge, { style: { color: "#d97706" } }, "needs review"),
-            h("span", null, ts(r.created_at)),
-            h(Button, { onClick: () => setOpen(open === r.id ? null : r.id) }, open === r.id ? "Hide" : "Open")
-          ),
-          open === r.id && full ? h(ReportView, { r: full }) : h("div", null, r.summary)
-        )) : "No reports yet."),
-        h(Section, { title: "Follow-up actions" }, fus.followups.length ? fus.followups.map((f) => h(
-          "div",
-          { key: f.id, style: { ...box, ...row } },
-          h("div", { style: { flex: 1, textDecoration: f.status === "done" ? "line-through" : "none" } }, h("b", null, f.title), f.due_date ? ` \xB7 due ${f.due_date}` : "", f.detail ? h("div", null, f.detail) : null),
-          h(Badge, null, f.source),
-          h(Button, { onClick: () => post(`followups/${f.id}`, { status: f.status === "done" ? "open" : "done" }).then(reload) }, f.status === "done" ? "Reopen" : "Mark done")
-        )) : "No follow-ups.")
-      );
-    }
     function Sync() {
       const [data, err, reload] = useLoad(() => Promise.all([get("sync/status"), get("sync/conflicts"), get("jobs")]));
       if (!data) return h(Err, { msg: err }) || h("div", null, "Loading\u2026");
@@ -2104,30 +1972,6 @@
           );
         }) : "No open conflicts."),
         h("div", { style: small }, `Syncing never triggers AI work. Questions asked about visits are answered by FieldKit's worker (mode: ${jobs.mode}).`)
-      );
-    }
-    function OfflinePacks() {
-      const [data, err] = useLoad(() => get("models"));
-      if (!data) return h(Err, { msg: err }) || h("div", null, "Loading\u2026");
-      return h(
-        "div",
-        null,
-        h(
-          Section,
-          { title: "On-device model packs" },
-          h("p", { style: { fontSize: 13, opacity: 0.8 } }, data.description),
-          data.packs.map((m) => {
-            var _a2;
-            return h(
-              "div",
-              { key: m.id, style: box },
-              h("b", null, m.title),
-              ` \xB7 ${m.capability} \xB7 ${(m.download_size / 1e6).toFixed(1)} MB \xB7 ${m.license}`,
-              h("div", { style: { fontSize: 12, opacity: 0.75 } }, m.model ? `${m.model}@${(_a2 = m.revision) == null ? void 0 : _a2.slice(0, 10)}` : m.engine, " \xB7 ", m.files.map((f) => f.url.split("/").pop()).join(", "))
-            );
-          })
-        ),
-        h(Section, { title: "Pinned runtimes" }, data.runtimes.map((r) => h("div", { key: r.id }, `${r.id}@${r.version} \xB7 ${r.license} \xB7 ${r.fetched_from}`)))
       );
     }
     function Mobile() {

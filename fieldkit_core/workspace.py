@@ -1,4 +1,4 @@
-"""Workspaces: a user's job turned into an offline kit (plan: docs/plans/workspace-builder.md, sections 3 and 5).
+"""Workspaces: a user's work turned into an offline kit, built by Hermes from a short interview.
 
 A workspace bundle is built by Hermes (interview → research → structured output) and submitted through a tool.
 FieldKit never trusts the labels in it: this module validates the bundle and *computes* every evidence status

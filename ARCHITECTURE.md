@@ -96,7 +96,8 @@ local findings into the report as `local_findings`.
 4. Two paths can drain the queue:
    - the background worker, in any process where `ctx.llm` exists (verified to be the dashboard process in v0.23.0);
    - the `fieldkit_process_pending_jobs` tool, called by Hermes.
-5. Earlier versions (before 0.2.6) stored the report, created follow-ups and set the record's `analysis_status` to `completed` or `requires_review`. Sync does not start this now.
+5. Reports created before 0.2.6 were stored this way and stay readable. Since 0.2.6 sync never creates a job; the
+   same worker answers questions about visits instead.
    - `requires_review` is set only when there is a review trigger (`review_triggers`): a high or critical finding
      (from Hermes or the phone's local rules), Hermes' own flag with a stated reason, a critical decision, or a
      report that still fails a quality check after the repair pass.
@@ -143,32 +144,26 @@ Interview (Hermes, skill fieldkit-workspace-builder): purpose first, then 5–8 
   → fieldkit_undo_workspace_update → previous version republished as a new version
 ```
 
-Earlier versions (0.2.5) also ran a learning loop (`fieldkit_propose_workspace_changes`, `fieldkit_decide_candidate`,
-verified outcomes from follow-up checks). That loop is not part of the 0.2.6 story.
-
 | Module | Role |
 |---|---|
 | `fieldkit_core/workspace.py` | Bundle and brief validation, source tiers, evidence status, decision guide graph checks, excerpt checks, publishing as workflows and packs, starter workspaces, the onboarding prompt text |
 | `fieldkit_core/workspace_schema.py` | Per-part JSON Schemas and examples, repairs of unambiguous shape mistakes (`normalize`), item checks with paths and hints, cross-reference and type checks (0.2.6) |
 | `fieldkit_core/workspace_tools.py` | The workspace and build tools (schemas and handlers), including the build tools from 0.2.6 |
-| `fieldkit_core/decision.py` | Decision scale, report v2 schema additions, deterministic report checks, follow-ups from next actions (earlier-version reports) |
-| `fieldkit_core/learning.py` | Learning events (idempotent per key), verified outcomes from follow-up checks, candidate clustering, confirmation rules (earlier version) |
+| `fieldkit_core/decision.py`, `analysis.py`, `learning.py` | Kept so data created before 0.2.6 (older reports) stays readable; not used by new work |
 | `app/src/workspace.ts` | Installs and lists workspaces on the phone, with SHA-256 checked packs; the on-phone summary counts (0.2.6, no AI) |
 | `app/src/guides.ts` | Runs decision guides offline (typed answers, outcome with each action's evidence status) |
-| `app/src/assistant.ts`, `assistant_core.ts`, `assistant_intents.ts`, `views_assistant.ts` | Workspace Assistant (grounded): intent by meaning and cues, dialogue state, retrieval, answers with citations, knowledge gaps |
-| `app/src/followups.ts` | Follow-up checks asked by the next inspection of the same subject (earlier version) |
-| `app/src/learning.ts` | Queue of learning events, uploaded after each sync (earlier version) |
+| `app/src/assistant.ts`, `assistant_core.ts`, `assistant_intents.ts`, `views_assistant.ts` | Workspace Assistant (grounded): intent by meaning and cues, dialogue state, retrieval, answers with citations, the "Ask Hermes about this visit" hand-off |
+| `app/src/followups.ts` | Finds the field that identifies a record's subject (for earlier entries of the same subject) |
+| `app/src/learning.ts` | Vector cache for the Workspace Assistant |
 | `fieldkit_core/questions.py` | Questions about one visit (0.2.6): validation, answering from the record's evidence, worker queue |
 | `app/src/questions.ts` | Questions about one visit on the phone (0.2.6): kept offline with the visit, sent after sync, answers shown on the visit |
 
 Rules that do not depend on the model:
-- The evidence status (verified, supported, conflicting, your procedure, learned local practice, unverified) is
+- The evidence status (verified, supported, conflicting, your procedure, unverified) is
   computed by FieldKit. Unverified model knowledge cannot become a decision-guide action, a rule threshold or a
   procedure.
 - A workspace change is published only after the user approves it (`fieldkit_publish_workspace`, `user_approved`).
   Undo republishes the previous version as a new version.
-- Earlier learning loop: learning inputs stayed apart, AI suggestions were never evidence, and a candidate needed the
-  user's confirmation.
 
 The phone and Hermes exchange only through the plugin API: `GET workspaces`, `GET workspaces/{id}`,
 and `POST` and `GET records/{id}/questions` (see [docs/API.md](docs/API.md)).

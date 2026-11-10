@@ -95,14 +95,9 @@ ws.publish(s, BUNDLE["id"], d["version"])
   m = await ask(page, "दूध स्वीकार करूँ या लौटा दूँ?");
   await expect(m).toHaveAttribute("data-kind", "guide_question");
 
-  // Off-topic: refused, not guessed, and queued for Hermes as a knowledge gap.
+  // Off-topic: refused, not guessed.
   m = await ask(page, "Who won the cricket match yesterday?");
   await expect(m).toHaveAttribute("data-kind", "not_covered");
-  const gaps = await page.evaluate(() => new Promise<number>((res) => {
-    const q = indexedDB.open("fieldkit");
-    q.onsuccess = () => { const g = q.result.transaction("learning").objectStore("learning").getAll(); g.onsuccess = () => res(g.result.filter((e: any) => e.kind === "knowledge_gap").length); };
-  }));
-  expect(gaps).toBe(1);
   expect(requests.filter((u) => /^https?:\/\/(?!127\.0\.0\.2)/.test(u))).toEqual([]);   // nothing left the device
   await ctx.close();
 });

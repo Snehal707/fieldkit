@@ -1,7 +1,6 @@
-// 0.2.5 decision-focused reports, against a real Hermes: the report leads with a decision, ordered actions with how to
-// verify them, and checks for next time; the next inspection of the same asset asks those checks and Hermes receives
-// the answers with the new record (verified outcomes for the learning loop). The analysis runs FieldKit's real
-// pipeline with the LLM round-trip stubbed (tests/python/hermes_stub.py).
+// Older structured reports (created before 0.2.6) stay readable on the phone: the report leads with a decision and
+// ordered actions with how to verify them. The report is made by FieldKit's real pipeline with the LLM round-trip
+// stubbed (tests/python/hermes_stub.py) and arrives with sync.
 import { chromium, webkit, expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
@@ -79,22 +78,5 @@ print(json.dumps({"outcome": report["decision"]["outcome"], "problems": report["
   await expect(page.locator("#report-actions li").first()).toContainText("AI suggestion");
   await expect(page.locator("#report-checks")).toContainText("Vibration after alignment");
 
-  // Next inspection of the same asset: the report's checks are asked, and the answers reach Hermes.
-  await inspect(page);
-  const checks = page.locator("#followup-checks [data-check]");
-  await expect(checks).toHaveCount(3, { timeout: 15_000 });       // 2 actions with verify_by + 1 follow-up check
-  const vib = checks.filter({ hasText: "Vibration after alignment" });
-  await vib.locator("label", { hasText: "Done" }).first().click();
-  await vib.locator("input[placeholder^='Reading']").fill("3.9 mm/s at both bearings");
-  await checks.filter({ hasText: "Tag out" }).locator("label", { hasText: "Not done" }).click();
-  await page.getByRole("button", { name: "Complete workflow" }).click();
-  await expect(page.locator("text=Saved to Hermes — confirmed")).toBeVisible({ timeout: 30_000 });
-  const id2 = page.url().split("#/results/")[1].split("?")[0];
-  const rec2 = await (await ctx.request.get(`${API}/records/${id2}`)).json();
-  const got = rec2.local_results.followup_checks as any[];
-  expect(got.map((c) => [c.what, c.result, c.value ?? ""])).toEqual(expect.arrayContaining([
-    ["Vibration after alignment", "done", "3.9 mm/s at both bearings"],
-    ["Tag out the machine until the guard is refitted.", "not_done", ""]]));
-  expect(got.every((c) => c.record_id === id)).toBe(true);
   await ctx.close();
 });

@@ -6,7 +6,7 @@ import { db, definitionFor } from "./db";
 import { text, type Workflow } from "./engine";
 import { subjectField } from "./followups";
 import { embed, embeddingModelId, installedModels, ocr, ocrLanguages, speak, transcribe, translate, translationPairs } from "./intel";
-import { logEvent, vectorCache } from "./learning";
+import { vectorCache } from "./learning";
 import { VoiceRecorder } from "./media";
 import { installedPacks } from "./packs";
 import { clear, h, toast } from "./util";
@@ -71,8 +71,6 @@ export const assistantView: View = async (main, p) => {
   };
 
   /** The workspace a question belongs to: the open report's, else the built (non-starter) workspace on this device. */
-  const wsId = (): string | undefined => (corpus ? scopeOf(corpus, ctx) : undefined) ?? ctx.report?.workspace?.id
-    ?? corpus?.workspaces.find((w) => !w.id.startsWith("starter-"))?.id;
   const show = (q: string, r: Reply) => {
     const body = h("div", { class: "msg-text" }, r.text);
     const box = bubble("bot", body);
@@ -90,9 +88,7 @@ export const assistantView: View = async (main, p) => {
         if (!(await translationPairs()).some(([f, t]) => f === state.lang && t === other)) return toast("Install the offline translation pack first.", "error");
         try { const t = await translate(r.text, state.lang, other); body.textContent = t.text; } catch (e) { toast((e as Error).message, "error"); }
       } }, "Translate"),
-      h("button", { onclick: () => { const s = speak(body.textContent ?? "", state.lang); if (!s.ok) toast(s.reason!, "error"); } }, "🔊"),
-      h("button", { "aria-label": "Helpful", onclick: async () => { await logEvent("user_feedback", { question: q, answer: r.text.slice(0, 500), helpful: true, intent: r.intent }, { workspace_id: wsId() }); toast("Thanks — noted for Hermes", "ok"); } }, "👍"),
-      h("button", { "aria-label": "Not helpful", onclick: async () => { await logEvent("user_feedback", { question: q, answer: r.text.slice(0, 500), helpful: false, intent: r.intent }, { workspace_id: wsId() }); toast("Noted — Hermes will look at it", "ok"); } }, "👎"));
+      h("button", { onclick: () => { const s = speak(body.textContent ?? "", state.lang); if (!s.ok) toast(s.reason!, "error"); } }, "🔊"));
     box.append(tools);
   };
 
@@ -112,10 +108,6 @@ export const assistantView: View = async (main, p) => {
         catch (e) { toast((e as Error).message, "error"); }
       } }, "Ask Hermes about this visit");
       log.lastElementChild?.append(h("div", { class: "row" }, b));
-    }
-    if (res.reply.gap) {
-      await logEvent("knowledge_gap", { question: q, lang: state.lang, best_score: res.reply.score ?? 0, record_id: ctx.record?.id ?? null,
-        workflow_id: ctx.record?.workflow_id ?? null }, { workspace_id: wsId() });
     }
   };
 

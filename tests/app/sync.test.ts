@@ -227,23 +227,6 @@ describe("audit fixes", () => {
   });
 });
 
-describe("learning events upload (0.2.5)", () => {
-  it("sends queued knowledge gaps and feedback once, then marks them sent", async () => {
-    const { logEvent, pendingEvents } = await import("../../app/src/learning");
-    const { sendLearning } = await import("../../app/src/sync");
-    await logEvent("knowledge_gap", { question: "How do I clean the analyser?" }, { workspace_id: "dairy-collection-mh" });
-    await logEvent("user_feedback", { helpful: false, question: "What is SNF?" });
-    handler = () => new Response(JSON.stringify({ saved: 2, duplicates: 0, rejected: [] }), { status: 200, headers: { "content-type": "application/json" } });
-    expect(await sendLearning("dev_x")).toBe(2);
-    const post = calls.find((c) => c.url.endsWith("learning/events"))!;
-    expect(post.method).toBe("POST");
-    expect(post.body.device_id).toBe("dev_x");
-    expect(post.body.events.map((e: any) => e.kind).sort()).toEqual(["knowledge_gap", "user_feedback"]);
-    expect(post.body.events.every((e: any) => e.idempotency_key && !("sent" in e))).toBe(true);
-    expect(await pendingEvents()).toEqual([]);
-    expect(await sendLearning("dev_x")).toBe(0);                     // nothing re-sent
-  });
-});
 
 // 0.2.6: questions about one visit wait on the phone until that visit has synced, then go to Hermes; the answer comes
 // back to the same visit and stays readable offline.

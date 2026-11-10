@@ -94,7 +94,7 @@ the Hermes Mobile conversation, and the dashboard tab all worked.
 | Chat about an entry | "What do you think about my latest kitchen visit?" → assessment with uncertainty and a next step (44 s) |
 | Editing by chat | Add a question and remove another → Hermes showed the changes and asked before publishing; the phone got "Update available"; an older entry offline still showed the removed question's answer |
 | Undo | "Undo my last workspace update" → previous version republished as a new one; the phone updated; older entries stayed readable |
-| Tests | 204 Python, 130 TypeScript; Chromium E2E 30 passed / 5 skipped; WebKit E2E passed; `hermes plugins validate` and `doctor` pass (20 tools) |
+| Tests | 204 Python, 129 TypeScript; Chromium E2E 29 passed / 5 skipped; WebKit E2E passed; `hermes plugins validate` and `doctor` pass (20 tools) |
 
 Earlier versions (0.2.4–0.2.5) were also checked for strict offline use, crash-safe sync, cross-device Saved Records,
 SHA-256 file integrity and access control (every API route checks the signed-in user).

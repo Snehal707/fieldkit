@@ -1,5 +1,12 @@
 # Testing FieldKit
 
+
+> **Current behaviour (0.2.6), in short.** Syncing never triggers AI work. Hermes answers questions about a visit
+> (asked on the phone, queued offline) and requests in chat. Workspaces are built from a purpose-first interview and
+> edited by chat with a change summary, approval and undo. Hermes sees 20 tools. The sections below are a dated log:
+> later sections replace earlier ones (for example the after-sync modes, automatic reports, follow-up checks and the
+> learning loop described for 0.2.5 and early 0.2.6 were removed). The latest results are at the end.
+
 All results below were produced on 2026-11-08/09 on Windows 11 with Hermes Agent **v0.23.0**, Python 3.11 and
 Node 22. Anything not listed as run here is marked **unverified**.
 
