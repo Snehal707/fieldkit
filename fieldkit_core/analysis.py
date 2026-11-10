@@ -418,6 +418,37 @@ def _v1_actions(report: dict) -> list:
     return [{"action": a.get("action", ""), "priority": pr} for a in report.get("next_actions") or []][:30]
 
 
+RATE_LIMIT_DEFAULT_S = 300
+RATE_LIMIT_MAX_S = 7200
+
+
+def rate_limit_delay(exc: BaseException) -> Optional[float]:
+    """Seconds to wait when the provider says "rate limited / busy, retry later" (HTTP 429 or a retry_after hint).
+    Seen in a real run: Nous Portal returned 429 with retry_after of 30-45 minutes; the old retry burnt all attempts
+    within ~100 s and marked the record failed. None for other errors."""
+    import re as _re
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None) or getattr(getattr(exc, "response", None), "status_code", None)
+    msg = f"{type(exc).__name__} {exc}"
+    low = msg.lower()
+    if not (status == 429 or "ratelimit" in low.replace(" ", "").replace("_", "") or "rate limit" in low or "429" in low
+            or "rate_limited" in low):
+        return None
+    secs = None
+    for src in (getattr(exc, "retry_after", None), getattr(getattr(exc, "response", None), "headers", {}) or {}):
+        if isinstance(src, (int, float)):
+            secs = float(src)
+        elif hasattr(src, "get") and src.get("retry-after"):
+            try:
+                secs = float(src.get("retry-after"))
+            except (TypeError, ValueError):
+                pass
+    if secs is None:
+        m = _re.search(r"retry[_ -]?after['\"]?\s*[:=]\s*['\"]?(\d+(?:\.\d+)?)", msg, _re.I)
+        if m:
+            secs = float(m.group(1))
+    return max(30.0, min(RATE_LIMIT_MAX_S, secs if secs is not None else RATE_LIMIT_DEFAULT_S))
+
+
 def process_pending(store: Store, llm: Any, limit: int = 2) -> list[dict]:
     """Claim and run ready jobs. Each job is retried with backoff and fails permanently after max_attempts."""
     done = []
@@ -433,6 +464,12 @@ def process_pending(store: Store, llm: Any, limit: int = 2) -> list[dict]:
             done.append({"job_id": job["id"], "record_id": job["record_id"], "report_id": saved["report_id"],
                          "status": "requires_review" if review else "completed"})
         except Exception as exc:  # job-level isolation
+            wait = rate_limit_delay(exc)
+            if wait is not None:   # the provider is busy: wait as told, without using up an attempt
+                store.defer_job(job, f"Hermes' model is busy (rate limited); retrying in {int(wait // 60) or 1} min. "
+                                     f"{type(exc).__name__}: {str(exc)[:300]}", wait)
+                done.append({"job_id": job["id"], "record_id": job["record_id"], "status": "pending", "retry_in_s": int(wait)})
+                continue
             status = store.fail_job(job, f"{type(exc).__name__}: {exc}")
             done.append({"job_id": job["id"], "record_id": job["record_id"], "status": status, "error": str(exc)[:300]})
     return done

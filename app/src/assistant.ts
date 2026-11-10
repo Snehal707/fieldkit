@@ -4,7 +4,7 @@
 // cannot support is reported as not covered and queued for Hermes as a knowledge gap. No text is generated.
 import { cosine, isFollowUp, itemReference, linkEntities, prototypes, rankIntents, SUPPORT_THRESHOLD, type Entity, type Prototype } from "./assistant_core";
 import type { Intent } from "./assistant_intents";
-import { text, type Workflow } from "./engine";
+import { classify, text, type Workflow } from "./engine";
 import { answerGuide, currentQuestion, outcomeOf, startGuide, type Guide, type GuideRun } from "./guides";
 
 export type EmbedFn = (texts: string[]) => Promise<number[][] | null>;
@@ -15,10 +15,12 @@ export interface Item {
 }
 
 export interface Corpus { items: Item[]; vecs: (number[] | null)[]; protos: Prototype[]; entities: Entity[]; mode: "meaning" | "basic";
-  workspaces: { id: string; title: string; decisionScale: any[]; guides: Guide[]; status: Record<string, string> }[] }
+  workspaces: { id: string; title: string; decisionScale: any[]; guides: Guide[]; status: Record<string, string>; workflows: string[] }[] }
 
 export interface AskContext { record?: { id: string; workflow_id: string; answers: Record<string, unknown>; completed_at?: string } | null;
-  report?: any; workflow?: Workflow | null; history?: { id: string; completed_at?: string; answers: Record<string, unknown>; report?: any }[] }
+  report?: any; workflow?: Workflow | null; history?: { id: string; completed_at?: string; answers: Record<string, unknown>; report?: any }[];
+  /** The workspace the user is working in (chosen on the assistant page, or the last one opened). */
+  workspaceId?: string | null }
 
 export interface State {
   lang: string; lastIntent?: Intent; topic?: Entity; issueIndex?: number; lastItems?: Item[];
@@ -52,7 +54,7 @@ export async function buildCorpus(packs: { id: string; kind: string; content: an
   for (const p of packs.filter((x) => x.kind === "workspace")) {
     const m = p.content;
     workspaces.push({ id: m.workspace_id, title: text(m.title, lang), decisionScale: m.report_policy?.decision_scale ?? [], guides: m.guides ?? [],
-      status: Object.fromEntries((m.evidence ?? []).map((e: any) => [e.id, e.status])) });
+      status: Object.fromEntries((m.evidence ?? []).map((e: any) => [e.id, e.status])), workflows: (m.workflows ?? []).map((w: any) => w.id) });
     for (const pid of m.packs ?? []) wsByPack.set(pid, m.workspace_id);
     const status = new Map<string, string>((m.evidence ?? []).map((e: any) => [e.id, e.status]));
     const src = new Map<string, any>((m.sources ?? []).map((s: any) => [s.id, s]));
@@ -60,7 +62,7 @@ export async function buildCorpus(packs: { id: string; kind: string; content: an
       const qs = Object.values(g.nodes ?? {}).map((n: any) => text(n.question, lang) || text(n.outcome?.title, lang)).filter(Boolean).join(". ");
       items.push({ key: `guide:${m.workspace_id}:${g.id}`, kind: "guide", title: text(g.title, lang), body: qs, workspaceId: m.workspace_id, guide: g,
         status: bestOf((g.evidence_ids ?? []).map((x: string) => status.get(x) ?? "unverified")), href: `#/guide/${m.workspace_id}/${g.id}` });
-      entities.push({ id: `guide:${g.id}`, kind: "guide", names: Object.values(g.title ?? {}).map(String), ref: g });
+      entities.push({ id: `guide:${g.id}`, kind: "guide", names: Object.values(g.title ?? {}).map(String), ref: g, ws: m.workspace_id });
     }
     for (const e of m.evidence ?? []) {
       if (!["verified", "supported", "user_procedure", "local_practice", "conflicting"].includes(e.status)) continue;
@@ -82,8 +84,8 @@ export async function buildCorpus(packs: { id: string; kind: string; content: an
     for (const e of p.content.entries ?? []) {
       const names = [e.term, ...Object.values(e.translations ?? {}), ...(e.synonyms ?? [])].map(String).filter(Boolean);
       items.push({ key: `term:${p.id}::${e.term}`, kind: "term", title: String(e.term), body: `${e.definition ?? ""} ${Object.values(e.translations ?? {}).join(", ")}`,
-        source: text(p.content.title, lang), raw: e });
-      entities.push({ id: `term:${e.term}`, kind: "term", names, ref: e });
+        source: text(p.content.title, lang), workspaceId: wsByPack.get(p.id), raw: e });
+      entities.push({ id: `term:${e.term}`, kind: "term", names, ref: e, ws: wsByPack.get(p.id) });
     }
   }
   const protos = prototypes(packs.filter((x) => x.kind === "workspace").flatMap((p) => p.content.intents ?? []));
@@ -131,10 +133,11 @@ const STOP = new Set(("the and for are was were what which who whom whose when w
   + "have has had been being any all some more most very just also please tell explain give show is it in of to a an "
   + "क्या है हैं था थी थे का की के को में से पर और या यह वह इस उस एक मैं मुझे आप कैसे क्यों कब कहाँ कौन होता होती").split(/\s+/));
 
-function rank(corpus: Corpus, qv: number[] | null, q: string, kinds: Item["kind"][], topic?: Entity): { item: Item; score: number }[] {
+function rank(corpus: Corpus, qv: number[] | null, q: string, kinds: Item["kind"][], topic?: Entity, scope?: string): { item: Item; score: number }[] {
   const words = [...new Set(q.toLowerCase().split(/[^\p{L}\p{M}\p{N}]+/u).filter((w) => w.length > 2 && !STOP.has(w)))];
   return corpus.items.map((item, i) => {
     if (!kinds.includes(item.kind)) return null;
+    if (scope && item.workspaceId && item.workspaceId !== scope) return null;   // another workspace's content
     let s = qv && corpus.vecs[i] ? cosine(qv, corpus.vecs[i]!) : 0;
     if (!qv) {   // basic mode: content-word overlap only (no meaning model installed)
       const hay = `${item.title} ${item.body}`.toLowerCase();
@@ -153,6 +156,31 @@ function cite(it: Item): Citation {
 
 // ----------------------------------------------------------------------------- answering
 export function newState(lang: string): State { return { lang, turns: 0, guide: null }; }
+
+/** The workspace to answer from: the open report's, the record's workflow's, or the one the user is working in.
+ *  Undefined = all downloaded content (one workspace on the device, or the user chose "all"). Content that belongs to
+ *  no workspace (general knowledge packs) is always included. */
+export function scopeOf(corpus: Corpus, ctx: AskContext): string | undefined {
+  const has = (id?: string | null) => !!id && corpus.workspaces.some((w) => w.id === id);
+  if (has(ctx.report?.workspace?.id)) return ctx.report.workspace.id;
+  const byWf = ctx.record ? corpus.workspaces.find((w) => w.workflows.includes(ctx.record!.workflow_id))?.id : undefined;
+  if (byWf) return byWf;
+  return has(ctx.workspaceId) ? ctx.workspaceId! : undefined;
+}
+
+/** No Hermes report yet: answer "what now / why / is it safe" from the record's on-phone result (the workspace's own
+ *  rules), labelled as such. Seen in a real trial: these questions got "not covered" while the phone already knew. */
+function localFindingsReply(ctx: AskContext, lang: string): Reply | null {
+  if (!ctx.record || !ctx.workflow) return null;
+  const fs = classify(ctx.workflow, ctx.record.answers as any, lang);
+  const order: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+  fs.sort((a, b) => (order[a.severity] ?? 5) - (order[b.severity] ?? 5));
+  const lines = fs.map((f) => `• ${f.label}${f.detail && f.detail !== f.label ? ` — ${f.detail}` : ""}`);
+  return { kind: "answer", citations: [{ title: L(lang, "On-phone result (your workspace rules)", "फ़ोन पर परिणाम (आपके कार्यक्षेत्र के नियम)") }],
+    text: [L(lang, "No Hermes report yet. From your workspace rules, on this phone:", "अभी हर्मीस रिपोर्ट नहीं है। आपके नियमों के अनुसार, इसी फ़ोन पर:"),
+      lines.length ? lines.join("\n") : L(lang, "Your rules found nothing that needs action for this record.", "आपके नियमों में इस रिकॉर्ड के लिए कोई कार्रवाई नहीं निकली।")].join("\n"),
+    uncertainty: L(lang, "Hermes adds its full opinion after this record syncs.", "सिंक होने के बाद हर्मीस अपनी पूरी राय जोड़ेगा।") };
+}
 
 export async function respond(corpus: Corpus, state: State, question: string, ctx: AskContext, embedFn: EmbedFn): Promise<{ reply: Reply; state: State }> {
   const q = question.trim();
@@ -181,13 +209,20 @@ export async function respond(corpus: Corpus, state: State, question: string, ct
   // support threshold, never by a report handler (e.g. "who won the match yesterday?" is not "compare with last time").
   else if (weak && !ref) intent = undefined;
   if (ref?.kind === "issue" && !["why", "what_next", "is_it_safe"].includes(intent ?? "")) intent = "explain_issue";
-  const ents = linkEntities(q, [...corpus.entities, ...contextEntities(ctx, lang)]);
+  const scope = scopeOf(corpus, ctx);
+  const ents = linkEntities(q, [...corpus.entities.filter((e) => !scope || !e.ws || e.ws === scope), ...contextEntities(ctx, lang)]);
   const topic = ents[0] ?? (follow ? st.topic : undefined);
   st = { ...st, lastIntent: intent, topic };
   if (ref?.kind === "issue") st.issueIndex = ref.index < 0 ? (ctx.report?.issues?.length ?? 1) : ref.index;
 
   const r = ctx.report;
   const reply = (x: Reply) => ({ reply: { ...x, intent }, state: st });
+  const hasPrevious = (ctx.history ?? []).some((h) => h.id !== ctx.record?.id);
+  if (ctx.record && !r?.decision && (["what_next", "why", "is_it_safe", "explain_report", "explain_issue"].includes(intent ?? "")
+      || (intent === "compare_to_previous" && !hasPrevious))) {
+    const lf = localFindingsReply(ctx, lang);
+    if (lf) return reply(lf);
+  }
 
   switch (intent) {
     case "translate":
@@ -214,7 +249,8 @@ export async function respond(corpus: Corpus, state: State, question: string, ct
       if (r?.decision) return reply(decisionReply(r, lang));
       break;
     case "compare_to_previous":
-      if (ctx.record) return reply(compare(ctx, lang));
+      if (ctx.record && hasPrevious) return reply(compare(ctx, lang));
+      if (ctx.record && r?.next_actions?.length) return reply(nextActions(r, lang, st.issueIndex));
       break;
   }
 
@@ -224,8 +260,9 @@ export async function respond(corpus: Corpus, state: State, question: string, ct
     if (term) return reply(defineTerm(term, lang));
   }
   const kinds: Item["kind"][] = intent === "check_requirement" ? ["claim", "entry"] : intent === "define_term" ? ["term", "entry"]
-    : ["how_to", "troubleshoot", "is_it_safe", "what_next"].includes(intent ?? "") ? ["guide", "entry"] : ["entry", "guide", "claim", "term"];
-  const hits = rank(corpus, qv, topic && follow ? `${topic.names[0]} ${q}` : q, kinds, topic);
+    // "What should I do / is it safe": a guide or entry first, but the user's own rules (claims) answer it too.
+    : ["how_to", "troubleshoot", "is_it_safe", "what_next"].includes(intent ?? "") ? ["guide", "entry", "claim"] : ["entry", "guide", "claim", "term"];
+  const hits = rank(corpus, qv, topic && follow ? `${topic.names[0]} ${q}` : q, kinds, topic, scope);
   const top = hits[0];
   const threshold = corpus.mode === "meaning" ? SUPPORT_THRESHOLD : 0.3;
   if (!top || top.score < threshold) {

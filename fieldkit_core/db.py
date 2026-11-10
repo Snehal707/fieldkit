@@ -774,6 +774,14 @@ class Store:
                           (_now(), cutoff)).rowcount
             return n
 
+    def defer_job(self, job: dict, note: str, delay_s: float) -> None:
+        """Provider asked us to wait (rate limit): back to pending after delay_s, the attempt is not counted."""
+        with self.tx() as c:
+            c.execute("UPDATE jobs SET status='pending', attempts=MAX(0, attempts-1), last_error=?, next_run_at=?, updated_at=? "
+                      "WHERE id=?", (note[:2000], _now() + delay_s, _now(), job["id"]))
+            c.execute("UPDATE records SET analysis_status='pending' WHERE id=? AND analysis_job_id=?", (job["record_id"], job["id"]))
+            self.audit(c, ALL, "analysis.deferred", job["record_id"], {"job": job["id"], "delay_s": int(delay_s)})
+
     def fail_job(self, job: dict, error: str) -> str:
         with self.tx() as c:
             final = job["attempts"] >= job["max_attempts"]

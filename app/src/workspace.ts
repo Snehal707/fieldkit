@@ -59,3 +59,22 @@ export const STATUS_LABEL: Record<string, string> = {
 };
 
 export function wsTitle(m: { title: any }, lang: string): string { return text(m.title, lang) || "Workspace"; }
+
+
+// The workspace the user is working in (per device convenience; the assistant answers from it).
+const CURRENT_WS = "fieldkit.current-workspace";
+export function rememberWorkspace(id: string | null): void {
+  try { if (id) localStorage.setItem(CURRENT_WS, id); else localStorage.removeItem(CURRENT_WS); } catch { /* storage blocked */ }
+}
+export function currentWorkspace(): string | null {
+  try { return localStorage.getItem(CURRENT_WS); } catch { return null; }
+}
+
+/** The workspace a workflow belongs to becomes the one in use (opening a workflow is the strongest signal of what the
+ *  user is working on; a trial showed that "last workspace page viewed" was wrong). */
+export async function rememberWorkspaceForWorkflow(workflowId: string): Promise<void> {
+  try {
+    const hit = (await installedWorkspaces()).find((w) => (w.manifest.workflows ?? []).some((x) => x.id === workflowId));
+    if (hit) rememberWorkspace(hit.manifest.workspace_id);
+  } catch { /* no workspaces on this device */ }
+}

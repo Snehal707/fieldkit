@@ -173,7 +173,7 @@ Details and commands for each phase are in [docs/TESTING.md](docs/TESTING.md) (P
 
 | Area | Status |
 |---|---|
-| Tests | 189 Python tests, 126 TypeScript tests, 20 Playwright E2E spec files (per-browser results in [docs/TESTING.md](docs/TESTING.md)). Every one of the 35 Hermes tools has a test (guard: `test_every_registered_tool_is_exercised_by_tests`) |
+| Tests | 191 Python tests, 128 TypeScript tests, 20 Playwright E2E spec files (per-browser results in [docs/TESTING.md](docs/TESTING.md)). Every one of the 35 Hermes tools has a test (guard: `test_every_registered_tool_is_exercised_by_tests`) |
 | Simulated Hermes Mobile conversation | Covered by a test: create, publish, app link, sync, process jobs, get record and report, compare and save report, follow-up, sync status, conflict resolution. The real conversation was also checked on the owner's iPhone (see above) |
 | Security | `hermes plugins validate` security scan: safe. `npm audit`: 0 vulnerabilities. `pip-audit`: 0 known vulnerabilities |
 | Access control | Every API route checks the signed-in user; the app page is public and contains no data. v0.1.7 fixed a cross-user leak where `GET /jobs` listed other users' jobs |

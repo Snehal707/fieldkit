@@ -11,6 +11,7 @@ import { installedPacks, installedWorkflows, installWorkflow, shellCached, stora
 import { completeDraft } from "./results";
 import { previousChecks, setCheck, type FollowupCheck } from "./followups";
 import { getSyncState, refreshPending, refreshReports, requestAnalysis, resendRecords, resolveConflict, retryRecords, runSync } from "./sync";
+import { rememberWorkspaceForWorkflow } from "./workspace";
 import { clear, fmtBytes, fmtTime, h, isOnline, nowIso, toast, uuid } from "./util";
 
 export type View = (main: HTMLElement, params: Record<string, string>) => Promise<void> | void;
@@ -314,6 +315,7 @@ async function startWorkflow(id: string) {
 export const runView: View = async (main, p) => {
   const d = await db();
   const draft = await d.get("drafts", p.id);
+  if (draft) void rememberWorkspaceForWorkflow(draft.workflow_id);
   if (!draft) {
     const rec = await d.get("records", p.id);
     if (rec) return go(`#/results/${rec.id}`);
@@ -615,6 +617,7 @@ export const runView: View = async (main, p) => {
 export const resultsView: View = async (main, p) => {
   const d = await db();
   const rec = await d.get("records", p.id);
+  if (rec) void rememberWorkspaceForWorkflow(rec.workflow_id);
   if (!rec) {
     // Removed from this device (or made elsewhere): it may still be in the account on Hermes.
     main.append(h("div", { class: "banner warn" }, h("strong", null, "This record isn't stored on this device"),

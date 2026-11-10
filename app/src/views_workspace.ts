@@ -3,7 +3,7 @@ import { api, HttpError } from "./api";
 import { text } from "./engine";
 import { clear, fmtTime, h, isOnline, toast } from "./util";
 import { go, lang, type View } from "./views_core";
-import { availableWorkspaces, installedWorkspace, installedWorkspaces, installWorkspace, STATUS_LABEL, wsTitle, type WorkspaceManifest } from "./workspace";
+import { availableWorkspaces, installedWorkspace, installedWorkspaces, installWorkspace, rememberWorkspace, STATUS_LABEL, wsTitle, type WorkspaceManifest } from "./workspace";
 
 export const workspacesView: View = async (main) => {
   const l = await lang();
@@ -43,6 +43,7 @@ function evidenceBlock(m: WorkspaceManifest) {
 export const workspaceView: View = async (main, p) => {
   const l = await lang();
   const wid = p.id;
+  rememberWorkspace(wid);
   let m = await installedWorkspace(wid);
   const status = h("div", { class: "muted", id: "ws-status" });
   const btn = h("button", { class: "primary", id: "ws-download", onclick: async () => {

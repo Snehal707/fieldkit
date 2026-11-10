@@ -163,3 +163,44 @@ describe("basic mode never answers from function words", () => {
     expect((await respond(c, newState("en"), "Explain common reasons for equipment vibration", {}, none)).reply.kind).toBe("answer");
   });
 });
+
+// 0.2.6 trial findings: with several workspaces on one phone the assistant mixed them up, and record questions got
+// "not covered" while the Hermes report was not there yet.
+describe("workspace scope and on-phone fallback", () => {
+  const kitchen = { workspace_id: "blr-kitchen", title: { en: "Kitchen checks" }, workflows: [{ id: "kitchen-check", version: 1 }],
+    packs: ["ws-blr-kitchen-knowledge"], report_policy: { decision_scale: [] }, evidence: [], sources: [],
+    guides: [{ id: "g_pest", title: { en: "Pest signs in the kitchen" }, start: "n", nodes: {
+      n: { slot: "pest", question: { en: "Pest signs?" }, input: "yes_no", next: [{ when: { op: "eq", field: "pest", value: true }, to: "o" }], default: "o" },
+      o: { outcome: { decision: "close_station", title: { en: "Close the station" }, actions: [{ kind: "escalate", text: { en: "Call pest control" } }] } } } }] };
+  const kpack = { kind: "knowledge", id: "ws-blr-kitchen-knowledge", title: "k", entries: [
+    { id: "k_fridge", type: "explanation", title: { en: "Fridge temperature rule" }, text: { en: "Fridge above 5 °C means fix today and move the food." } }] };
+  const two = [...packs, { id: "ws-blr-kitchen", kind: "workspace", content: kitchen }, { id: "ws-blr-kitchen-knowledge", kind: "knowledge", content: kpack }];
+  const wf: any = { id: "kitchen-check", title: { en: "Kitchen check" }, fields: [{ id: "fridge_c", type: "number", label: { en: "Fridge °C" } }],
+    classification: { rules: [{ id: "fridge_high", label: { en: "Fridge above 5 °C" }, severity: "high",
+      finding: { en: "Fix today and move the food" }, when: { op: "gt", field: "fridge_c", value: 5 } }] } };
+
+  it("answers only from the workspace in use, and from the record's own workspace", async () => {
+    const c = await buildCorpus(two, fake, "en");
+    const dairy: AskContext = { workspaceId: "dairy-collection-mh" };
+    const r1 = await respond(c, newState("en"), "fridge temperature rule", dairy, fake);
+    expect(r1.reply.citations.map((x) => x.title).join(" ")).not.toContain("Fridge temperature rule");
+    const r2 = await respond(c, newState("en"), "fridge temperature rule", { workspaceId: "blr-kitchen" }, fake);
+    expect(r2.reply.text).toContain("Fridge above 5");
+    const rec: AskContext = { record: { id: "rec1", workflow_id: "kitchen-check", answers: { fridge_c: 7.5 } }, workflow: wf, workspaceId: "dairy-collection-mh" };
+    const r3 = await respond(c, newState("en"), "pest signs in the kitchen", rec, fake);   // record's workspace wins
+    expect(r3.reply.kind).toBe("guide_question");
+    expect(r3.reply.citations[0].title).toBe("Pest signs in the kitchen");
+  });
+
+  it("with no report yet, 'what now' and 'by when' answer from the on-phone result", async () => {
+    const c = await buildCorpus(two, fake, "en");
+    const rec: AskContext = { record: { id: "rec1", workflow_id: "kitchen-check", answers: { fridge_c: 7.5 } }, workflow: wf, report: null, history: [] };
+    for (const q of ["What should I do first?", "Why is this a problem?"]) {
+      const r = await respond(c, newState("en"), q, rec, fake);
+      expect(r.reply.kind).toBe("answer");
+      expect(r.reply.text).toContain("No Hermes report yet");
+      expect(r.reply.text).toContain("Fridge above 5 °C — Fix today and move the food");
+      expect(r.reply.citations[0].title).toContain("On-phone result");
+    }
+  });
+});

@@ -65,7 +65,7 @@ export function isFollowUp(q: string): boolean {
 }
 
 // ----------------------------------------------------------------------------- entity linking
-export interface Entity { id: string; kind: "term" | "field" | "option" | "asset" | "issue" | "guide" | "entry"; names: string[]; ref?: any }
+export interface Entity { id: string; kind: "term" | "field" | "option" | "asset" | "issue" | "guide" | "entry"; names: string[]; ref?: any; ws?: string }
 
 const norm = (s: string) => s.toLowerCase().normalize("NFKC").replace(/[^\p{L}\p{M}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
 

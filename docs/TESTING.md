@@ -488,7 +488,7 @@ local score was inconsistent with the evidence.
     guide keys written inside `nodes`, phone guide packaging.
   - `tests/python/test_plugin.py`: a part-by-part tool flow test (start, add parts, dry run, status, build, publish).
   - `tests/python/conftest.py`: clears the page cache between tests.
-- **Results:** pytest **189 passed**; vitest **126 passed**; typecheck clean. `hermes plugins validate .` passed;
+- **Results:** pytest **191 passed**; vitest **128 passed**; typecheck clean. `hermes plugins validate .` passed;
   `hermes plugins doctor . --ci`: fieldkit 0.2.6, **35 tools, 1 hook**.
 - **Real Hermes conversation (0.2.6, 2026-11-10).** Local throwaway Hermes v0.23.0 logged into Nous Portal (model
   `x-ai/grok-4.7`, web search and extract through the Nous Tool Gateway). The tester played a milk-collection-centre
@@ -526,3 +526,26 @@ local score was inconsistent with the evidence.
   (5 rules as "Your procedure", 0 shown as verified, 2 gaps such as "no whitefly threshold given: ask the KVK"). Publish:
   16 s. On the phone (WebKit, offline after download) the guide asked three yes/no questions and reached "Spray now",
   citing "Your procedure" and telling the worker to ask the KVK for product and dose (no dose given).
+- **Setup time across jobs (2026-11-10, same local Hermes + Nous, `x-ai/grok-4.7`, scripted answers).** Build turn
+  (from "Yes, build it" to the review message) and total Hermes time including the interview: ASHA worker 204 s / 339 s,
+  electrical safety inspector 152 s / 242 s, student water survey 143 s / 272 s, restaurant food safety 98 s / 159 s,
+  cotton FPO 140 s / 277 s: **average build ~2.5 min, total ~4.3 min**; every first build valid, no web calls, every rule
+  "Your procedure", no doses. A lawyer conversation stalled in the model (no response) and was not completed.
+- **Field trial of those workspaces (2026-11-10, Chromium, phone viewport, one device with 4 workspaces and the
+  question-understanding pack; temporary script, not committed).** Per workspace: fill a realistic visit offline in the
+  real form, read the on-phone result, ask the offline assistant 4 questions, sync, wait for the real Hermes report,
+  then ask 2 questions about the visit offline.
+  - Times: pack install 43-48 s (once); filling + on-phone result ~4.4 s (automated); sync 0.2 s; assistant answers
+    0.1-0.4 s; real Hermes reports: 61 s (ASHA) and 326 s (electrical, after a rate-limit wait).
+  - Reports were written by Hermes' auxiliary model for plugins (`stepfun/step-3.7-flash:free` on this install), which
+    Nous Portal rate-limited (HTTP 429, retry_after 30-57 min). Found: FieldKit used to burn its 3 attempts in ~100 s
+    and mark the reports failed. Fixed: a rate limit waits as told without using an attempt and the record stays
+    pending (re-run: deferred jobs completed or stayed "waiting", none failed). Which model plugins use is a Hermes
+    setting (`auxiliary` config), not FieldKit's.
+  - Offline assistant, first run: 10 of 16 workspace questions right; it mixed workspaces (a kitchen "pest" question
+    opened the pregnancy guide), missed an existing rule, and answered record questions with "not covered" while the
+    report was missing. Fixed: answers come from the workspace of the workflow or visit in use (with an "Answering
+    from" picker when several are downloaded); "what to do" questions also search the user's own rules; without a
+    report, "what first / why / is it safe" answer from the on-phone result, labelled as such; "by when" with a report
+    uses its actions. Re-run: 13 of 16 right, 8 of 8 record questions answered. Still open: a Hindi transliteration
+    ("पेस्ट" for pest) was not understood, and "write me a poem" gets a translation hint instead of a refusal.

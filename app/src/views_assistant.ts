@@ -1,5 +1,6 @@
 // Offline Assistant screen (0.2.5): a conversation grounded in the workspace, the open record and its report.
-import { beginGuide, buildCorpus, newState, respond, type AskContext, type Corpus, type Reply, type State } from "./assistant";
+import { beginGuide, buildCorpus, newState, respond, scopeOf, type AskContext, type Corpus, type Reply, type State } from "./assistant";
+import { currentWorkspace, rememberWorkspace } from "./workspace";
 import { db } from "./db";
 import { text, type Workflow } from "./engine";
 import { subjectField } from "./followups";
@@ -33,7 +34,7 @@ async function loadContext(params: URLSearchParams): Promise<AskContext> {
         history.push({ id: c.id, completed_at: c.completed_at, answers: c.answers as any, report: c.report });
     }
   }
-  return { record, report, workflow, history };
+  return { record, report, workflow, history, workspaceId: params.get("ws") ?? currentWorkspace() };
 }
 
 export const assistantView: View = async (main, p) => {
@@ -65,7 +66,8 @@ export const assistantView: View = async (main, p) => {
   };
 
   /** The workspace a question belongs to: the open report's, else the built (non-starter) workspace on this device. */
-  const wsId = (): string | undefined => ctx.report?.workspace?.id ?? corpus?.workspaces.find((w) => !w.id.startsWith("starter-"))?.id;
+  const wsId = (): string | undefined => (corpus ? scopeOf(corpus, ctx) : undefined) ?? ctx.report?.workspace?.id
+    ?? corpus?.workspaces.find((w) => !w.id.startsWith("starter-"))?.id;
   const show = (q: string, r: Reply) => {
     const body = h("div", { class: "msg-text" }, r.text);
     const box = bubble("bot", body);
@@ -140,6 +142,17 @@ export const assistantView: View = async (main, p) => {
     ? `Understands questions by meaning (English and Hindi) · ${corpus.items.length} items from your workspaces and packs · answers only from them, with sources.`
     : h("span", null, "Basic search (matching words). For questions in your own words and in Hindi, install ",
       h("a", { href: "#/packs" }, "Question understanding"), " in Offline Packs."));
+  // Several workspaces on this phone: answer from the one in use (a visit's own workspace is fixed).
+  if (!ctx.record && corpus.workspaces.length > 1) {
+    const sel = h("select", { id: "assistant-ws", onchange: () => {
+      ctx.workspaceId = sel.value || null;
+      rememberWorkspace(ctx.workspaceId);
+      state = newState(state.lang);
+    } }, h("option", { value: "" }, l === "hi" ? "सभी कार्यक्षेत्र" : "All workspaces"),
+      ...corpus.workspaces.map((w) => h("option", { value: w.id }, w.title))) as HTMLSelectElement;
+    sel.value = scopeOf(corpus, ctx) ?? "";
+    header.append(h("label", { class: "row" }, h("span", { class: "muted" }, l === "hi" ? "किस कार्यक्षेत्र से उत्तर दें:" : "Answering from:"), sel));
+  }
   if (!corpus.items.length && !ctx.report) {
     log.append(h("div", { class: "banner warn" }, "Nothing to answer from yet: download a workspace or knowledge packs first.", h("div", null, h("a", { class: "btn", href: "#/workspaces" }, "Workspaces"))));
   }
@@ -151,7 +164,8 @@ export const assistantView: View = async (main, p) => {
     else bubble("bot", "That guide isn't on this device. Download its workspace first.");
   } else {
     const starters = ctx.report ? (l === "hi" ? ["रिपोर्ट समझाइए", "पहले क्या करूँ?", "पहली समस्या समझाइए"] : ["Explain the report", "What should I do first?", "Explain issue 1"])
-      : corpus.workspaces.flatMap((w) => w.guides.slice(0, 3).map((g) => text(g.title, l))).slice(0, 4);
+      : corpus.workspaces.filter((w) => !scopeOf(corpus!, ctx) || w.id === scopeOf(corpus!, ctx))
+        .flatMap((w) => w.guides.slice(0, 3).map((g) => text(g.title, l))).slice(0, 4);
     if (starters.length) log.append(h("div", { class: "row starters" }, ...starters.map((s) => h("button", { onclick: () => ask(s) }, s))));
   }
   const pre = params.get("q");
