@@ -566,3 +566,19 @@ local score was inconsistent with the evidence.
   a one-line description; the knowledge pack source no longer says "Researched by Hermes" for the user's own rules.
 - **Results:** pytest 194 passed; vitest 129 passed; typecheck clean; doctor 35 tools, 1 hook; E2E spot checks
   `workspace.spec` and `login.spec` passed in Chromium (full suites not re-run for these changes).
+
+### 0.2.6: sync only by default; questions about a visit (2026-11-10)
+- Syncing never triggers AI work by default; a workspace can opt in with `report_policy.after_sync: analyze`, and the
+  plugin setting `review_every_record: true` restores the old behaviour for everything.
+- Questions about one visit (phone DB v4, server migration v6 `questions`): asked online or offline, queued with the
+  workspace, record and photos, sent after the visit syncs, answered by FieldKit's worker from that record's evidence,
+  returned to the same visit and readable offline. Never a learning event or a workspace rule. Hermes chat sees them
+  with `fieldkit_list_questions` (36 tools).
+- **Real Hermes + phone-sized offline browser** (local test Hermes, model `openai/gpt-5.4-mini` via Nous, the
+  electrical workspace a real Hermes conversation built): visit with a photo recorded offline; one suggested and one
+  own question asked offline and shown as "saved on this phone"; sync 0.2 s with **no report job**
+  (`not_requested`); both questions on Hermes in 2.3 s with workspace id and photo id; **both answers on the phone after
+  37 s**, readable offline. Hermes saw the photo (described the burn mark on MCC-14 and what it cannot tell) and answered
+  "Can it stay in service until tomorrow?" with "No", citing the user's stop-and-isolate rule. Real Hermes chat then
+  listed the questions and answers and summarised the visit (64 s, `fieldkit_list_records`, `fieldkit_list_questions`).
+- **Results:** pytest 199 passed; vitest 130 passed; typecheck clean; Chromium E2E 30 passed, 5 skipped.

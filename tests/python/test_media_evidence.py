@@ -16,6 +16,14 @@ from hermes_stub import GOOD_REPORT, Recorder, make_llm  # noqa: E402
 
 from fieldkit_core import analysis, db, examples, media  # noqa: E402
 
+
+
+@pytest.fixture(autouse=True)
+def _review_every_record(monkeypatch):
+    """These tests exercise automatic report jobs, which since 0.2.6 run only when review is switched on."""
+    from fieldkit_core import db as _db
+    monkeypatch.setattr(_db, "DEFAULT_AFTER_SYNC", "analyze")
+
 JPEG = b"\xff\xd8\xff\xe0" + b"fake-photo-bytes" * 20
 PNG = b"\x89PNG\r\n\x1a\n" + b"fake-signature-strokes" * 10
 M4A = b"\x00\x00\x00\x18ftypM4A " + b"fake-aac-voice" * 30

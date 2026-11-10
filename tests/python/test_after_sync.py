@@ -35,7 +35,7 @@ def test_after_sync_mode_controls_automatic_reports(tmp_path):
     d2 = ws.build_draft(s, db.ALL, b2)
     ws.publish(s, b2["id"], d2["version"])
     assert _sync(s, "rec_ana_0001")["analysis_status"] == "pending"
-    assert s.after_sync_mode("some-other-workflow") == "analyze"            # not in a built workspace: unchanged
+    assert s.after_sync_mode("some-other-workflow") == "save"               # default since 0.2.6: sync only
 
 
 def test_bad_mode_is_rejected_and_summaries_can_read_answers(tmp_path, monkeypatch):

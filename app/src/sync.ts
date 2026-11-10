@@ -269,6 +269,7 @@ export async function runSync(opts: { force?: boolean } = {}): Promise<SyncState
       await setSetting("auth_required", false);
       await refreshReports().catch(() => undefined);
       await sendLearning(dev).catch(() => undefined);
+      await import("./questions").then((m) => m.syncQuestions()).catch(() => undefined);
     }
   } finally {
     running = false;

@@ -37,10 +37,10 @@ it("upgrades a v1 database without losing data and adds the separate remote stor
   await put(v1, "settings", { key: "device_id", value: "dev_kept_123" });
   v1.close();
 
-  expect(DB_VERSION).toBe(3);
+  expect(DB_VERSION).toBe(4);
   const d = await db();
   expect([...d.objectStoreNames]).toContain("remote");
-  expect([...d.objectStoreNames]).toEqual(expect.arrayContaining(["learning", "vectors"]));   // v3 (0.2.5)
+  expect([...d.objectStoreNames]).toEqual(expect.arrayContaining(["learning", "vectors", "questions"]));   // v3 (0.2.5), v4 (0.2.6)
   expect((await d.get("records", "rec_old_00001"))?.sync_status).toBe("pending");
   expect(await d.count("outbox")).toBe(1);
   expect(await d.get("drafts", "rec_draft_0001")).toBeTruthy();

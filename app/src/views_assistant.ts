@@ -1,6 +1,7 @@
 // Offline Assistant screen (0.2.5): a conversation grounded in the workspace, the open record and its report.
 import { beginGuide, buildCorpus, newState, respond, scopeOf, type AskContext, type Corpus, type Reply, type State } from "./assistant";
 import { currentWorkspace, rememberWorkspace } from "./workspace";
+import { askAboutRecord } from "./questions";
 import { db } from "./db";
 import { text, type Workflow } from "./engine";
 import { subjectField } from "./followups";
@@ -103,6 +104,15 @@ export const assistantView: View = async (main, p) => {
     const res = await respond(corpus, state, q, ctx, embed);
     state = res.state;
     show(q, res.reply);
+    if (res.reply.kind === "not_covered" && ctx.record) {
+      const rid = ctx.record.id;
+      const b = h("button", { class: "primary", onclick: async () => {
+        try { await askAboutRecord(rid, q, state.lang); b.textContent = "Sent to this visit's questions"; (b as HTMLButtonElement).disabled = true;
+          toast(navigator.onLine ? "Hermes will answer on the visit page." : "Saved. Sent to Hermes when you're online.", "ok"); }
+        catch (e) { toast((e as Error).message, "error"); }
+      } }, "Ask Hermes about this visit");
+      log.lastElementChild?.append(h("div", { class: "row" }, b));
+    }
     if (res.reply.gap) {
       await logEvent("knowledge_gap", { question: q, lang: state.lang, best_score: res.reply.score ?? 0, record_id: ctx.record?.id ?? null,
         workflow_id: ctx.record?.workflow_id ?? null }, { workspace_id: wsId() });

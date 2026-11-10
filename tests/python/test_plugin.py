@@ -8,6 +8,14 @@ from pathlib import Path
 import pytest
 import yaml
 
+
+
+@pytest.fixture(autouse=True)
+def _review_every_record(monkeypatch):
+    """These tests exercise automatic report jobs, which since 0.2.6 run only when review is switched on."""
+    from fieldkit_core import db as _db
+    monkeypatch.setattr(_db, "DEFAULT_AFTER_SYNC", "analyze")
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).parent))
 from hermes_stub import GOOD_REPORT, Recorder, make_llm  # noqa: E402
@@ -400,3 +408,17 @@ def test_fast_setup_from_the_interview_in_one_call(ctx):
     out = call(ctx, "fieldkit_build_workspace", workspace_id="dairy-fast")
     assert out["valid"] is True and out["checks_pending"] == 0, out["errors"]
     assert out["research_report"]["summary"]["user_procedure"] == 1 and out["research_report"]["summary"]["verified"] == 0
+
+
+def test_questions_reach_hermes_chat_tools(ctx):
+    """Users' questions about a visit are visible to Hermes in chat ("fieldkit_list_questions") and answered by the
+    worker or by "fieldkit_process_pending_jobs"; direct record access stays available (fieldkit_get_record)."""
+    from fieldkit_core import examples
+    store = db.get_store()
+    examples.install(store, db.ALL)
+    store.sync_record("alice", "k-qv", "dev", {"id": "rec_qv_000001", "workflow_id": "equipment-inspection", "workflow_version": 1,
+                                               "base_revision": 0, "answers": {"asset_id": "PMP-7"}}, auto_analyze=True)
+    store.save_question("alice", "rec_qv_000001", {"id": "q_tool_1", "question": "Is anything missing?"})
+    r = call(ctx, "fieldkit_list_questions", record_id="rec_qv_000001")
+    assert r["ok"] and r["questions"][0]["status"] == "queued" and r["questions"][0]["question"] == "Is anything missing?"
+    assert call(ctx, "fieldkit_list_questions", status="answered")["questions"] == []

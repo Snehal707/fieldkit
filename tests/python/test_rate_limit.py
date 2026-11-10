@@ -1,5 +1,6 @@
 """0.2.6 trial finding: Nous Portal answered 429 "fair-share rate limit, retry_after 1972" and FieldKit burnt all three
 attempts in ~100 s, marking the reports failed. A rate limit now waits as told and keeps the record pending."""
+import pytest
 import sys
 import time
 from pathlib import Path
@@ -8,6 +9,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from fieldkit_core import analysis, db  # noqa: E402
 
+
+
+
+@pytest.fixture(autouse=True)
+def _review_every_record(monkeypatch):
+    """These tests exercise automatic report jobs, which since 0.2.6 run only when review is switched on."""
+    from fieldkit_core import db as _db
+    monkeypatch.setattr(_db, "DEFAULT_AFTER_SYNC", "analyze")
 
 class RateLimitError(Exception):
     status_code = 429

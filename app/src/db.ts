@@ -95,6 +95,16 @@ interface FieldKitDB extends DBSchema {
   remote: { key: string; value: RemoteCopy };
   learning: { key: string; value: LearningEvent; indexes: { by_sent: number } };
   vectors: { key: string; value: { key: string; vec: number[] } };
+  questions: { key: string; value: LocalQuestion; indexes: { by_record: string } };
+}
+
+/** A question about one visit, queued on the phone and answered by Hermes from that record (0.2.6). */
+export interface LocalQuestion {
+  id: string; record_id: string; workspace_id: string | null; question: string; lang: string; attachment_ids: string[];
+  status: "queued" | "sent" | "answered" | "failed"; created_at: string; sent_at?: string; answered_at?: string;
+  answer?: { answer: string; confidence?: string; uncertainty?: string; evidence_used?: string[]; next_steps?: string[];
+    photos_seen?: number; model?: string };
+  error?: string;
 }
 
 /** Feedback, follow-up outcomes and unanswered questions, queued for Hermes (0.2.5). */
@@ -104,7 +114,7 @@ export interface LearningEvent {
 }
 
 export const DB_NAME = "fieldkit";
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 let dbp: Promise<IDBPDatabase<FieldKitDB>> | null = null;
 
 export function db(): Promise<IDBPDatabase<FieldKitDB>> {
@@ -134,6 +144,10 @@ export function db(): Promise<IDBPDatabase<FieldKitDB>> {
           // v3 (0.2.5): learning events for Hermes, and cached sentence vectors for the offline assistant.
           d.createObjectStore("learning", { keyPath: "id" }).createIndex("by_sent", "sent");
           d.createObjectStore("vectors", { keyPath: "key" });
+        }
+        if (oldVersion < 4) {
+          // v4 (0.2.6): questions about one visit, answered by Hermes after sync. Existing stores are untouched.
+          d.createObjectStore("questions", { keyPath: "id" }).createIndex("by_record", "record_id");
         }
       },
       blocked() { console.warn("FieldKit DB upgrade blocked by another tab"); },

@@ -33,6 +33,7 @@ provides_tools:
   - fieldkit_list_followups
   - fieldkit_get_sync_status
   - fieldkit_resolve_conflict
+  - fieldkit_list_questions
   - fieldkit_process_pending_jobs
   - fieldkit_install_examples
   - fieldkit_workspace_format

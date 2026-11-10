@@ -126,12 +126,15 @@ def start_worker(interval_s: float = 15.0) -> bool:
         worker_state["running"] = True
         try:
             get_store().recover_stale_jobs()
+            get_store().recover_stale_questions()
         except Exception as exc:  # pragma: no cover
             worker_state["last_error"] = str(exc)
         while not _worker_stop.is_set():
             worker_state["last_tick"] = time.time()
             try:
                 worker_state["processed"] += len(analysis.process_pending(get_store(), llm, limit=2))
+                from . import questions as _questions
+                worker_state["processed"] += len(_questions.process_questions(get_store(), llm, limit=2))
                 worker_state["last_error"] = None
             except Exception as exc:  # keep the worker alive; errors are per-job in the DB
                 worker_state["last_error"] = str(exc)[:300]

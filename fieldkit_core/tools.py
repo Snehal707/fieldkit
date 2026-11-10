@@ -248,8 +248,17 @@ def process_pending_jobs(a: dict) -> str:
     store = get_store()
     store.recover_stale_jobs()
     requeued = store.requeue_failed_jobs() if a.get("retry_failed") else 0
+    from . import questions
     return _ok(requeued_failed=requeued, processed=analysis.process_pending(store, runtime.llm, limit=int(a.get("limit", 3))),
+               answered_questions=questions.process_questions(store, runtime.llm, limit=int(a.get("limit", 3))),
                jobs=store.job_counts())
+
+
+def list_questions(a: dict) -> str:
+    """Questions users asked about specific visits, with Hermes' answers (case-specific; never workspace rules)."""
+    rows = get_store().list_questions(ALL, a.get("record_id"), a.get("status"), int(a.get("limit", 50)))
+    return _ok(questions=rows, next=("Queued questions are answered automatically when FieldKit's worker runs; otherwise "
+                                     "call fieldkit_process_pending_jobs. To discuss one, fetch the record with fieldkit_get_record."))
 
 
 def install_examples(a: dict) -> str:
@@ -329,6 +338,10 @@ TOOLS: list[tuple[dict, Callable[[dict], str]]] = [
     (_s("fieldkit_resolve_conflict", "Resolve a synchronisation conflict: keep_server, use_client, or merge (with merged_answers).",
         {"conflict_id": STR, "resolution": {"type": "string", "enum": ["keep_server", "use_client", "merge"]}, "merged_answers": OBJ},
         ["conflict_id", "resolution"]), resolve_conflict),
+    (_s("fieldkit_list_questions", "Questions users asked about a specific visit (record) from the phone, with status "
+        "(queued / answering / answered / failed) and Hermes' answers. Answers are about that case only.",
+        {"record_id": STR, "status": {"type": "string", "enum": ["queued", "answering", "answered", "failed"]}, "limit": INT}),
+     list_questions),
     (_s("fieldkit_process_pending_jobs",
         "Run queued automatic analysis jobs for newly synchronised records. retry_failed=true gives jobs that "
         "previously failed permanently one fresh set of attempts (records that already have a report are skipped).",

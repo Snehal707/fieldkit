@@ -118,7 +118,31 @@ MIGRATIONS: list[str] = [
                                    header TEXT NOT NULL, parts TEXT NOT NULL, created_at REAL, updated_at REAL);
     CREATE TABLE source_pages (url TEXT PRIMARY KEY, status TEXT NOT NULL, content TEXT, error TEXT, fetched_at REAL);
     """,
+    # v6 (0.2.6): questions about one observation, answered by Hermes from that record's evidence. Additive only.
+    """
+    CREATE TABLE questions (id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, record_id TEXT NOT NULL, workspace_id TEXT,
+                            question TEXT NOT NULL, lang TEXT, attachment_ids TEXT, status TEXT NOT NULL,
+                            answer TEXT, error TEXT, attempts INTEGER NOT NULL DEFAULT 0, next_run_at REAL,
+                            created_at REAL, answered_at REAL);
+    CREATE INDEX questions_record ON questions(record_id);
+    CREATE INDEX questions_status ON questions(status, next_run_at);
+    """,
 ]
+
+
+# Records outside a workspace that opted in to review are only saved after sync (0.2.6). The plugin setting
+# review_every_record: true brings back the old behaviour (Hermes reviews every record).
+DEFAULT_AFTER_SYNC = "save"
+
+
+def default_after_sync() -> str:
+    try:
+        from . import runtime
+        if runtime.setting("review_every_record", False):
+            return "analyze"
+    except Exception:
+        pass
+    return DEFAULT_AFTER_SYNC
 
 
 def preview(text: str, n: int) -> str:
@@ -524,6 +548,85 @@ class Store:
         with self.tx() as c:
             c.execute("DELETE FROM workspace_builds WHERE workspace_id=?", (wid,))
 
+    # ------------------------------------------------------------------ questions about one observation (0.2.6)
+    def _question_dict(self, r: sqlite3.Row) -> dict:
+        d = dict(r)
+        d["attachment_ids"] = _uj(d.get("attachment_ids")) or []
+        d["answer"] = _uj(d.get("answer")) if d.get("answer") else None
+        return d
+
+    def save_question(self, owner: str, record_id: str, q: dict) -> dict:
+        """Queue a question about one of the owner's records (idempotent on the phone's id)."""
+        with self.tx() as c:
+            rec = c.execute("SELECT owner_user_id FROM records WHERE id=?", (record_id,)).fetchone()
+            if not rec or (owner is not ALL and rec["owner_user_id"] != owner):
+                raise NotFound(record_id)
+            row = c.execute("SELECT * FROM questions WHERE id=?", (q["id"],)).fetchone()
+            if row:
+                if row["record_id"] != record_id or (owner is not ALL and row["owner_user_id"] != owner):
+                    raise Conflict({"error": "question id already used"})
+                return self._question_dict(row)
+            now = _now()
+            c.execute("INSERT INTO questions(id, owner_user_id, record_id, workspace_id, question, lang, attachment_ids, status, "
+                      "attempts, next_run_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                      (q["id"], rec["owner_user_id"], record_id, q.get("workspace_id"), q["question"], q.get("lang") or "en",
+                       _j(q.get("attachment_ids") or []), "queued", 0, now, now))
+            self.audit(c, owner, "question.queued", record_id, {"question": q["id"]})
+            return self._question_dict(c.execute("SELECT * FROM questions WHERE id=?", (q["id"],)).fetchone())
+
+    def get_question(self, owner: Any, qid: str) -> dict:
+        clause, args = self._owner_clause(owner)
+        rows = self._q(f"SELECT * FROM questions WHERE id=? AND {clause}", (qid, *args))
+        if not rows:
+            raise NotFound(qid)
+        return self._question_dict(rows[0])
+
+    def list_questions(self, owner: Any, record_id: Optional[str] = None, status: Optional[str] = None, limit: int = 100) -> list[dict]:
+        clause, args = self._owner_clause(owner)
+        sql = f"SELECT * FROM questions WHERE {clause}"
+        if record_id:
+            sql += " AND record_id=?"
+            args = (*args, record_id)
+        if status:
+            sql += " AND status=?"
+            args = (*args, status)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        return [self._question_dict(r) for r in self._q(sql, (*args, max(1, min(limit, 500))))]
+
+    def claim_questions(self, limit: int = 2) -> list[dict]:
+        now = _now()
+        with self.tx() as c:
+            rows = c.execute("SELECT * FROM questions WHERE status='queued' AND COALESCE(next_run_at,0)<=? ORDER BY created_at LIMIT ?",
+                             (now, limit)).fetchall()
+            out = []
+            for r in rows:
+                c.execute("UPDATE questions SET status='answering', attempts=attempts+1 WHERE id=? AND status='queued'", (r["id"],))
+                out.append(dict(self._question_dict(r), attempts=r["attempts"] + 1))
+            return out
+
+    def answer_question(self, qid: str, answer: dict) -> dict:
+        with self.tx() as c:
+            c.execute("UPDATE questions SET status='answered', answer=?, error=NULL, answered_at=? WHERE id=?", (_j(answer), _now(), qid))
+            self.audit(c, ALL, "question.answered", qid, {"model": answer.get("model")})
+        return answer
+
+    def defer_question(self, q: dict, note: str, delay_s: float) -> None:
+        with self.tx() as c:
+            c.execute("UPDATE questions SET status='queued', attempts=MAX(0, attempts-1), error=?, next_run_at=? WHERE id=?",
+                      (note[:500], _now() + delay_s, q["id"]))
+
+    def fail_question(self, q: dict, error: str, max_attempts: int = 3) -> str:
+        final = q.get("attempts", 1) >= max_attempts
+        with self.tx() as c:
+            c.execute("UPDATE questions SET status=?, error=?, next_run_at=? WHERE id=?",
+                      ("failed" if final else "queued", error[:500], _now() + min(3600, 30 * 2 ** (q.get("attempts", 1) - 1)), q["id"]))
+        return "failed" if final else "queued"
+
+    def recover_stale_questions(self) -> None:
+        """At worker start nothing is being answered: questions left 'answering' by a stopped process go back to the queue."""
+        with self.tx() as c:
+            c.execute("UPDATE questions SET status='queued' WHERE status='answering'")
+
     def get_source_page(self, url: str) -> Optional[dict]:
         rows = self._q("SELECT * FROM source_pages WHERE url=?", (url,))
         return dict(rows[0]) if rows else None
@@ -643,22 +746,24 @@ class Store:
             self._enqueue(c, rid, row["revision"])
 
     def after_sync_mode(self, workflow_id: str, c: Any = None) -> str:
-        """What the workspace owning this workflow wants after sync: 'save' (records only), 'summarize' (no per-record
-        reports; summaries on request in Hermes) or 'analyze' (a report per record). Workflows outside any built
-        workspace, and workspaces without the setting, keep the old behaviour: 'analyze'."""
+        """Whether Hermes reviews every record of this workflow's workspace automatically after sync ('analyze'), or
+        only saves it ('save', the default since 0.2.6). AI help is otherwise on request: a question about a visit,
+        "Ask Hermes to analyze this record", or the Hermes chat. 'summarize' (0.2.6 draft) behaves as 'save'."""
         conn = c or self.conn
         try:
             rows = conn.execute("SELECT v.bundle FROM workspaces w JOIN workspace_versions v ON v.workspace_id=w.id "
                                 "AND v.version=w.published_version WHERE w.published_version IS NOT NULL").fetchall()
         except sqlite3.Error:
-            return "analyze"
+            return default_after_sync()
         for (raw,) in rows:
             b = _uj(raw) or {}
             ids = {w.get("id") for w in b.get("workflows") or [] if isinstance(w, dict)} | set(b.get("workflow_refs") or [])
             if workflow_id in ids:
                 mode = (b.get("report_policy") or {}).get("after_sync")
-                return mode if mode in ("save", "summarize", "analyze") else "analyze"
-        return "analyze"
+                if mode in ("save", "summarize", "analyze"):
+                    return "analyze" if mode == "analyze" else "save"
+                return default_after_sync()
+        return default_after_sync()
 
     def _enqueue(self, c, rid: str, revision: int) -> str:
         existing = c.execute("SELECT id FROM jobs WHERE kind='analyze' AND record_id=? AND revision=?", (rid, revision)).fetchone()

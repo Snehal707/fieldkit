@@ -12,6 +12,7 @@ import { completeDraft } from "./results";
 import { previousChecks, setCheck, type FollowupCheck } from "./followups";
 import { getSyncState, refreshPending, refreshReports, requestAnalysis, resendRecords, resolveConflict, retryRecords, runSync } from "./sync";
 import { rememberWorkspaceForWorkflow } from "./workspace";
+import { askAboutRecord, questionsFor, SUGGESTED_QUESTIONS, syncQuestions } from "./questions";
 import { clear, fmtBytes, fmtTime, h, isOnline, nowIso, toast, uuid } from "./util";
 
 export type View = (main: HTMLElement, params: Record<string, string>) => Promise<void> | void;
@@ -24,7 +25,7 @@ const STATUS_TEXT: Record<string, string> = {
   conflict: "Conflict — needs your decision", error: "Hermes didn't accept it — try again",
 };
 const ANALYSIS_TEXT: Record<string, string> = {
-  not_requested: "Not requested (saved without AI analysis)", pending: "Pending", processing: "Processing", completed: "Completed",
+  not_requested: "No automatic review (ask Hermes about this visit below)", pending: "Pending", processing: "Processing", completed: "Completed",
   failed: "Failed", requires_review: "Completed — requires human review",
 };
 
@@ -682,6 +683,7 @@ export const resultsView: View = async (main, p) => {
       h("a", { href: `#/knowledge/${encodeURIComponent(`${r.pack_id}::${r.entry_id}`)}` }, r.title), h("div", { class: "muted" }, r.source)))));
   }
   main.append(local);
+  main.append(await askHermesCard(rec, l));
 
   // Saved responses + media
   const resp = h("div", { class: "card" }, h("h2", null, "Saved responses"));
@@ -757,6 +759,51 @@ function hermesSection(rec: LocalRecord, stored: StoredReport | undefined) {
       } }, "Ask Hermes to analyze this record") : null));
   }
   return box;
+}
+
+/** "Ask Hermes about this visit": suggested and own questions, queued offline, answered from this record after sync. */
+async function askHermesCard(rec: LocalRecord, l: string): Promise<HTMLElement> {
+  const card = h("div", { class: "card", id: "ask-hermes" }, h("h2", null, "Ask Hermes about this visit"),
+    h("p", { class: "muted" }, "Hermes answers from this visit's answers, photos and voice notes. You can ask offline: the question waits and is sent when you sync."));
+  const list = h("div", { id: "ask-hermes-list" });
+  const render = async () => {
+    clear(list);
+    for (const q of await questionsFor(rec.id)) {
+      const a = q.answer;
+      const status = q.status === "answered" ? "" : q.status === "failed" ? `Hermes could not answer: ${q.error ?? ""}`
+        : q.status === "sent" ? (q.error ? `Sent. ${q.error}` : "Sent to Hermes. The answer appears here (check again in a minute).")
+        : ["synced", "received"].includes(rec.sync_status) ? "Waiting to send." : "Saved on this phone. It will be sent after this visit syncs.";
+      list.append(h("div", { class: "banner local", "data-question": q.id, "data-status": q.status },
+        h("strong", null, q.question),
+        a ? h("div", { class: "answer" }, h("p", { style: "white-space:pre-wrap" }, a.answer),
+          a.next_steps?.length ? h("ul", null, ...a.next_steps.map((s) => h("li", null, s))) : null,
+          a.uncertainty ? h("div", { class: "muted" }, `Not certain: ${a.uncertainty}`) : null,
+          h("div", { class: "muted" }, [a.confidence ? `Confidence: ${a.confidence}` : "", a.evidence_used?.length ? `Based on: ${a.evidence_used.join(", ")}` : "",
+            "About this visit only"].filter(Boolean).join(" · ")))
+          : h("div", { class: "muted" }, status)));
+    }
+  };
+  const ask = async (text: string) => {
+    try {
+      await askAboutRecord(rec.id, text, l);
+      input.value = "";
+      if (navigator.onLine) await syncQuestions().catch(() => undefined);
+      await render();
+      toast(navigator.onLine ? "Question sent to Hermes." : "Saved. It will be sent when you're online.", "ok");
+    } catch (e) { toast((e as Error).message, "error"); }
+  };
+  const input = h("input", { id: "ask-hermes-input", placeholder: l === "hi" ? "अपना प्रश्न लिखें…" : "Your own question…", maxlength: "1000" }) as HTMLInputElement;
+  card.append(
+    h("div", { class: "row starters" }, ...(SUGGESTED_QUESTIONS[l] ?? SUGGESTED_QUESTIONS.en).map((s) => h("button", { onclick: () => ask(s) }, s))),
+    h("form", { class: "row", onsubmit: (e: Event) => { e.preventDefault(); void ask(input.value); } },
+      h("div", { class: "grow" }, input), h("button", { class: "primary" }, "Ask")),
+    list,
+    h("div", { class: "row" }, h("button", { id: "ask-hermes-refresh", onclick: async () => {
+      try { const n = await syncQuestions(); await render(); toast(n ? "Updated." : "No new answer yet.", n ? "ok" : "info"); }
+      catch (e) { toast(e instanceof AuthRequired ? "Sign in to Hermes first." : `Offline or unavailable: ${(e as Error).message}`, "error"); }
+    } }, "Check for answers")));
+  await render();
+  return card;
 }
 
 const INTEGRITY_TEXT: Record<string, string> = {

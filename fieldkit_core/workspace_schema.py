@@ -283,10 +283,8 @@ RULES = {
                 "added in sources first. Do NOT send a status: FieldKit computes it. If sources disagree, add conflicts. "
                 "Model knowledge without a quote = no excerpts → 'unverified' (background only).",
     "report_policy": "One object. 2+ decisions ordered from most to least severe; decision ids are snake_case and are what "
-                     "guide outcomes and reports use. after_sync is what Hermes does when records arrive: 'save' (keep the "
-                     "records, no AI processing; e.g. surveys, attendance, documentation), 'summarize' (no per-record "
-                     "reports; summaries and comparisons when the user asks) or 'analyze' (a report for every record; "
-                     "inspections and checks that need a decision). Ask the user; default 'analyze' only for decision work.",
+                     "guide outcomes and reports use. after_sync: leave it out (or 'save') so records only "
+                     "sync and Hermes helps when asked; set 'analyze' only if the user wants Hermes to review every record.",
     "workflows": "Use the user's units and terms. Choice fields need options [{value, label}]. Conditions use field ids of "
                  "this workflow; numbers are compared with numbers, checkbox with true/false, choices with an option value. "
                  "Classification rules with thresholds cite evidence_ids (evidence must be at least 'supported').",

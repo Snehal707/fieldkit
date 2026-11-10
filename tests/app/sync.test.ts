@@ -244,3 +244,27 @@ describe("learning events upload (0.2.5)", () => {
     expect(await sendLearning("dev_x")).toBe(0);                     // nothing re-sent
   });
 });
+
+// 0.2.6: questions about one visit wait on the phone until that visit has synced, then go to Hermes; the answer comes
+// back to the same visit and stays readable offline.
+describe("questions about a visit", () => {
+  it("queue offline, send after the record syncs, and store the answer with the visit", async () => {
+    const { askAboutRecord, questionsFor, syncQuestions } = await import("../../app/src/questions");
+    await addRecord({ sync_status: "local" });
+    const q = await askAboutRecord("rec_test_000001", "What do the photos show?", "en");
+    expect(q).toMatchObject({ status: "queued", record_id: "rec_test_000001", question: "What do the photos show?" });
+    handler = () => json(500, {});
+    expect(await syncQuestions()).toBe(0);                                  // record not synced yet: nothing sent
+    expect(calls.filter((c) => c.url.includes("/questions"))).toHaveLength(0);
+    await (await db()).put("records", { ...(await (await db()).get("records", "rec_test_000001"))!, sync_status: "synced" });
+    handler = (url, init) => (init.method === "POST" ? json(200, { id: q.id, status: "queued" })
+      : json(200, { questions: [{ id: q.id, status: "answered", answer: { answer: "Belt guard missing.", confidence: "medium", next_steps: ["Refit"] } }] }));
+    expect(await syncQuestions()).toBe(2);                                  // sent, then answered
+    const post = calls.find((c) => c.method === "POST" && c.url.includes("/records/rec_test_000001/questions"))!;
+    expect(post.body).toMatchObject({ id: q.id, question: "What do the photos show?" });
+    const [got] = await questionsFor("rec_test_000001");
+    expect(got.status).toBe("answered");
+    expect(got.answer?.answer).toBe("Belt guard missing.");
+    await expect(askAboutRecord("rec_test_000001", "   ", "en")).rejects.toThrow();
+  });
+});

@@ -447,6 +447,27 @@ def analyze(rid: str, request: Request):
     return dict(res, analysis_mode=runtime.mode())
 
 
+@router.post("/records/{rid}/questions")
+def ask_question(rid: str, request: Request, payload: dict = Body(...)):
+    """Queue a question about one record (from the phone, idempotent on its id). Hermes answers from that record."""
+    from fieldkit_core import questions
+    try:
+        q = get_store().save_question(_uid(request), rid, questions.validate_new(payload))
+    except Exception as exc:
+        _err(exc)
+    _ensure_worker()
+    return dict(q, analysis_mode=runtime.mode())
+
+
+@router.get("/records/{rid}/questions")
+def record_questions(rid: str, request: Request):
+    try:
+        get_store().get_record(_uid(request), rid)          # owner check
+        return {"questions": get_store().list_questions(_uid(request), rid)}
+    except Exception as exc:
+        _err(exc)
+
+
 @router.get("/records/{rid}/report")
 def record_report(rid: str, request: Request):
     try:
