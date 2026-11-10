@@ -22,13 +22,10 @@ test("FieldKit dashboard tab renders every section in the real Hermes dashboard"
   await expect(page.getByText("FieldKit status")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(/analysis: (automatic|on-demand|deferred)/)).toBeVisible();
 
+  // 0.2.6: four tabs (workflows, knowledge, reports and model packs are no longer separate tabs).
   const sections: [string, RegExp][] = [
-    ["Workflows", /Equipment inspection/],
-    ["Knowledge", /Import a document as a knowledge pack/],
     ["Records", /Synchronised records/],
-    ["Reports", /Follow-up actions/],
-    ["Synchronization", /Analysis jobs/],
-    ["Offline Packs", /On-device model packs/],
+    ["Synchronization", /Syncing never triggers AI work/],
     ["Mobile Access", /Open FieldKit on a phone/],
   ];
   for (const [tab, expectText] of sections) {
@@ -36,13 +33,6 @@ test("FieldKit dashboard tab renders every section in the real Hermes dashboard"
     await expect(page.getByText(expectText).first()).toBeVisible({ timeout: 15_000 });
   }
   await expect(page.getByAltText("QR code for the FieldKit app")).toBeVisible();
-  // a workflow definition opens from the Workflows section
-  await page.getByRole("button", { name: "Workflows", exact: true }).click();
-  // the View button inside the "Equipment inspection" row (not any other "View" button in the Hermes UI)
-  const viewBtns = page.getByRole("button", { name: "View", exact: true });
-  console.log("View buttons on page:", await viewBtns.count());
-  await page.locator("xpath=//b[normalize-space()='Equipment inspection']/ancestor::div[2]//button[normalize-space()='View']").click();
-  await expect(page.getByText(/Definition: /)).toBeVisible();
   expect(errors, errors.join("\n")).toEqual([]);
   await browser.close();
 });

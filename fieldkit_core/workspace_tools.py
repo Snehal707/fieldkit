@@ -67,7 +67,7 @@ def _parts_from_bundle(b: dict) -> dict:
 def _assemble(build: dict, brief: dict) -> dict:
     h, parts = build["header"], build["parts"]
     b = {"id": build["workspace_id"], "title": h.get("title"), "profile": brief,
-         "languages": h.get("languages") or {"content": ["en"]}}
+         "languages": normalize_languages(h.get("languages") or brief.get("languages") or {"content": ["en"]})}
     if h.get("workflow_refs"):
         b["workflow_refs"] = h["workflow_refs"]
     for p in LIST_PARTS:
@@ -144,6 +144,44 @@ def _status_dict(store: Any, build: dict) -> dict:
             "ids": {p: list((parts.get(p) or {}).keys())[:60] for p in ("sources", "evidence", "workflows", "guides", "knowledge")}}
 
 
+_LANG_NAMES = {"english": "en", "hindi": "hi", "marathi": "mr", "gujarati": "gu", "tamil": "ta", "telugu": "te",
+               "kannada": "kn", "bengali": "bn", "punjabi": "pa", "urdu": "ur", "odia": "or", "malayalam": "ml",
+               "हिंदी": "hi", "हिन्दी": "hi", "अंग्रेज़ी": "en", "अंग्रेजी": "en"}
+
+
+def normalize_languages(x: Any) -> dict:
+    """Any reasonable shape → {"content": [codes], ...}. Seen from real models: ["English", "Hindi"],
+    {"en": "English", "hi": "Hindi"}, {"primary": ["hi", "en"]}."""
+    def code(v: Any) -> Optional[str]:
+        t = str(v or "").strip()
+        if not t:
+            return None
+        low = t.lower()
+        if low in _LANG_NAMES or t in _LANG_NAMES:
+            return _LANG_NAMES.get(low) or _LANG_NAMES.get(t)
+        return low if len(low) in (2, 3) and low.isalpha() else None
+
+    def codes(vals: Any) -> list:
+        out = []
+        for v in vals if isinstance(vals, list) else [vals]:
+            c = code(v)
+            if c and c not in out:
+                out.append(c)
+        return out
+    if isinstance(x, dict):
+        if isinstance(x.get("content"), list) and codes(x["content"]):
+            return {**{k: codes(v) for k, v in x.items() if isinstance(v, list)}, "content": codes(x["content"])}
+        keys = [k for k in x if code(k) and not isinstance(x[k], list)]            # {"en": "English", ...}
+        if keys:
+            return {"content": codes(keys)}
+        lists = [codes(v) for v in x.values() if isinstance(v, list)]              # {"primary": [...]}
+        merged = [c for lst in lists for c in lst]
+        return {"content": list(dict.fromkeys(merged))} if merged else {"content": ["en"]}
+    if isinstance(x, (list, str)):
+        return {"content": codes(x) or ["en"]}
+    return {"content": ["en"]}
+
+
 def _brief_of_workspace(store: Any, wid: str) -> Optional[str]:
     rows = store._q("SELECT brief_id FROM workspaces WHERE id=?", (wid,))
     return rows[0]["brief_id"] if rows and rows[0]["brief_id"] else None
@@ -175,9 +213,7 @@ def start_build(a: dict) -> str:
         return _ok(resumed=True, **_status_dict(store, cur),
                    next="A build for this workspace is already in progress: continue adding the missing parts "
                         "(restart=true discards it).")
-    langs = a.get("languages") or brief.get("languages") or {"content": ["en"]}
-    if isinstance(langs, list):
-        langs = {"content": langs}
+    langs = normalize_languages(a.get("languages") or brief.get("languages") or {"content": ["en"]})
     header = {"title": a.get("title") or {"en": brief.get("role") or wid}, "languages": langs,
               "workflow_refs": a.get("workflow_refs") or []}
     parts = _empty_parts()
@@ -367,7 +403,15 @@ def build(a: dict) -> str:
         brief = _brief_for(store, bid)["brief"]
         bundle = _assemble(b, brief)
     checks = ws.check_excerpts(bundle, store=store, wait_s=BUILD_WAIT_S) if a.get("check_excerpts", True) else {"skipped": True}
-    d = ws.build_draft(store, ALL, bundle, brief_id=bid, changelog=a.get("changelog"))
+    changelog = a.get("changelog")
+    if not changelog:                      # an edit without a written changelog: use FieldKit's own change summary
+        try:
+            live0 = store.get_workspace_version(bundle["id"])
+            if live0.get("published_version"):
+                changelog = ws.workspace_changes(live0["bundle"], bundle)[:12]
+        except NotFound:
+            pass
+    d = ws.build_draft(store, ALL, bundle, brief_id=bid, changelog=changelog)
     rr = d["research_report"]
     pending = ws.pending_checks(bundle)
     try:
@@ -458,7 +502,8 @@ def undo_update(a: dict) -> str:
         return _fail("the earlier version no longer validates: " + "; ".join(d["validation"]["errors"][:5]))
     out = ws.publish(store, wid, d["version"], actor=ALL)
     return _ok(**out, restored_from_version=target, undid_version=cur, changes=changes,
-               next="Tell the user it is undone; on the phone, tap 'Update from Hermes'. Records made with any version stay readable.")
+               next="Tell the user it is undone and list exactly what changed back (the 'changes' list, in plain words); on "
+                    "the phone, tap 'Update from Hermes'. Records made with any version stay readable.")
 
 
 def get(a: dict) -> str:
@@ -546,9 +591,11 @@ TOOLS = [
         "Alternatively pass brief_id and a complete bundle. Returns errors to fix, or the report to show the user.",
         {"workspace_id": STR, "brief_id": STR, "bundle": OBJ, "check_excerpts": BOOL,
          "changelog": {"type": "array", "items": STR}}), build),
-    (_s("fieldkit_undo_workspace_update", "Undo the last published change to a workspace ('undo my last workspace update'): "
-        "first call without user_confirmed to get what would change, show it, then call with user_confirmed=true. It "
-        "republishes the previous version as a new version so phones update; records keep their original version.",
+    (_s("fieldkit_undo_workspace_update", "Undo the last published change to a workspace. When the user explicitly asks "
+        "to undo ('undo my last workspace update'), that request is the approval: call with user_confirmed=true and then "
+        "tell them exactly what changed back. If it is unclear what they want undone, call without user_confirmed to "
+        "preview and ask. It republishes the previous version as a new version so phones update; records keep their "
+        "original version.",
         {"workspace_id": STR, "to_version": INT, "user_confirmed": BOOL}, ["workspace_id"]), undo_update),
     (_s("fieldkit_publish_workspace", "Publish a valid workspace draft so the user's phone can download it for offline use. "
         "Requires user_approved=true after the user reviewed the research report.",

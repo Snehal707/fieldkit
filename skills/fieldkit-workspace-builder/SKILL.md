@@ -23,7 +23,9 @@ purpose, a few at a time, **5-8 questions at most**, and infer the rest. Example
 - **Personal or study logs:** what to capture and how they want to find it later.
 - Anything else: ask what a typical entry looks like and what they would want to know from their entries later.
 
-Always learn: the purpose, **what is recorded each time**, **what identifies an entry** (the subject), and languages.
+Always learn: the purpose, **what is recorded each time**, **what identifies an entry** (the subject), and languages
+(the phone app supports **English and Hindi** only; do not offer other languages). Ask before drafting; do not guess
+a form before the user has told you what they record.
 Only ask about decisions, rules, escalation, location or instruments if the purpose involves them. If there are no
 decisions, there are none: do not create a decision scale, guides or "flag" decisions to fill a template.
 
@@ -40,7 +42,7 @@ summary **and the questions the form will have**, ask the user to confirm or cor
 3. Add everything in **one or two calls**: `fieldkit_add_workspace_parts(workspace_id, parts={...})`:
    - `workflows`: the form(s) with the user's fields, units and terms (choice options as `{value, label}`); set
      `metadata.subject_field` to the field that identifies an entry (e.g. `participant_id`, `asset_id`).
-   - Only if they have rules: one `sources` item `{"id": "s_user", "type": "user_statement", "title": "Stated by the
+   - Only if they stated real rules (limits, thresholds, steps; not a description of the form): one `sources` item `{"id": "s_user", "type": "user_statement", "title": "Stated by the
      user in the setup interview"}`, `evidence` quoting **their words**, classification rules citing it ("Your
      procedure" on the phone).
    - Only if they make decisions: `report_policy.decision_scale` and `guides` (actions cite their rules, or are
@@ -66,9 +68,10 @@ For "add a question about X", "remove the GPS field", "make temperature required
    "Publish these changes?". Publish only after they say yes.
 4. Old records keep their original form version and answers, including answers to removed questions.
 
-**Undo:** for "undo my last workspace update", call `fieldkit_undo_workspace_update(workspace_id)` to see what would
-change back, show it, and call again with `user_confirmed: true` after they confirm. It publishes the previous version
-as a new version, so phones get it as an update.
+**Undo:** an explicit "undo my last workspace update" is the approval: call
+`fieldkit_undo_workspace_update(workspace_id, user_confirmed=true)` and tell the user exactly what changed back (the
+returned `changes`). If it is unclear which change they mean, preview first (without `user_confirmed`) and ask. It
+publishes the previous version as a new version, so phones get it as an update.
 
 ## 5. Optional: check a rule against official sources
 

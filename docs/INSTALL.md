@@ -6,7 +6,7 @@ Requires **Hermes Agent ≥ 0.23.0** with the web dashboard.
 ```bash
 hermes plugins install Snehal707/fieldkit        # or: copy this repo to $HERMES_HOME/plugins/fieldkit
 hermes plugins enable fieldkit
-hermes plugins show fieldkit                  # 37 tools, 1 hook, dashboard tab, api: plugin_api.py
+hermes plugins show fieldkit                  # 20 tools, 1 hook, dashboard tab, api: plugin_api.py
 ```
 The repo ships its built front-ends (`dashboard/dist/`, `dashboard/app_dist/`), so no Node.js is needed on the host.
 Building yourself is covered in [Building from source](#building-from-source).
@@ -28,7 +28,7 @@ plugins:
     fieldkit:
       settings:
         public_url: https://your-hermes.example.org   # optional; overrides the detected URL
-        auto_analyze: true                           # run queued questions and requested reports in the background
+        auto_analyze: true                           # run queued questions in the background
 ```
 
 ## 3. Load it
@@ -54,40 +54,32 @@ plugins:
 
 The app header shows the device network, Hermes reachability, records awaiting confirmation and "N not submitted" drafts. Tap the status pill to open **Connection diagnostics**, which runs a live connection test and shows evidence of every request.
 
-## 5. Analysis and questions
-Saving or syncing a visit never starts AI work or a report. Syncing only uploads. Hermes works when you ask:
+## 5. Questions about visits
+Saving or syncing a visit never starts AI work. Syncing only uploads. Hermes works when you ask:
 - **A question about a visit** (asked on the phone) is answered after the visit syncs.
-- **A report** is written when you ask for one in Hermes (`fieldkit_analyze_record`, or `POST records/{id}/analyze`).
 - **A question in Hermes chat** (`fieldkit_ask_about_record`) is answered at once.
 
 Older workspaces may contain `report_policy.after_sync`; it is accepted and ignored.
 
-Reports and answers use Hermes' main model. Check which main model your Hermes uses. On a local test install without a configured main model, Hermes fell back to a free model that was rate-limited. With `openai/gpt-5.4-mini` via Nous, a real report took 57 s. If the provider rate-limits a request (HTTP 429 with `retry_after`), FieldKit waits as long as it is told, and the item stays pending or queued rather than failed.
+Answers use Hermes' main model. Check which main model your Hermes uses. On a local test install without a configured main model, Hermes fell back to a free model that was rate-limited. In local test runs with `openai/gpt-5.4-mini` via Nous, answers came back in 32–37 s. If the provider rate-limits a request (HTTP 429 with `retry_after`), FieldKit waits as long as it is told, and the question stays queued rather than failed.
 
-- **Automatic mode** (`/status` → `analysis_mode: automatic`): a background worker in the dashboard process answers queued questions and runs requested reports with Hermes' own LLM.
-- **Deferred mode** (no LLM handle in that process): questions and requested reports wait until Hermes processes them. Ask Hermes to "process pending FieldKit jobs", or add a cron job:
-  ```bash
-  hermes cron create "every 15m" "Call fieldkit_process_pending_jobs and report any FieldKit record that requires review." --name fieldkit-analysis --skill fieldkit
-  ```
-  Deferred mode and the cron job are not yet verified end to end.
+- **Automatic mode** (`/status` → `analysis_mode: automatic`): a background worker in the dashboard process answers queued questions with Hermes' own LLM.
+- **Deferred mode** (no LLM handle in that process): questions wait until Hermes processes them. Ask Hermes to "process pending FieldKit jobs".
 
 ## 6. Build your workspace
 A workspace is your job turned into an offline kit: workflows, decision guides, knowledge and sources. Hermes builds it.
 1. In Hermes (Mobile, chat or dashboard), ask: "Set up FieldKit for my work."
-2. Hermes interviews you about the job (the decisions each task needs, what is recorded, the rules you already use, documents, languages and escalation), shows you a brief to confirm, and builds the workspace straight away. There is no up-front web research. Your own rules are labelled "Your procedure". Checking a rule against official sources is optional. A source check uses Hermes' own `web_search` and `web_extract` tools, so it needs web search configured in Hermes.
+2. Hermes asks what the workspace is for, then 5–8 follow-up questions chosen for that purpose. It shows you a brief to confirm, and builds the workspace straight away. There is no up-front web research. Your own rules are labelled "Your procedure". Checking a rule against official sources is optional. A source check uses Hermes' own `web_search` and `web_extract` tools, so it needs web search configured in Hermes.
 3. Hermes publishes the workspace only after you approve it. It then returns an app link.
 4. Open the link on your phone (it opens `#/workspace/<id>`) and tap **Download everything for offline**.
 5. In **Offline Packs**, install the optional **Question understanding — English and Hindi** pack (about 118 MB). Without it, the Workspace Assistant uses basic word search.
 
 The bundled examples are starter workspaces, labelled synthetic. In local tests on a local test Hermes, a build took about 2.5 minutes on average. Workspace builds are not yet verified on the owner's iPhone or the hosted Hermes.
 
-To have Hermes check each day for workspace changes that need a decision (not verified; not yet verified on the hosted Hermes):
-```bash
-hermes cron create "every 24h" "Call fieldkit_propose_workspace_changes for my FieldKit workspaces and tell me what needs a decision." --skill fieldkit-workspace-builder
-```
+To change the workspace later, ask Hermes in chat, for example "add a question…" or "change our rule". Hermes shows what changed and asks before it publishes. To undo the last update, ask "Undo my last workspace update." The phone shows **Update available** for each new version.
 
 ## Photo analysis with a vision model
-If your default model can't read images, FieldKit analyses records **text-only** and marks the report "Photos not analysed". To analyse photos with a separate vision model, without changing the gateway's default model, set FieldKit's own model slot. These settings are read live, so no restart is needed:
+To send photos to a separate vision model when answering questions about a visit, without changing the gateway's default model, set FieldKit's own model slot. These settings are read live, so no restart is needed:
 ```bash
 hermes config set auxiliary.fieldkit_vision.provider <provider>
 hermes config set auxiliary.fieldkit_vision.model <vision-model-id>

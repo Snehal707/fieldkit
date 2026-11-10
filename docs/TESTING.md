@@ -603,3 +603,31 @@ questions about a visit (while filling in the form or afterwards, online or offl
 - Retries: rate-limited and schema-mismatch questions are covered by tests (`test_questions.py`, `test_rate_limit.py`),
   not forced on the real provider.
 - **Results:** pytest 201 passed; vitest 130 passed; typecheck clean; Chromium E2E 30 passed, 5 skipped.
+
+### 0.2.6 final: cleanup, purpose-first interview, editing by chat (2026-11-10)
+- **Cleanup:** Hermes sees 20 tools (18 retired: standalone workflows/packs, structured reports, follow-ups, learning
+  loop; code kept for existing data). Phone: Workspace in the bottom bar, fewer Home tiles, older-report section only
+  when a report exists, earlier form versions kept so old visits show their own questions. Dashboard: 4 tabs, visits
+  show their questions and answers.
+- **Editing by chat, real Hermes (local test Hermes, `openai/gpt-5.4-mini` via Nous):** "add a yes/no question 'Fridge
+  door seal intact?' and remove the 'Pest signs' question" → Hermes started a build on the existing workspace (no
+  interview), changed the form, its rule and the guide, built, and asked "Publish these changes?" (171 s). FieldKit's
+  change summary: added question, removed question (old records keep it), removed rule, changed guide. "Yes, publish"
+  → version 2 (19 s). Phone: "Update available: version 2"; new form had the door-seal question and no pest question;
+  a visit recorded before, opened offline, still showed "Pest signs seen: Yes". "Undo my last workspace update" (new
+  chat, 41 s) → version 3 = version 1; phone showed "Update available: version 3 — Undo: back to version 1"; old visit
+  still readable. Hermes ran the undo without a separate confirmation (an explicit undo now counts as approval; it
+  must list what changed back). Approval steps rely on Hermes following instructions. The Hermes CLI printed the app
+  link as a local path; FieldKit's tool returned the correct http link.
+- **Purpose-first interviews, real Hermes:** solar business owner (adaptive questions, correct summary, valid build
+  with their real decisions and 2 rules); student research archive (first run: guessed a form, offered Marathi and
+  invented a "needs review/finalized" decision scale; after fixes Hermes asked before drafting, offered English or
+  Hindi only and summarised 12 fields with no decisions; FieldKit now rejects a decision scale when no task has
+  decisions); dairy regression (correct summary). Student and dairy builds failed on language shapes Hermes sent
+  (`{"en": "English", ...}`, `{"primary": [...]}`); FieldKit now normalises them, and the same Hermes-generated parts
+  rebuild valid (student: no decisions, 12 fields; dairy: accept/re-test/reject, 7 fields). One dairy model call took
+  801 s (provider stall). The second interview run was stopped by the machine's memory limit before the final builds;
+  those builds were re-checked from the saved parts, not in a new conversation.
+- **Results:** pytest 204 passed; vitest 130 passed; typecheck clean; validate passed; doctor 20 tools, 1 hook;
+  Chromium E2E 30 passed / 5 skipped; WebKit E2E 23 passed / 11 skipped plus `media.spec` re-run passed after a test
+  fix.

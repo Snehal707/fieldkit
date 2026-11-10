@@ -139,8 +139,10 @@ test("photo, voice note and signature: playable on Results, intact on Hermes, ev
     await new Promise((done) => setTimeout(done, 5_000));
     const r2 = await (await A.ctx.request.get(`${API}/records/${id}`)).json();
     const v2 = r2.attachments.find((x: any) => x.kind === "audio");
-    expect(v2.transcript_source ?? null, "no Hermes speech-to-text on upload").not.toBe("hermes");
-    expect(v2.transcript_error ?? null).toBeNull();
+    if (v2) {                        // WebKit records no voice note in this test
+      expect(v2.transcript_source ?? null, "no Hermes speech-to-text on upload").not.toBe("hermes");
+      expect(v2.transcript_error ?? null).toBeNull();
+    }
   }
   const sig = rec.attachments.find((x: any) => x.kind === "signature");
   expect(sig.field_id).toBe("inspector_sign");
@@ -183,7 +185,10 @@ print(json.dumps({"images": report["images"]["attached"], "att": report["attachm
 
   // The phone downloads the report: evidence with the signature (intact, viewable) and the voice-note status.
   await page.goto(`${APP}#/results/${id}?r=${Date.now()}`);
-  await page.getByRole("button", { name: /Download report|Check for newer report/ }).click();
+  await page.goto(`${APP}#/sync`);   // 0.2.6: an existing report arrives with sync (no "Download report" button without one)
+  await page.getByRole("button", { name: /Sync now/ }).click().catch(() => undefined);
+  await page.waitForTimeout(4000);
+  await page.goto(`${APP}#/results/${id}?r=${Date.now()}`);
   const ev = page.locator("#report-evidence");
   await expect(ev).toBeVisible({ timeout: 20_000 });
   await expect(ev.locator("[data-summary]")).toHaveText(summary);

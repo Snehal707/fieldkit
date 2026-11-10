@@ -65,7 +65,10 @@ print(json.dumps({"outcome": report["decision"]["outcome"], "problems": report["
   expect(res).toEqual({ outcome: "stop", problems: [] });
 
   await page.goto(`${APP}#/results/${id}?r=${Date.now()}`);
-  await page.getByRole("button", { name: /Download report|Check for newer report/ }).click();
+  await page.goto(`${APP}#/sync`);   // 0.2.6: an existing report arrives with sync (no "Download report" button without one)
+  await page.getByRole("button", { name: /Sync now/ }).click().catch(() => undefined);
+  await page.waitForTimeout(4000);
+  await page.goto(`${APP}#/results/${id}?r=${Date.now()}`);
   const decisionBox = page.locator("#report-decision");
   await expect(decisionBox).toBeVisible({ timeout: 20_000 });
   await expect(decisionBox).toHaveAttribute("data-outcome", "stop");

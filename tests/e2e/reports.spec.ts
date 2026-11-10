@@ -53,7 +53,10 @@ s.save_report_direct(${JSON.stringify(id)}, {"summary": "Guard missing on PMP-70
 
   // The phone downloads it (Results → Download report).
   await page.goto(`${APP}#/results/${id}?r=1`);
-  await page.getByRole("button", { name: /Download report|Check for newer report/ }).click();
+  await page.goto(`${APP}#/sync`);   // 0.2.6: an existing report arrives with sync (no "Download report" button without one)
+  await page.getByRole("button", { name: /Sync now/ }).click().catch(() => undefined);
+  await page.waitForTimeout(4000);
+  await page.goto(`${APP}#/results/${id}?r=${Date.now()}`);
   await expect(page.locator("text=Guard missing on PMP-7001")).toBeVisible({ timeout: 20_000 });
   await ctx.close();
 

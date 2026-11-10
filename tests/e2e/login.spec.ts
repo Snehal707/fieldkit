@@ -56,6 +56,6 @@ test("Sign in returns to FieldKit and first-run download makes it offline-ready"
   await expect(dl).toBeVisible({ timeout: 20_000 });
   await dl.click();
   await expect(page.locator("text=Ready to work offline")).toBeVisible({ timeout: 60_000 });
-  await expect(page.locator(".tile", { hasText: "My Workflows" })).toContainText("3 downloaded");
+  await expect(page.locator(".tile", { hasText: "All forms" })).toContainText("3 on this phone");
   await ctx.close();
 });

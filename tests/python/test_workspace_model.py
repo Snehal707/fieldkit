@@ -225,3 +225,16 @@ def test_unattributed_events_never_become_a_workspace_candidate(store):
     new = learning.propose(store, "dairy-collection-mh")
     assert [c["payload"]["questions"] for c in new] == [["How to clean the analyser?"]]
     assert len(learning.events(store)) == 2                         # still listed overall
+
+
+def test_no_invented_decisions_for_work_without_decisions():
+    """Seen in a real interview: a research archive got a 'needs review / finalized' scale nobody asked for."""
+    p = copy.deepcopy(BUNDLE["profile"])
+    for r in p["responsibilities"]:
+        r.pop("decisions", None)
+    b = bundle(profile=p, guides=[])
+    errs = ws.validate_bundle(b)["errors"]
+    assert any("must not have a decision scale" in e for e in errs)
+    b2 = bundle(profile=p, guides=[])
+    b2["report_policy"] = {}
+    assert not any("decision scale" in e for e in ws.validate_bundle(b2)["errors"])

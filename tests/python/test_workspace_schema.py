@@ -338,3 +338,12 @@ def test_rules_the_user_states_are_their_procedure_and_can_drive_the_guide():
     g = copy.deepcopy(S.EXAMPLES["guides"])
     g["nodes"]["o_accept"]["outcome"]["actions"][0]["evidence_ids"] = ["ev_union_snf"]
     assert S.check_item("guides", g, c3) == []
+
+
+def test_language_shapes_from_real_models_are_normalised():
+    from fieldkit_core.workspace_tools import normalize_languages as n
+    assert n(["English", "Hindi"]) == {"content": ["en", "hi"]}
+    assert n({"en": "English", "hi": "Hindi"}) == {"content": ["en", "hi"]}
+    assert n({"primary": ["hi", "en"]}) == {"content": ["hi", "en"]}
+    assert n({"content": ["en", "hi"], "speech": ["hi"]}) == {"content": ["en", "hi"], "speech": ["hi"]}
+    assert n("hi") == {"content": ["hi"]} and n(None) == {"content": ["en"]}

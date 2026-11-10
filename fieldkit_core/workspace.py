@@ -253,6 +253,8 @@ def validate_bundle(b: Any, existing_workflow_ids: Optional[Any] = None) -> dict
     langs = (b.get("languages") or {}).get("content") or []
     if not langs or not all(isinstance(x, str) and re.match(r"^[a-z]{2,3}$", x) for x in langs):
         errs.append("languages.content: list of language codes required")
+    elif any(x not in ("en", "hi") for x in langs):
+        warns.append(f"languages {[x for x in langs if x not in ('en', 'hi')]}: the phone app supports English and Hindi only")
 
     # Sources and evidence.
     sources = {s["id"]: s for s in b.get("sources") or [] if isinstance(s, dict) and s.get("id")}
@@ -308,6 +310,9 @@ def validate_bundle(b: Any, existing_workflow_ids: Optional[Any] = None) -> dict
     # Guides.
     policy = b.get("report_policy") or {}
     decisions = {d.get("id") for d in policy.get("decision_scale") or [] if isinstance(d, dict)}
+    if not uses_decisions and decisions:
+        errs.append("no task in this workspace involves a decision, so it must not have a decision scale: remove "
+                    "report_policy.decision_scale (never invent decisions such as 'needs review' or 'flag')")
     if uses_decisions and not decisions:
         errs.append("report_policy.decision_scale required when the work involves decisions or guides "
                     "(e.g. stop / repair_soon / monitor)")

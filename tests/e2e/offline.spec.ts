@@ -92,7 +92,7 @@ test("install online, then work fully offline after a cold restart, then sync", 
   await expect(page.locator("text=Safety guard problem")).toBeVisible();
   await expect(page.locator("text=Vibration above alarm level")).toBeVisible();
   await expect(page.locator(".tag-local")).toBeVisible();
-  await expect(page.locator("text=Available after Hermes has received and analyzed this record")).toBeVisible();
+  await expect(page.locator("#ask-hermes")).toBeVisible();          // 0.2.6: ask about the visit; no automatic report
   const recordUrl = page.url();
   const recordId = recordUrl.split("#/results/")[1];
   await ctx.close();
