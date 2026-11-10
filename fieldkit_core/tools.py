@@ -176,7 +176,22 @@ def list_records(a: dict) -> str:
     for w in wfs:
         rows += store.list_records(ALL, w, int(a.get("limit", 20)), a.get("analysis_status"), full=full)
     rows.sort(key=lambda r: r.get("received_at") or 0, reverse=True)
-    return _ok(records=rows[: int(a.get("limit", 20)) if not a.get("workspace_id") else max(1, int(a.get("limit", 100)))])
+    if not a.get("workspace_id"):
+        return _ok(records=rows[: int(a.get("limit", 20))])
+    # A workflow can be in several workspaces: keep the records of THIS workspace. Records synced without a workspace
+    # count only when this is the one workspace containing their workflow; the rest are reported, never guessed.
+    wid, mine, unassigned = a["workspace_id"], [], 0
+    for r in rows:
+        if r.get("workspace_id") == wid or (not r.get("workspace_id") and store.workspaces_with_workflow(r.get("workflow_id")) == [wid]):
+            mine.append(r)
+        elif not r.get("workspace_id"):
+            unassigned += 1
+    out = {"records": mine[: max(1, int(a.get("limit", 100)))]}
+    if unassigned:
+        out["unassigned_records"] = unassigned
+        out["note"] = (f"{unassigned} record(s) use a form shared by several workspaces and were synced without saying "
+                       "which; they are not included. Ask the user if they belong here.")
+    return _ok(**out)
 
 
 def get_record(a: dict) -> str:

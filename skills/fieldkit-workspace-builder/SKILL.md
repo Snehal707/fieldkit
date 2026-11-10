@@ -79,6 +79,20 @@ Only if the user asks, or a legal limit decides the outcome: at most two `web_se
 the one matching page with `web_extract`, copy the exact sentence, add it as a source + evidence (FieldKit checks the
 quote). If nothing qualifies quickly, add a `gaps` item. Never spend long browsing.
 
+**Which stage does a standard govern?** Record it in `applicability.governs` and `applicability.binding_for_this_work`.
+A legal standard for another stage or party is a reference for this work, not its rule. Example: FSSAI fat/SNF
+minimums govern milk **sold to consumers**; a village collection centre buying from farmers decides acceptance by its
+union's or buyer's **procurement standard** (ask the user for it), and may show the FSSAI value for information only.
+So: `binding_for_this_work: false` (status "Reference only"), never a rejection threshold. Reject/high-severity rules
+and the most severe guide decisions must cite the user's procedure or a standard that binds this work; FieldKit
+refuses them otherwise. If the user has no procurement standard, ask; do not substitute the legal one.
+
+**Correcting such a workspace** (e.g. "the FSSAI limits are not our collection rule"): edit it as in section 4. Keep
+the legal evidence but set its applicability (governs, binding_for_this_work=false); point the reject rule and guide
+at the user's procurement rule (add it as their statement); relabel rules ("below our procurement standard", not
+"below the legal minimum"). Show `changes_since_published` and publish only after the user approves. Old entries keep
+their original form version.
+
 ## 6. Questions about entries
 
 Users ask about an entry on the phone ("Ask Hermes about this visit"); FieldKit answers those after sync, and you can

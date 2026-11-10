@@ -33,7 +33,7 @@ plugins:
 
 ## 3. Load it
 - **Install and enable** do not need a dashboard restart (verified with Hermes v0.23.0). A plugin enabled after the dashboard started is hot-mounted on its first request; Hermes does this itself.
-- **Updates:** the phone app files take effect immediately (installed apps show "Update ready"). Changes to FieldKit's **Python** code (API, tools, analysis) take effect only after Hermes reloads the plugin code, i.e. the next dashboard/gateway restart, because Python keeps an already-loaded plugin in memory.
+- **Updates:** the phone app files take effect immediately (installed apps show "Update ready"). Changes to FieldKit's **Python** code (API, tools, analysis) take effect only after Hermes reloads the plugin code, i.e. the next dashboard/gateway restart, because Python keeps an already-loaded plugin in memory. After `hermes plugins update fieldkit`, restart **both** the Hermes gateway and the dashboard; otherwise an old question worker keeps answering with the old code.
 - **Tools and the skill** load in the next Hermes session.
 - **Don't restart a shared or hosted instance without its operator's agreement.**
 
@@ -87,7 +87,19 @@ hermes config set plugins.entries.fieldkit.settings.vision_task true
 ```
 If `config set` refuses the unknown key, add `--force`.
 
-If that model is unavailable, FieldKit falls back to the default model, then to text-only. After a plugin update, ask Hermes to "process pending FieldKit jobs with `retry_failed: true`" once to re-run jobs that failed before the fix.
+The slot is used whenever `auxiliary.fieldkit_vision` has a model or provider, so the `vision_task` line is optional: `true` always tries the slot, and `false` never does.
+
+If the slot's model fails, FieldKit tries the main model with the photos, then Hermes' vision descriptions, then text only (see [API.md](API.md)). After a plugin update, ask Hermes to "process pending FieldKit jobs with `retry_failed: true`" once to re-run jobs that failed before the fix.
+
+## Photos with a text-only main model
+A text-only main model cannot read photos. Hermes' main model gets the photos first and rejects them (`400 This model does not support image inputs`, or `404` from some providers), and FieldKit then falls back to Hermes' vision descriptions. To use a vision model for photos, set it in `config.yaml`:
+```yaml
+auxiliary:
+  fieldkit_vision:
+    provider: nous
+    model: google/gemini-3.6-flash
+```
+Without this, Hermes' vision tool picks a model itself. In our test it picked a free model that was rate-limited.
 
 ## Building from source
 ```bash

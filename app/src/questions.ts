@@ -3,7 +3,7 @@
 // same visit and stays readable offline. Case-specific: never a workspace rule.
 import { api, AuthRequired } from "./api";
 import { db, type LocalQuestion } from "./db";
-import { installedWorkspaces } from "./workspace";
+import { workspaceForEntry } from "./workspace";
 import { nowIso, uuid } from "./util";
 
 export const SUGGESTED_QUESTIONS: Record<string, string[]> = {
@@ -12,12 +12,6 @@ export const SUGGESTED_QUESTIONS: Record<string, string[]> = {
   hi: ["अब मुझे क्या करना चाहिए?", "फोटो में क्या दिख रहा है?", "इस मुलाकात में कुछ छूटा या असामान्य है?", "पिछली मुलाकात से तुलना कैसी है?"],
 };
 
-async function workspaceFor(workflowId: string): Promise<string | null> {
-  try {
-    const hit = (await installedWorkspaces()).find((w) => (w.manifest.workflows ?? []).some((x) => x.id === workflowId));
-    return hit?.manifest.workspace_id ?? null;
-  } catch { return null; }
-}
 
 /** Queue a question about a saved record (works offline). */
 export async function askAboutRecord(recordId: string, question: string, lang: string): Promise<LocalQuestion> {
@@ -27,7 +21,7 @@ export async function askAboutRecord(recordId: string, question: string, lang: s
   const text = question.trim();
   if (!text) throw new Error("Write a question first.");
   const photos = (await d.getAllFromIndex("attachments", "by_record", recordId)).filter((a) => a.kind === "photo").map((a) => a.id);
-  const q: LocalQuestion = { id: uuid("q"), record_id: recordId, workspace_id: await workspaceFor(rec.workflow_id), question: text.slice(0, 1000),
+  const q: LocalQuestion = { id: uuid("q"), record_id: recordId, workspace_id: rec.workspace_id ?? await workspaceForEntry(rec.workflow_id), question: text.slice(0, 1000),
     lang, attachment_ids: photos, status: "queued", created_at: nowIso() };
   await d.put("questions", q);
   return q;
@@ -36,6 +30,13 @@ export async function askAboutRecord(recordId: string, question: string, lang: s
 export async function questionsFor(recordId: string): Promise<LocalQuestion[]> {
   const d = await db();
   return (await d.getAllFromIndex("questions", "by_record", recordId)).sort((a, b) => a.created_at.localeCompare(b.created_at));
+}
+
+/** "Ask again" for a question Hermes could not answer: queued again on this phone (works offline). */
+export async function askAgain(id: string): Promise<void> {
+  const d = await db();
+  const q = await d.get("questions", id);
+  if (q && q.status === "failed") await d.put("questions", { ...q, status: "queued", retry: true, error: undefined });
 }
 
 /** Sync step: send queued questions whose record Hermes already has, then fetch answers. Returns how many changed. */
@@ -48,8 +49,9 @@ export async function syncQuestions(): Promise<number> {
     if (!rec || !["synced", "received"].includes(rec.sync_status)) continue;      // the visit must reach Hermes first
     try {
       await api(`records/${encodeURIComponent(q.record_id)}/questions`, { method: "POST",
-        json: { id: q.id, question: q.question, lang: q.lang, workspace_id: q.workspace_id, attachment_ids: q.attachment_ids } });
-      await d.put("questions", { ...q, status: "sent", sent_at: nowIso(), error: undefined });
+        json: { id: q.id, question: q.question, lang: q.lang, workspace_id: q.workspace_id, attachment_ids: q.attachment_ids,
+          ...(q.retry ? { retry: true } : {}) } });
+      await d.put("questions", { ...q, status: "sent", sent_at: nowIso(), error: undefined, retry: undefined });
       changed++;
     } catch (e) {
       if (e instanceof AuthRequired) throw e;

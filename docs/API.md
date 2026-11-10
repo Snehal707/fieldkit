@@ -51,7 +51,7 @@ Older workspaces may contain `report_policy.after_sync`; it is accepted and igno
 ```json
 {"idempotency_key": "idk_…", "device_id": "dev_…",
  "record": {"id": "rec_…", "workflow_id": "equipment-inspection", "workflow_version": 1, "base_revision": 0,
-            "answers": {…}, "local_results": {…}, "created_local_at": "…", "completed_at": "…",
+            "answers": {…}, "local_results": {…}, "workspace_id": "…", "created_local_at": "…", "completed_at": "…",
             "attachments": [{"id": "att_…", "field_id": "photos", "mime": "image/jpeg", "size": 123, "sha256": "…"}]}}
 ```
 
@@ -59,6 +59,8 @@ Older workspaces may contain `report_policy.after_sync`; it is accepted and igno
 ```json
 {"record_id", "revision", "received_at", "sync_status": "received|complete", "analysis_status", "analysis_job_id", "attachments_needed": [ids]}
 ```
+**Workspace on a record.** `record.workspace_id` is the workspace the phone recorded the entry in. The phone sends none when it cannot tell. The server stores it only if it is a published workspace whose published or earlier published versions contain the record's form. Otherwise it stores the only published workspace that contains the form, or none. The 200 response includes `workspace_id` (the stored workspace, or none) and, when the phone's value was not used, `workspace_note`. An edit without a workspace never clears a stored one. At worker start, records with no workspace get one only when exactly one published workspace contains their form. Each repair writes a `record.workspace_repaired` audit event; nothing else in the record changes.
+
 The same `idempotency_key` returns the stored response with `duplicate: true`. Identical content re-sent under a new key is acknowledged without creating a new revision.
 
 **Error responses:**
@@ -86,11 +88,23 @@ The same `idempotency_key` returns the stored response with `duplicate: true`. I
 | GET | `records/{id}` | Full record, including attachment metadata. Each attachment has `kind` (`photo`, `audio` for a voice note, or `signature`), `field_label`, and `signed_at` (signatures). Voice notes also have `transcript`, `transcript_source` (`device` or `hermes`) and `transcript_error` (why there is no transcript). The record has `attachment_counts` (`{photo, audio, signature}`) and `attachment_summary` (for example "1 photo · 1 voice note"). |
 | POST | `records/{id}/analyze` | Earlier version. Queues (or re-queues a failed or completed) durable job. Only on request; sync never queues one |
 | GET | `records/{id}/report` | Earlier version. Latest report version. The PWA downloads this for offline use |
-| POST | `records/{id}/questions` | Queues a question about this record (0.2.6). Body `{id, question, lang, workspace_id, attachment_ids}`. Idempotent on `id` (the phone's id). Owner-checked: another user's record returns `404`. Answered after sync |
-| GET | `records/{id}/questions` | The record's questions (0.2.6), with `status` (`queued`, `answering`, `answered` or `failed`) and `answer` once answered. Owner-checked |
+| POST | `records/{id}/questions` | Queues a question about this record (0.2.6). Body `{id, question, lang, workspace_id, attachment_ids, retry?}`. Idempotent on `id` (the phone's id); with `"retry": true` a `failed` question is requeued with fresh attempts. Takes the record's workspace (the phone's `workspace_id` is ignored). Owner-checked: another user's record returns `404`. Answered after sync |
+| GET | `records/{id}/questions` | The record's questions (0.2.6), with `status` (`queued`, `answering`, `answered` or `failed`). `answer` once answered, with `route`, `model`, `provider`, `photos_seen` and `fallbacks`. `error` when failed. Owner-checked |
 | GET | `reports`, `reports/{id}` | Earlier version. Older reports stay readable |
 | GET | `jobs` | Recent jobs, counts and analysis mode |
 | POST | `examples/install` | Synthetic demo workflows and packs. Idempotent |
+
+**Questions with photos (answer routes).** Within one attempt, answers try these routes in order:
+1. The `fieldkit_vision` slot with the photos, when `auxiliary.fieldkit_vision` has a model or provider in Hermes' config, or when the plugin setting `vision_task` is `true`. `vision_task: false` never uses it.
+2. Hermes' main model with the photos.
+3. If the main model takes no images: Hermes' own vision tool (`tools.vision_tools.vision_analyze_tool`) describes each photo (up to 2), and the main model answers from those descriptions. Descriptions are kept per photo in the table `photo_descriptions` (DB migration v7) and reused by later questions.
+4. The text evidence only. The answer says the photos were not seen.
+
+A rate limit (HTTP 429) stops the chain. The question waits as the provider says, without using an attempt. Each answer records `route` (`vision_slot`, `main_model_with_photos`, `photo_descriptions` or `text_only`), `model`, `provider`, `photos_seen` and `fallbacks` (what each earlier route returned).
+
+A question waits until its visit's photos and voice notes have finished uploading. After 30 minutes it is answered with what arrived.
+
+If every route fails, `error` lists each route's error (for example `vision_slot: NotFoundError 404: …; main_model_with_photos: …`). After 3 attempts the question is `failed`. The phone shows "Hermes could not answer: <reason>" and **Ask again**. Ask again works offline. At the next sync the phone re-sends the same question id with `"retry": true`, which requeues the question with fresh attempts.
 
 ## PWA
 The app is served publicly at `/dashboard-plugins/fieldkit/app_dist/index.html`, outside Hermes' `/api` login gate. The page contains no data; every data call below still requires sign-in.
@@ -164,7 +178,7 @@ Questions about a visit (0.2.6, 2 new):
 - `fieldkit_list_questions`: lists questions asked about a visit from the phone, queued or answered.
 
 
-**`fieldkit_list_records` `workspace_id` and `include_answers` (0.2.6).** `workspace_id` lists the records of every workflow in that workspace. Set `include_answers: true` to get each record's answers in the result. Use it for summaries, counts, trends and comparisons across records, when you ask Hermes in chat. Without it, the result lists record summaries only.
+**`fieldkit_list_records` `workspace_id` and `include_answers` (0.2.6).** `workspace_id` lists the records of every workflow in that workspace, including unassigned records (no workspace stored) whose form is only in that workspace. The result reports `unassigned_records` and a `note` for records of a shared form that were synced without a workspace. Set `include_answers: true` to get each record's answers in the result. Use it for summaries, counts, trends and comparisons across records, when you ask Hermes in chat. Without it, the result lists record summaries only.
 
 All tools return a JSON string `{ok: true, …}` or `{ok: false, error}`. They act as the instance owner.
 
@@ -175,5 +189,6 @@ All tools return a JSON string `{ok: true, …}` or `{ok: false, error}`. They a
 |---|---|---|---|
 | `voice_transcription` | `true` | `FIELDKIT_VOICE_TRANSCRIPTION=false` | When on, Hermes may transcribe a voice note that has no phone transcript, only when a question about its visit needs one (see `attachments/{id}` above). When off, each untranscribed voice note's `transcript_error` says that transcription is turned off. |
 | `auto_analyze` | `true` | — | When on, a background worker in the dashboard process answers queued questions. Sync never queues work, so this setting does not affect saving or syncing. |
+| `vision_task` | unset | — | Controls the `fieldkit_vision` model slot. Unset: the slot is used only when `auxiliary.fieldkit_vision` is configured. `true`: always try it. `false`: never use it. |
 
 The `transcribe_on_upload` setting was removed in 0.2.6. Voice notes are not transcribed on upload.

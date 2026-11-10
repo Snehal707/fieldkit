@@ -10,3 +10,12 @@ def _fresh_source_page_cache():
     yield
     ws._MEM.clear()
     ws._INFLIGHT.clear()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_hermes_home(tmp_path_factory, monkeypatch):
+    """Code that asks Hermes for its configuration (e.g. whether auxiliary.fieldkit_vision is set) must read an empty
+    test home, never the developer's ~/.hermes."""
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path_factory.mktemp("hermes-home")))
+    monkeypatch.delenv("FIELDKIT_VISION_TASK", raising=False)
+    yield

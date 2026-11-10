@@ -127,6 +127,7 @@ def start_worker(interval_s: float = 15.0) -> bool:
         try:
             get_store().recover_stale_jobs()
             get_store().recover_stale_questions()
+            worker_state["workspace_repair"] = get_store().repair_record_workspaces()
         except Exception as exc:  # pragma: no cover
             worker_state["last_error"] = str(exc)
         while not _worker_stop.is_set():

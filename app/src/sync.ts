@@ -114,6 +114,7 @@ async function sendRecord(op: OutboxOp, dev: string): Promise<"done" | "stop" | 
     idempotency_key: op.idempotency_key, device_id: dev,
     record: {
       id: rec.id, workflow_id: rec.workflow_id, workflow_version: rec.workflow_version, base_revision: rec.server_revision,
+      workspace_id: rec.workspace_id ?? null,
       answers: rec.answers, local_results: rec.local_results, created_local_at: rec.created_local_at, completed_at: rec.completed_at,
       attachments: atts.map((a) => ({ id: a.id, field_id: a.field_id, mime: a.mime, size: a.size, sha256: a.sha256 })),
     },
@@ -134,6 +135,7 @@ async function sendRecord(op: OutboxOp, dev: string): Promise<"done" | "stop" | 
     if (r) {
       r.server_revision = res.revision;
       r.server_ack = { received_at: res.received_at, revision: res.revision, sync_status: res.sync_status };
+      if (typeof res.workspace_id === "string") r.workspace_id = res.workspace_id;  // the workspace Hermes filed it under
       r.sync_status = res.sync_status === "complete" ? "synced" : "received";
       r.analysis_status = res.analysis_status;
       r.analysis_job_id = res.analysis_job_id;

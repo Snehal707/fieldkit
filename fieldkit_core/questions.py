@@ -34,7 +34,7 @@ INSTRUCTIONS = (
     "earlier records of the same subject. A broad question (\"what do you think?\") gets a short assessment of what "
     "matters, with uncertainties and next steps. Say plainly what the "
     "evidence cannot show and how to find out (uncertainty). Do not invent readings, sources or standards. Label "
-    "anything that is your own suggestion as a suggestion. This answer is about this case only; do not state general "
+    "anything that is your own suggestion as a suggestion. photo_descriptions, when present, are Hermes vision's descriptions of the record's photos: use them as what the photos show, and say so. Evidence with status 'reference' is a standard for another stage or party (e.g. a legal sale standard): mention it as information, never as the rule that decides this case. This answer is about this case only; do not state general "
     "rules for future records. Answer in the language of the question."
 )
 
@@ -106,15 +106,18 @@ def _context(store: Store, q: dict) -> tuple[dict, list[dict]]:
     focus = set(q.get("attachment_ids") or [])
     photos = [f for f in files if f["kind"] == "photo" and (not focus or f.get("id") in focus)]
     images = analysis._image_inputs(photos) if photos else []
+    ctx["_photos"] = [p for p in photos if p.get("status") == "stored" and p.get("path")][:2]   # for Hermes vision
     ctx["question"] = q["question"]
     return ctx, images
 
 
-def _ask(llm: Any, ctx: dict, images: list[dict]) -> Any:
+def _ask(llm: Any, ctx: dict, images: list[dict], task: Optional[str] = None) -> Any:
     text = json.dumps({k: v for k, v in ctx.items() if not k.startswith("_")}, ensure_ascii=False, indent=1)
     kwargs = dict(instructions=INSTRUCTIONS, input=[{"type": "text", "text": text}] + images, json_schema=ANSWER_SCHEMA,
                   schema_name="fieldkit.answer", temperature=0.2, max_tokens=900, purpose="fieldkit.answer_question",
                   timeout=120)
+    if task:
+        kwargs["task"] = task
     try:
         return llm.complete_structured(**kwargs)
     except Exception as exc:  # noqa: BLE001
@@ -125,24 +128,89 @@ def _ask(llm: Any, ctx: dict, images: list[dict]) -> Any:
         raise
 
 
+class AnswerError(RuntimeError):
+    """Every route failed; the message says what each route returned (shown on the phone and in Hermes)."""
+
+
+def _err(exc: BaseException) -> str:
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    return f"{type(exc).__name__}{f' {status}' if isinstance(status, int) else ''}: {str(exc)[:110]}"
+
+
+def use_vision_slot() -> bool:
+    """FieldKit's own model slot ``fieldkit_vision`` is used for photos when the operator configured it (a model or
+    provider under auxiliary.fieldkit_vision in config.yaml), or turned it on with plugin setting vision_task: true.
+    Unconfigured, Hermes routes the slot to the main model, so trying it would only repeat the main-model call.
+    vision_task: false never uses it."""
+    from . import runtime
+    v = runtime.setting("vision_task", None)
+    if v is not None:
+        return v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes")
+    try:
+        from agent.auxiliary_task_config import _get_auxiliary_task_config  # type: ignore[import-not-found]
+        cfg = _get_auxiliary_task_config(analysis.VISION_TASK) or {}
+    except Exception:
+        return False
+    return bool(cfg.get("model") or str(cfg.get("provider") or "auto").lower() not in ("", "auto", "main"))
+
+
 def answer_question(store: Store, llm: Any, qid: str) -> dict:
-    """Answer one queued question from its record's evidence. Returns the stored answer."""
+    """Answer one queued question from its record's evidence. Returns the stored answer.
+
+    Routes, in order, within one attempt: photos to the fieldkit_vision slot (when configured); photos to Hermes' main
+    model; if that model takes no images, Hermes' vision tool describes the photos and the main model answers from
+    the descriptions; last, the text evidence only (the answer then says the photos were not seen). A rate limit
+    stops the chain so the question waits.
+    """
     if llm is None:
         raise RuntimeError("Hermes LLM access (ctx.llm) is not available in this process")
     q = store.get_question(ALL, qid)
     ctx, images = _context(store, q)
-    try:
-        result = _ask(llm, ctx, images)
-    except Exception as exc:  # a model without image input: answer from the text evidence, and say so
-        if not images or not analysis.is_image_rejection(exc):
-            raise
-        ctx["photos_not_seen"] = "The model could not look at the photos; the answer uses the text evidence only."
-        result = _ask(llm, ctx, [])
+    routes: list[tuple[list[dict], Optional[str], str]] = []
+    if images and use_vision_slot():
+        routes.append((images, analysis.VISION_TASK, "vision_slot"))
+    if images:
+        routes.append((images, None, "main_model_with_photos"))
+        routes.append(([], None, "photo_descriptions"))
+    routes.append(([], None, "text_only"))
+    result, route, tried, described = None, "", [], 0
+    for imgs, task, label in routes:
+        if label == "photo_descriptions":
+            describer, why = media.hermes_photo_describer()
+            descs, problems = media.describe_photos(describer, ctx.get("_photos") or [], store)
+            if not descs and why:
+                problems = [why]
+            if not descs:
+                tried.append(f"photo_descriptions: {'; '.join(problems)[:300]}")
+                continue
+            ctx["photo_descriptions"] = descs
+            described = len(descs)
+            if problems:
+                tried.append(f"photo_descriptions: {'; '.join(problems)[:300]}")
+        if label == "text_only" and images:
+            ctx.pop("photo_descriptions", None)
+            ctx["photos_not_seen"] = "The model could not look at the photos; the answer uses the text evidence only."
+        try:
+            result = _ask(llm, ctx, imgs, task)
+            route = label
+            break
+        except Exception as exc:  # noqa: BLE001
+            if analysis.rate_limit_delay(exc) is not None:
+                raise                                   # the provider is busy: wait as told, don't burn other routes
+            tried.append(f"{label}: {_err(exc)}")
+            if label == "vision_slot":
+                continue                                # slot not configured / unavailable / failed → main model
+            if label == "main_model_with_photos" and analysis.is_image_rejection(exc):
+                continue                                # main model takes no images → photo descriptions
+            raise AnswerError("; ".join(tried)) from exc
     ans = result.parsed if hasattr(result, "parsed") else result
     if not isinstance(ans, dict) or not str(ans.get("answer", "")).strip():
-        raise RuntimeError("model did not return an answer")
+        raise AnswerError("; ".join(tried + [f"{route}: the model returned no answer"]))
     meta = {"provider": getattr(result, "provider", "") or "", "model": getattr(result, "model", "") or "",
-            "photos_seen": len(images) if "photos_not_seen" not in ctx else 0}
+            "photos_seen": described if route == "photo_descriptions" else (len(images) if route != "text_only" else 0),
+            "route": route}
+    if tried:
+        meta["fallbacks"] = tried
     return store.answer_question(qid, {**ans, **meta})
 
 
@@ -193,7 +261,7 @@ def validate_new(payload: Any) -> dict:
     if not isinstance(ids, list) or not all(isinstance(x, str) for x in ids):
         raise Invalid("attachment_ids must be a list of ids")
     return {"id": qid, "question": text, "lang": str(payload.get("lang") or "en")[:8],
-            "workspace_id": payload.get("workspace_id") or None, "attachment_ids": ids[:20]}
+            "workspace_id": payload.get("workspace_id") or None, "attachment_ids": ids[:20], "retry": payload.get("retry") is True}
 
 
 __all__ = ["answer_question", "process_questions", "validate_new", "ANSWER_SCHEMA", "NotFound", "Optional"]

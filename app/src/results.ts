@@ -40,7 +40,7 @@ export async function completeDraft(draft: Draft, wf: Workflow): Promise<LocalRe
   const checks = (draft.followup_checks ?? []).filter((c) => c.result);
   if (checks.length) local.followup_checks = checks;
   const rec: LocalRecord = {
-    id: draft.id, workflow_id: wf.id, workflow_version: wf.version ?? 1, workflow_title: text(wf.title, draft.lang),
+    id: draft.id, workflow_id: wf.id, workspace_id: draft.workspace_id ?? null, workflow_version: wf.version ?? 1, workflow_title: text(wf.title, draft.lang),
     device_id: await deviceId(), answers, local_results: local, created_local_at: draft.started_at, completed_at: nowIso(),
     lang: draft.lang, sync_status: "pending", server_revision: 0, analysis_status: "not_requested",
   };

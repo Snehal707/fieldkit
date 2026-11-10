@@ -119,14 +119,14 @@ def build_context(store: Store, record: dict, wf: dict, lang: str = "en", files:
 
 
 def _decision_context(store: Store, record: dict, wf: dict, lang: str) -> dict:
-    ws = decision.workspace_for_workflow(store, wf["id"])
+    ws = decision.workspace_for_record(store, record)
     wc = decision.workspace_context(ws)
     status = wc.pop("_evidence_status", {})
     knowledge = []
     for pid in (ws or {}).get("packs", []):
         content = store.get_pack_content(pid) if pid.endswith("-knowledge") else None
         for e in (content or {}).get("entries", []):
-            if e.get("evidence_status") in ("verified", "supported", "user_procedure"):
+            if e.get("evidence_status") in ("verified", "supported", "user_procedure", "reference"):
                 knowledge.append({"id": e["id"], "title": engine.text(e.get("title"), lang), "type": e.get("type"),
                                   "evidence_status": e["evidence_status"]})
     langs = (ws or {}).get("languages") or [lang]
@@ -169,7 +169,7 @@ VOICE_NOTE = (
 )
 
 _IMAGE_ERROR_HINTS = ("image", "vision", "multimodal", "multi-modal", "modality", "modalities", "image_url",
-                      "content type", "content part", "unsupported content", "non-text")
+                      "content type", "content part", "unsupported content", "non-text", "no endpoints found")
 
 
 def is_image_rejection(exc: BaseException) -> bool:
@@ -179,6 +179,9 @@ def is_image_rejection(exc: BaseException) -> bool:
     certain models", "this model does not support multimodal input", ...). A 400/415/422 on a request that
     carried images is treated the same way: the retry is text-only and costs one extra call at most.
     Transient failures (timeouts, 429, 5xx) are NOT image rejections and go to the normal job retry.
+    A 404 on a request with images counts too: Nous Portal answers 404 when an image is sent to a text-only model
+    (Hermes agent/auxiliary_client.py notes this); a real "model not found" fails again on the text-only retry and is
+    reported then.
     """
     msg = f"{type(exc).__name__} {exc}".lower()
     status = getattr(exc, "status_code", None) or getattr(exc, "status", None) or getattr(getattr(exc, "response", None), "status_code", None)
@@ -188,7 +191,9 @@ def is_image_rejection(exc: BaseException) -> bool:
         return False
     if any(h in msg for h in _IMAGE_ERROR_HINTS):
         return True
-    return isinstance(status, int) and status in (400, 415, 422)
+    if isinstance(status, int):
+        return status in (400, 404, 415, 422)
+    return "notfounderror" in msg or "error code: 404" in msg
 
 
 def _is_task_unavailable(exc: BaseException) -> bool:

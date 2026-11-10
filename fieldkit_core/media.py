@@ -94,6 +94,81 @@ def hermes_transcriber() -> tuple[Optional[Transcriber], str]:
     return (lambda path: tt.transcribe_audio(path, None, "fieldkit")), ""
 
 
+PhotoDescriber = Callable[[str, str], dict]
+
+
+def hermes_photo_describer() -> tuple[Optional[PhotoDescriber], str]:
+    """Hermes' own vision tool (vision_analyze, the one Hermes uses for images in chat), or (None, reason). It picks a
+    vision-capable model through Hermes' vision settings, so it works when the main model is text-only."""
+    try:
+        from tools import vision_tools as vt  # type: ignore[import-not-found]
+    except Exception as exc:  # not running inside Hermes
+        return None, f"Hermes vision is not available in this process ({type(exc).__name__})"
+
+    def describe(path: str, prompt: str) -> dict:
+        import asyncio
+        import json as _json
+        import threading
+        out: dict = {}
+
+        def run() -> None:  # own thread + loop: callers may already be inside an event loop
+            try:
+                out["raw"] = asyncio.run(vt.vision_analyze_tool(path, prompt))
+            except Exception as exc:  # noqa: BLE001
+                out["error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        t.join(180)
+        if "raw" not in out:
+            return {"success": False, "error": out.get("error") or "Hermes vision timed out"}
+        try:
+            res = _json.loads(out["raw"])
+        except Exception:
+            return {"success": False, "error": "Hermes vision returned no JSON"}
+        return res if isinstance(res, dict) else {"success": False, "error": "Hermes vision returned no result"}
+    return describe, ""
+
+
+PHOTO_PROMPT = ("Describe factually what this field photo shows: objects, their condition, any readings, labels or "
+                "text, and anything damaged or unusual. Say what cannot be seen clearly. Do not guess beyond the image.")
+
+
+def describe_photos(describer: Optional[PhotoDescriber], photos: list[dict], store: Any = None,
+                    limit: int = 2) -> tuple[list[dict], list[str]]:
+    """Describe up to ``limit`` stored photos. Returns (descriptions, problems). A description already made for a
+    photo is reused (kept per photo in the store). Each one is labelled as Hermes vision's reading of the photo."""
+    out, problems = [], []
+    for i, p in enumerate([x for x in photos if x.get("path")][:limit], start=1):
+        cached = store.photo_description(p["id"]) if store is not None and p.get("id") else None
+        if cached:
+            out.append({"photo": i, "attachment_id": p.get("id"), "description": cached,
+                        "source": "Hermes vision (a description of the photo, not a measurement)"})
+            continue
+        if describer is None:
+            problems.append(f"photo {i}: Hermes vision is not available")
+            continue
+        prompt = PHOTO_PROMPT
+        ext = {"image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}.get(str(p.get("mime", "")).split(";")[0], ".jpg")
+        tmpdir = tempfile.mkdtemp(prefix="fieldkit-vision-")
+        try:
+            tmp = os.path.join(tmpdir, f"photo-{i}{ext}")
+            shutil.copyfile(p["path"], tmp)
+            res = describer(tmp, prompt)
+        except Exception as exc:  # noqa: BLE001
+            res = {"success": False, "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+        if res.get("success") and str(res.get("analysis") or "").strip():
+            text = str(res["analysis"])[:3000]
+            if store is not None and p.get("id"):
+                store.save_photo_description(p["id"], text)
+            out.append({"photo": i, "attachment_id": p.get("id"), "description": text,
+                        "source": "Hermes vision (a description of the photo, not a measurement)"})
+        else:
+            problems.append(f"photo {i}: {str(res.get('error') or res.get('analysis') or 'not described')[:110]}")
+    return out, problems
+
+
 def transcribe_file(transcriber: Transcriber, path: str, mime: str) -> dict:
     """Run a transcriber on a stored attachment. Stored files have no extension, and Hermes picks the decoder by
     extension, so a temporary copy with the right one is used."""

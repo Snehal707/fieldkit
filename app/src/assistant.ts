@@ -36,6 +36,7 @@ export interface Reply {
 
 export const STATUS_TEXT: Record<string, string> = {
   verified: "Verified source", user_procedure: "Your procedure", supported: "Supported by a source",
+  reference: "Reference only (a standard for another stage)",
   local_practice: "Learned from your team's verified outcomes",
   conflicting: "Sources disagree", unverified: "Not verified", example: "Example content",
 };
@@ -65,7 +66,7 @@ export async function buildCorpus(packs: { id: string; kind: string; content: an
       entities.push({ id: `guide:${g.id}`, kind: "guide", names: Object.values(g.title ?? {}).map(String), ref: g, ws: m.workspace_id });
     }
     for (const e of m.evidence ?? []) {
-      if (!["verified", "supported", "user_procedure", "local_practice", "conflicting"].includes(e.status)) continue;
+      if (!["verified", "supported", "reference", "user_procedure", "local_practice", "conflicting"].includes(e.status)) continue;
       const ex = (e.excerpts ?? [])[0];
       const s = ex ? src.get(ex.source_id) : null;
       items.push({ key: `claim:${m.workspace_id}:${e.id}`, kind: "claim", title: e.claim, body: ex?.quote ?? "", status: e.status,
@@ -99,7 +100,7 @@ export async function buildCorpus(packs: { id: string; kind: string; content: an
 }
 
 function bestOf(st: string[]): string {
-  const rank: Record<string, number> = { verified: 5, user_procedure: 5, supported: 4, local_practice: 4, conflicting: 3, unverified: 1 };
+  const rank: Record<string, number> = { verified: 5, user_procedure: 5, supported: 4, reference: 3, local_practice: 4, conflicting: 3, unverified: 1 };
   return st.sort((a, b) => (rank[b] ?? 0) - (rank[a] ?? 0))[0] ?? "unverified";
 }
 

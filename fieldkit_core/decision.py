@@ -85,6 +85,22 @@ def workspace_for_workflow(store: Any, workflow_id: str) -> Optional[dict]:
     return best
 
 
+def workspace_for_record(store: Any, record: dict) -> Optional[dict]:
+    """The published manifest of the record's workspace. Records synced without one use the only published workspace
+    containing their workflow; with several candidates there is no workspace context (never a guess)."""
+    wid = record.get("workspace_id")
+    if not wid:
+        members = store.workspaces_with_workflow(record.get("workflow_id"))
+        wid = members[0] if len(members) == 1 else None
+    if not wid:
+        return None
+    try:
+        from .workspace import pack_ids
+        return store.get_pack_content(pack_ids(wid)["workspace"])
+    except Exception:
+        return None
+
+
 def workspace_context(ws: Optional[dict]) -> dict:
     """What the model may cite: guides and evidenced knowledge (by id), escalation roles, languages."""
     if not ws:

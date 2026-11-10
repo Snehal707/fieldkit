@@ -53,7 +53,8 @@ def test_question_is_answered_from_that_record_with_its_photo(store, tmp_path):
     rid = _visit(store, tmp_path)
     q = store.save_question("alice", rid, questions.validate_new({"id": "q_1", "question": "What do the photos show?",
                                                                    "workspace_id": "ws-x", "attachment_ids": ["att_q_photo_01"]}))
-    assert q["status"] == "queued" and q["workspace_id"] == "ws-x" and q["attachment_ids"] == ["att_q_photo_01"]
+    # The record's workspace wins over what the phone claims (here the only workspace containing the form).
+    assert q["status"] == "queued" and q["workspace_id"] == "starter-equipment-inspection" and q["attachment_ids"] == ["att_q_photo_01"]
     # Same phone id again (a retried upload): no duplicate.
     assert store.save_question("alice", rid, {"id": "q_1", "question": "What do the photos show?"})["id"] == "q_1"
     assert len(store.list_questions("alice", rid)) == 1

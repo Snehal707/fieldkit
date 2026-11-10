@@ -52,6 +52,24 @@ describe("sync queue", () => {
     expect(await (await db()).count("outbox")).toBe(0);
   });
 
+  it("sends the entry's workspace and keeps the one Hermes filed it under", async () => {
+    handler = () => json(200, ack({ workspace_id: "plant-rounds" }));
+    await addRecord({ workspace_id: "plant-rounds" });
+    await enqueueRecord("rec_test_000001");
+    await runSync();
+    const sent = calls.find((c) => c.url.includes("sync/records"))!;
+    expect(sent.body.record.workspace_id).toBe("plant-rounds");
+    expect((await (await db()).get("records", "rec_test_000001"))!.workspace_id).toBe("plant-rounds");
+  });
+
+  it("an old entry without a workspace is sent with null (Hermes fills it in only if unambiguous)", async () => {
+    handler = () => json(200, ack({ workspace_id: null }));
+    await addRecord();
+    await enqueueRecord("rec_test_000001");
+    await runSync();
+    expect(calls.find((c) => c.url.includes("sync/records"))!.body.record.workspace_id).toBeNull();
+  });
+
   it("network failure keeps the op with the same idempotency key", async () => {
     handler = () => { throw new TypeError("Failed to fetch"); };
     await addRecord();
@@ -249,5 +267,30 @@ describe("questions about a visit", () => {
     expect(got.status).toBe("answered");
     expect(got.answer?.answer).toBe("Belt guard missing.");
     await expect(askAboutRecord("rec_test_000001", "   ", "en")).rejects.toThrow();
+  });
+
+  it("a failed question shows the reason, and 'Ask again' resends the same id with retry", async () => {
+    const { askAboutRecord, askAgain, questionsFor, syncQuestions } = await import("../../app/src/questions");
+    await addRecord({ sync_status: "synced", workspace_id: "plant-rounds" });
+    const q = await askAboutRecord("rec_test_000001", "What do the photos show?", "en");
+    expect(q.workspace_id).toBe("plant-rounds");                           // the entry's workspace, not a guess
+    const why = "vision_slot: NotFoundError 404: Not Found; text_only: NotFoundError 404: Not Found";
+    handler = (url, init) => (init.method === "POST" ? json(200, { id: q.id, status: "queued" })
+      : json(200, { questions: [{ id: q.id, status: "failed", error: why }] }));
+    await syncQuestions();
+    let [got] = await questionsFor("rec_test_000001");
+    expect(got.status).toBe("failed");
+    expect(got.error).toBe(why);
+    await askAgain(q.id);                                                   // works offline
+    [got] = await questionsFor("rec_test_000001");
+    expect(got).toMatchObject({ status: "queued", retry: true });
+    calls.length = 0;
+    handler = (url, init) => (init.method === "POST" ? json(200, { id: q.id, status: "queued" })
+      : json(200, { questions: [{ id: q.id, status: "answered", answer: { answer: "Guard missing." } }] }));
+    await syncQuestions();
+    expect(calls.find((c) => c.method === "POST")!.body).toMatchObject({ id: q.id, retry: true });
+    [got] = await questionsFor("rec_test_000001");
+    expect(got.status).toBe("answered");
+    expect(got.retry).toBeUndefined();
   });
 });

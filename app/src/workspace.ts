@@ -47,13 +47,14 @@ export async function availableWorkspaces(): Promise<any[]> {
 
 /** Evidence status of the strongest evidence behind a set of ids (for labels). */
 export function bestStatus(m: WorkspaceManifest, ids: string[] = []): string {
-  const rank: Record<string, number> = { verified: 4, user_procedure: 4, supported: 3, local_practice: 3, conflicting: 2, unverified: 1 };
+  const rank: Record<string, number> = { verified: 4, user_procedure: 4, supported: 3, reference: 3, local_practice: 3, conflicting: 2, unverified: 1 };
   const st = (m.evidence ?? []).filter((e: any) => ids.includes(e.id)).map((e: any) => e.status as string);
   return st.sort((a, b) => (rank[b] ?? 0) - (rank[a] ?? 0))[0] ?? "unverified";
 }
 
 export const STATUS_LABEL: Record<string, string> = {
   verified: "Verified source", user_procedure: "Your procedure", supported: "Supported by a source",
+  reference: "Reference only (a standard for another stage)",
   local_practice: "Learned from your team's verified outcomes",
   conflicting: "Sources disagree", unverified: "Not verified",
 };
@@ -77,6 +78,17 @@ export async function rememberWorkspaceForWorkflow(workflowId: string): Promise<
     const hit = (await installedWorkspaces()).find((w) => (w.manifest.workflows ?? []).some((x) => x.id === workflowId));
     if (hit) rememberWorkspace(hit.manifest.workspace_id);
   } catch { /* no workspaces on this device */ }
+}
+
+/** The workspace a new entry belongs to: the one the user started it from (when that workspace contains the form),
+ *  else the only installed workspace containing the form, else null. Never a guess between several. */
+export async function workspaceForEntry(workflowId: string, startedFrom?: string | null): Promise<string | null> {
+  try {
+    const ids = (await installedWorkspaces()).filter((w) => (w.manifest.workflows ?? []).some((x) => x.id === workflowId))
+      .map((w) => w.manifest.workspace_id);
+    if (startedFrom && ids.includes(startedFrom)) return startedFrom;
+    return ids.length === 1 ? ids[0] : null;
+  } catch { return null; }
 }
 
 /** Offline summary for a workspace, calculated on the phone from what is stored here (no AI, no network). */

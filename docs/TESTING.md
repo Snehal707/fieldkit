@@ -3,7 +3,7 @@
 
 > **Current behaviour (0.2.6), in short.** Syncing never triggers AI work. Hermes answers questions about a visit
 > (asked on the phone, queued offline) and requests in chat. Workspaces are built from a purpose-first interview and
-> edited by chat with a change summary, approval and undo. Hermes sees 20 tools. The sections below are a dated log:
+> edited by chat with a change summary, approval and undo. Hermes sees 20 tools. Questions with photos use the fieldkit_vision slot when configured, else Hermes' vision descriptions; records carry their workspace. The sections below are a dated log:
 > later sections replace earlier ones (for example the after-sync modes, automatic reports, follow-up checks and the
 > learning loop described for 0.2.5 and early 0.2.6 were removed). The latest results are at the end.
 
@@ -638,3 +638,21 @@ questions about a visit (while filling in the form or afterwards, online or offl
 - **Results:** pytest 204 passed; vitest 130 passed; typecheck clean; validate passed; doctor 20 tools, 1 hook;
   Chromium E2E 30 passed / 5 skipped; WebKit E2E 23 passed / 11 skipped plus `media.spec` re-run passed after a test
   fix.
+
+## iPhone fixes (2026-11-10): question routing, workspace on records, standard applicability
+
+Local test Hermes v0.23.0 only: **not the hosted Hermes and not a real iPhone**. The main model is `z-ai/glm-5.3:US` via Nous (text-only, to match the hosted setup) unless a row says otherwise. Behaviour is described in [API.md](API.md) and [INSTALL.md](INSTALL.md).
+
+| Check | Result |
+|---|---|
+| Photos sent to the text-only main model, before the slot | `400 This model does not support image inputs`. Hermes' vision tool described the photo for one question (auto-picked `stepfun/step-3.7-flash:free`). The other question hit that model's rate limit and was answered from text, and the answer said so |
+| Vision slot: `auxiliary.fieldkit_vision` = nous `google/gemini-3.6-flash`, Chromium at phone size | Photo, recorded voice note, a question written in the form and one asked later, all offline. Both answers after sync in 42 s; route `vision_slot`; `photos_seen` 1; photo text read correctly; readable offline |
+| Same slot, WebKit with an iPhone user agent | Photo, no voice note. Answers in 30 s; route `vision_slot` |
+| Workspace on records | Record started offline from the workspace page carried `blr-kitchen-food-safety` on the phone, on the server record and on both questions |
+| Retry | Model endpoint returning HTTP 404: question failed after 3 attempts (118 s). Phone showed each route's NotFoundError 404 and **Ask again**. After the config was fixed, Ask again → answered in 28 s |
+| Rate limit | Real 429 (retry after about 100 s) on the vision model: the question waited without using an attempt, then was answered |
+| Historical repair | Copies of two databases from earlier real-Hermes runs: 96 of 96 and 167 of 167 records got their workspace; 0 ambiguous; no other column changed; second run repaired 0 |
+| Dairy correction by chat | Hermes changed the rule and guide to the union's 8.3% SNF rule (re-test once, then reject); kept FSSAI as "Reference only — governs milk sold to consumers"; recorded a gap for the missing buffalo rule instead of inventing one; showed the change list and asked before publishing (116 s). After "Yes, publish it", version 2 was published (11 s), validation clean |
+| Unit tests | 224 Python, 132 TypeScript |
+
+**NOT verified:** the hosted Hermes and the owner's iPhone. The hosted dairy workspace correction still has to be done by the owner in chat.

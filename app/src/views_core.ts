@@ -10,8 +10,8 @@ import { attachmentUrl, captureGps, compressPhoto, getAttachment, hermesMediaUrl
 import { installedPacks, installedWorkflows, installWorkflow, shellCached, storageInfo } from "./packs";
 import { completeDraft } from "./results";
 import { getSyncState, refreshPending, refreshReports, requestAnalysis, resendRecords, resolveConflict, retryRecords, runSync } from "./sync";
-import { rememberWorkspaceForWorkflow } from "./workspace";
-import { askAboutRecord, questionsFor, SUGGESTED_QUESTIONS, syncQuestions } from "./questions";
+import { rememberWorkspaceForWorkflow, workspaceForEntry } from "./workspace";
+import { askAboutRecord, askAgain, questionsFor, SUGGESTED_QUESTIONS, syncQuestions } from "./questions";
 import { clear, fmtBytes, fmtTime, h, isOnline, nowIso, toast, uuid } from "./util";
 
 export type View = (main: HTMLElement, params: Record<string, string>) => Promise<void> | void;
@@ -131,7 +131,7 @@ export const homeView: View = async (main) => {
       h("strong", null, text(p.content.title, "en")), h("div", { class: "muted" }, [p.content.profile?.role, p.content.profile?.region, p.content.profile?.country].filter(Boolean).join(" · "))))))
       : h("p", { class: "muted" }, "Ask Hermes: “Set up FieldKit for my work.” It asks about your job and the rules you use, and builds your workspace in a few minutes."),
     own.length ? h("div", { class: "row" }, ...own.flatMap((p) => (p.content.workflows ?? []).slice(0, 3).map((w: any) =>
-      h("a", { class: "btn primary", href: `#/workflow/${encodeURIComponent(w.id)}` }, `Record: ${wfTitles.get(w.id) ?? w.id}`)))) : null,
+      h("a", { class: "btn primary", href: `#/workflow/${encodeURIComponent(w.id)}?ws=${encodeURIComponent(p.content.workspace_id)}` }, `Record: ${wfTitles.get(w.id) ?? w.id}`)))) : null,
     h("a", { class: "btn", href: "#/workspaces" }, own.length ? "All workspaces" : "Browse workspaces")));
   main.append(
     h("div", { class: `banner ${ready ? "hermes" : "warn"}` },
@@ -279,8 +279,10 @@ export const workflowsView: View = async (main) => {
 };
 
 export const workflowLinkView: View = async (main, p) => {
-  // Deep link from Hermes (…/app/#/workflow/<id>): download if needed, then offer to start.
+  // Deep link from Hermes (…/app/#/workflow/<id>): download if needed, then offer to start. "?ws=" names the workspace
+  // the user started from (workspace page, home), so the entry is filed under it.
   const id = p.id;
+  const startedFrom = new URLSearchParams(location.hash.split("?")[1] ?? "").get("ws");
   let stored = await (await db()).get("workflows", id);
   if (!stored && isOnline()) {
     try {
@@ -301,12 +303,13 @@ export const workflowLinkView: View = async (main, p) => {
   const wf = stored.definition;
   main.append(h("div", { class: "card" }, h("h2", null, text(wf.title, l)), h("p", null, text(wf.description, l)),
     h("p", { class: "muted" }, `Version ${stored.version} · ${wf.fields.length} questions · stored on this device`),
-    h("button", { class: "primary", onclick: () => startWorkflow(id) }, "Start workflow")));
+    h("button", { class: "primary", onclick: () => startWorkflow(id, startedFrom) }, "Start workflow")));
 };
 
-async function startWorkflow(id: string) {
+async function startWorkflow(id: string, startedFrom?: string | null) {
   const draft: Draft = { id: uuid("rec"), workflow_id: id, workflow_version: (await (await db()).get("workflows", id))!.version,
-    answers: {}, started_at: nowIso(), updated_at: nowIso(), lang: await lang() };
+    answers: {}, started_at: nowIso(), updated_at: nowIso(), lang: await lang(),
+    workspace_id: await workspaceForEntry(id, startedFrom) };
   const wf = (await (await db()).get("workflows", id))!.definition;
   for (const f of wf.fields) if (f.default !== undefined) draft.answers[f.id] = f.default;
   await (await db()).put("drafts", draft);
@@ -775,7 +778,10 @@ async function askHermesCard(rec: LocalRecord, l: string): Promise<HTMLElement> 
           a.uncertainty ? h("div", { class: "muted" }, `Not certain: ${a.uncertainty}`) : null,
           h("div", { class: "muted" }, [a.confidence ? `Confidence: ${a.confidence}` : "", a.evidence_used?.length ? `Based on: ${a.evidence_used.join(", ")}` : "",
             "About this visit only"].filter(Boolean).join(" · ")))
-          : h("div", { class: "muted" }, status)));
+          : h("div", { class: "muted" }, status),
+        q.status === "failed" ? h("button", { class: "small", "data-ask-again": q.id, onclick: async () => {
+          await askAgain(q.id); toast("Asked again. It is sent at the next sync.", "ok"); void runSync(); await render();
+        } }, "Ask again") : null));
     }
   };
   const ask = async (text: string) => {

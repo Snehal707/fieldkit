@@ -32,7 +32,7 @@ export const workspacesView: View = async (main) => {
 
 function evidenceBlock(m: WorkspaceManifest) {
   const s = m.summary ?? {};
-  const rows: [string, number][] = [["verified", s.verified ?? 0], ["user_procedure", s.user_procedure ?? 0], ["supported", s.supported ?? 0],
+  const rows: [string, number][] = [["verified", s.verified ?? 0], ["user_procedure", s.user_procedure ?? 0], ["supported", s.supported ?? 0], ["reference", s.reference ?? 0],
     ["local_practice", s.local_practice ?? 0],
     ["conflicting", s.conflicting ?? 0], ["unverified", s.unverified ?? 0]];
   return h("details", { class: "card", id: "ws-evidence" }, h("summary", null, h("strong", null, "Where your rules come from")),
@@ -112,7 +112,7 @@ export const workspaceView: View = async (main, p) => {
   const wfNames = new Map((await installedWorkflows()).map((w) => [w.id, text(w.definition.title, l)]));
   main.append(h("div", { class: "card", id: "ws-workflows" }, h("h3", null, "Record a visit"),
     h("ul", { class: "clean" }, ...(m.workflows ?? []).map((w) => h("li", { class: "row" }, h("span", { class: "grow" }, wfNames.get(w.id) ?? w.id),
-      h("a", { class: "btn primary", href: `#/workflow/${encodeURIComponent(w.id)}` }, "Start"))))));
+      h("a", { class: "btn primary", href: `#/workflow/${encodeURIComponent(w.id)}?ws=${encodeURIComponent(wid)}` }, "Start"))))));
   if ((m.guides ?? []).length) {
     main.append(h("div", { class: "card", id: "ws-guides" }, h("h3", null, "Decision guides"),
       h("ul", { class: "clean" }, ...m.guides.map((g: any) => h("li", { class: "row" }, h("span", { class: "grow" }, text(g.title, l)),

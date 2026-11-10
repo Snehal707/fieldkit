@@ -118,15 +118,15 @@ def test_hosted_style_guide_mistakes_are_repaired_or_rejected_precisely():
         {"id": "q_retest", "text": {"en": "Re-tested?", "hi": "दोबारा जाँचा?"}, "input": "boolean",
          "next": {"yes": "o_reject", "no": "o_retest"}},
         {"id": "o_reject", "type": "outcome", "outcome": {"decision_id": "reject", "label": "Reject",
-                                                          "actions": [{"action": "Reject", "evidence_ids": "ev_cow_snf"}]}},
+                                                          "actions": [{"action": "Reject", "evidence_ids": "ev_union_snf_rule"}]}},
         {"id": "o_retest", "outcome": {"decision": "retest", "title": "Re-test", "actions": [{"kind": "escalate", "text": "Ask manager"}]}},
-        {"id": "o_accept", "outcome": {"decision": "accept", "title": "Accept", "actions": [{"text": "Accept", "evidence_ids": ["ev_cow_snf"]}]}}]}
+        {"id": "o_accept", "outcome": {"decision": "accept", "title": "Accept", "actions": [{"text": "Accept", "evidence_ids": ["ev_union_snf_rule"]}]}}]}
     item, fixes = S.normalize("guides", g)
     assert item["start"] == "q_snf" and set(item["nodes"]) == {"q_snf", "q_retest", "o_reject", "o_retest", "o_accept"}
     assert item["nodes"]["q_snf"]["slot"] == "snf_pct" and item["nodes"]["q_snf"]["default"] == "o_accept"
     assert item["nodes"]["q_retest"]["slot"] == "q_retest" and item["nodes"]["q_retest"]["input"] == "yes_no"
     assert item["nodes"]["q_retest"]["next"][0] == {"when": {"op": "eq", "field": "q_retest", "value": True}, "to": "o_reject"}
-    assert item["nodes"]["o_reject"]["outcome"]["actions"][0] == {"text": "Reject", "evidence_ids": ["ev_cow_snf"]}
+    assert item["nodes"]["o_reject"]["outcome"]["actions"][0] == {"text": "Reject", "evidence_ids": ["ev_union_snf_rule"]}
     c = _example_ctx()
     assert S.check_item("guides", item, c) == []
     # Not repairable: an unknown decision, an edge to nowhere, an unsupported action, evidence that does not exist.
@@ -156,8 +156,10 @@ def test_evidence_status_labels_are_dropped_and_ids_must_exist():
     assert item["excerpts"][0] == {"source_id": "s_none", "quote": "a quotation that is long enough to count"}
     errs = S.check_item("evidence", item, _example_ctx())
     assert errs[0]["path"] == "excerpts/0/source_id" and "add it to sources first" in errs[0]["error"]
+    ctx = _example_ctx()
+    ctx["sources"]["s_fssai_dairy"] = {"id": "s_fssai_dairy", "type": "regulator", "url": "https://www.fssai.gov.in/x.pdf"}
     short = dict(item, excerpts=[{"source_id": "s_fssai_dairy", "quote": "too short"}])
-    assert "at least 20 characters" in S.check_item("evidence", short, _example_ctx())[0]["error"]
+    assert "at least 20 characters" in S.check_item("evidence", short, ctx)[0]["error"]
 
 
 def test_knowledge_intents_vocabulary_and_traceability_rules():

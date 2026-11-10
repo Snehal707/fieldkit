@@ -82,7 +82,7 @@ Exact commands and results are in [docs/TESTING.md](docs/TESTING.md).
 **On the owner's iPhone with the hosted Hermes (version 0.2.4, 2026-11-09, owner-reported):** offline recording, sync,
 photos, voice notes, signatures, OCR, translation, speech-to-text, Saved Records across Safari and the Home Screen app,
 the Hermes Mobile conversation, and the dashboard tab all worked.
-**The 0.2.6 behaviour below has not yet been checked on the iPhone or the hosted Hermes.**
+**The 0.2.6 behaviour below, and the three fixes of 2026-11-10 (question photos, workspace on records, standard applicability), have not yet been checked on the iPhone or the hosted Hermes.**
 
 **On a local test Hermes v0.23.0 (real conversations via Nous Portal, phone-sized Chromium/WebKit), 0.2.6:**
 
@@ -94,7 +94,7 @@ the Hermes Mobile conversation, and the dashboard tab all worked.
 | Chat about an entry | "What do you think about my latest kitchen visit?" → assessment with uncertainty and a next step (44 s) |
 | Editing by chat | Add a question and remove another → Hermes showed the changes and asked before publishing; the phone got "Update available"; an older entry offline still showed the removed question's answer |
 | Undo | "Undo my last workspace update" → previous version republished as a new one; the phone updated; older entries stayed readable |
-| Tests | 204 Python, 129 TypeScript; Chromium E2E 29 passed / 5 skipped; WebKit E2E passed; `hermes plugins validate` and `doctor` pass (20 tools) |
+| Tests | 224 Python, 132 TypeScript; Chromium E2E 29 passed / 5 skipped; WebKit E2E passed; `hermes plugins validate` and `doctor` pass (20 tools) |
 
 Earlier versions (0.2.4–0.2.5) were also checked for strict offline use, crash-safe sync, cross-device Saved Records,
 SHA-256 file integrity and access control (every API route checks the signed-in user).
@@ -103,13 +103,15 @@ SHA-256 file integrity and access control (every API route checks the signed-in 
 - Approval before publishing relies on Hermes asking; FieldKit cannot see whether you replied in between.
 - Answers about entries need Hermes' model; with a rate-limited provider, questions wait as the provider says. Use a
   paid main model on Hermes (free tiers are rate-limited).
+- Answers come after the entry and its files sync; the answer reaches the phone on a later sync with the app open.
+- With a text-only main model, configure `auxiliary.fieldkit_vision` (a vision model) so Hermes can see photos; otherwise Hermes' vision tool picks a model itself (free ones are rate-limited).
 - Phone languages: English and Hindi. Whisper tiny is English-only; Hindi speech-to-text needs a 250 MB pack.
 - OCR can't read blurred, dark or handwritten text (it says so). The small translation model mistranslates some terms.
 - Saved Records lists the newest 500 entries per account.
 - iOS Home Screen apps have storage separate from Safari: sign in once inside the app.
 - Uploads run while the app is open; there is no background upload from a closed app.
 - Run FieldKit's Hermes on one machine with one persistent volume (data lives in
-  `<HERMES_HOME>/plugin-data/fieldkit/data.db`). After updating FieldKit, restart the Hermes dashboard.
+  `<HERMES_HOME>/plugin-data/fieldkit/data.db`). After updating FieldKit, restart the Hermes gateway and dashboard.
 - Android Chrome is not yet tested.
 
 ## Docs

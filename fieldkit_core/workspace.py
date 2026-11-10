@@ -21,8 +21,10 @@ from urllib.parse import urlparse
 from . import engine
 
 SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{1,47}$")
-STATUSES = ("verified", "user_procedure", "supported", "local_practice", "conflicting", "unverified")
-STATUS_RANK = {"verified": 4, "user_procedure": 4, "supported": 3, "local_practice": 3, "conflicting": 2, "unverified": 1}
+STATUSES = ("verified", "user_procedure", "supported", "reference", "local_practice", "conflicting", "unverified")
+STATUS_RANK = {"verified": 4, "user_procedure": 4, "supported": 3, "reference": 3, "local_practice": 3, "conflicting": 2,
+               "unverified": 1}
+LEGAL_SOURCE_TYPES = ("regulator", "government", "standards_body")
 MIN_PRACTICE_OUTCOMES = 3   # a "local practice" needs this many verified follow-up outcomes, ≥80% successful
 SOURCE_TYPES = {
     "regulator": 1, "government": 1, "standards_body": 1, "manufacturer": 1, "user_document": 1, "user_statement": 1,
@@ -55,6 +57,28 @@ def _host(url: str) -> str:
 
 def _suffix_match(host: str, suffixes: tuple) -> bool:
     return any(host == s.lstrip(".") or host.endswith(s if s.startswith(".") else "." + s) for s in suffixes)
+
+
+def _check_binding(where: str, ids: list, b: dict, statuses: dict, errs: list, warns: list) -> None:
+    """A severe finding or decision must rest on something that binds this work. Evidence that governs another stage
+    or party (status 'reference', e.g. a legal sale standard used at farmer collection) cannot carry it alone; a legal
+    source that does not say whether it binds this work gets a warning."""
+    if all(statuses.get(x) == "reference" for x in ids):
+        evs = {e.get("id"): e for e in b.get("evidence") or [] if isinstance(e, dict)}
+        governs = sorted({str((evs.get(x, {}).get("applicability") or {}).get("governs") or "another stage") for x in ids})
+        errs.append(f"{where} rests only on evidence that governs {', '.join(governs)}, not this work (status "
+                    f"'reference'). Cite the user's own procedure or buyer standard for this decision, or lower it to a "
+                    f"note/review; do not turn a standard for another stage into a rejection threshold")
+        return
+    srcs = {s.get("id"): s for s in b.get("sources") or [] if isinstance(s, dict)}
+    for e in b.get("evidence") or []:
+        if not isinstance(e, dict) or e.get("id") not in ids or statuses.get(e.get("id")) == "user_procedure":
+            continue
+        legal = any((srcs.get(x.get("source_id")) or {}).get("type") in LEGAL_SOURCE_TYPES
+                    for x in e.get("excerpts") or [] if isinstance(x, dict))
+        if legal and "binding_for_this_work" not in (e.get("applicability") or {}):
+            warns.append(f"{where} cites legal evidence {e['id']} without applicability.binding_for_this_work: say what it "
+                         f"governs and whether it binds this work (a legal sale standard is not a procurement threshold)")
 
 
 def source_tier(src: dict) -> tuple[int, list[str]]:
@@ -109,6 +133,10 @@ def evidence_status(ev: dict, sources: dict[str, dict]) -> tuple[str, list[str]]
         return "user_procedure", notes          # the user's own rule (document or stated/approved in the interview)
     if ev.get("user_procedure") and not user_cited:
         notes.append("marked as the user's procedure but cites no user document or statement")
+    appl = ev.get("applicability") or {}
+    if appl.get("binding_for_this_work") is False and tiers:
+        what = str(appl.get("governs") or "another stage or party").strip()
+        return "reference", notes + [f"governs {what}; a reference for this work, not a requirement of it"]
     if ev.get("conflicts"):
         if any(isinstance(c, dict) and c.get("source_id") in sources for c in ev["conflicts"]):
             return "conflicting", notes
@@ -138,13 +166,23 @@ def _ast_fields(cond: Any) -> set[str]:
     return out
 
 
+def severe_decisions_of(policy: Any) -> set[str]:
+    """Decisions with high/critical severity (else the first, most severe, entry of the scale)."""
+    scale = [d for d in ((policy or {}).get("decision_scale") or []) if isinstance(d, dict) and d.get("id")]
+    out = {d["id"] for d in scale if d.get("severity") in ("high", "critical")}
+    return out or ({scale[0]["id"]} if scale else set())
+
+
 def validate_guide(g: dict, workflows: dict[str, dict], decisions: set[str], statuses: dict[str, str],
-                   languages: list[str]) -> tuple[list[str], list[str]]:
+                   languages: list[str], severe_decisions: Optional[set] = None,
+                   bundle: Optional[dict] = None) -> tuple[list[str], list[str]]:
     """A guide is an executable graph: question nodes (a slot filled from a record field or asked directly) with
     conditional edges, and outcome leaves. Checks: start exists, every node reachable, no cycles, every leaf has an
     outcome, conditions only use known slots/fields, outcome decisions exist in the report policy, and every outcome
     action is backed by evidence that is at least 'supported' (or is an escalation)."""
     errs, warns = [], []
+    severe_decisions = severe_decisions or set()
+    b = bundle or {}
     gid = g.get("id", "?")
     nodes = g.get("nodes")
     if not isinstance(nodes, dict) or not nodes:
@@ -196,6 +234,8 @@ def validate_guide(g: dict, workflows: dict[str, dict], decisions: set[str], sta
                 best = max((STATUS_RANK.get(statuses.get(x, "unverified"), 1) for x in ids), default=0)
                 if a.get("kind") == "escalate":
                     continue                     # "ask your supervisor" needs no external evidence
+                if ids and o.get("decision") in severe_decisions:
+                    _check_binding(f"guide {gid}: node {nid} '{o.get('decision')}' action {i + 1}", ids, b, statuses, errs, warns)
                 conflicting = any(statuses.get(x) == "conflicting" for x in ids)
                 if conflicting and not o.get("escalate_to"):
                     errs.append(f"guide {gid}: node {nid} action {i + 1} rests on conflicting evidence and must name an escalation")
@@ -286,6 +326,8 @@ def validate_bundle(b: Any, existing_workflow_ids: Optional[Any] = None) -> dict
                     errs.append(f"workflow {w['id']}: rule {r.get('id')} threshold rests only on unverified evidence")
                 if not ids and r.get("severity") in ("high", "critical"):
                     warns.append(f"workflow {w['id']}: high/critical rule {r.get('id')} cites no evidence")
+                if ids and r.get("severity") in ("high", "critical"):
+                    _check_binding(f"workflow {w['id']}: rule {r.get('id')} ({r.get('severity')})", ids, b, statuses, errs, warns)
     for ref in b.get("workflow_refs") or []:
         if existing_workflow_ids is not None and ref not in existing_workflow_ids:
             errs.append(f"workflow_refs: unknown workflow {ref}")
@@ -317,7 +359,8 @@ def validate_bundle(b: Any, existing_workflow_ids: Optional[Any] = None) -> dict
         errs.append("report_policy.decision_scale required when the work involves decisions or guides "
                     "(e.g. stop / repair_soon / monitor)")
     for g in b.get("guides") or []:
-        e2, w2 = validate_guide(g if isinstance(g, dict) else {}, workflows, decisions, statuses, langs)
+        e2, w2 = validate_guide(g if isinstance(g, dict) else {}, workflows, decisions, statuses, langs,
+                                severe_decisions_of(policy), b)
         errs += e2
         warns += w2
 

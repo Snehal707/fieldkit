@@ -21,6 +21,7 @@ export interface LocalResults {
 
 export interface Draft {
   id: string; workflow_id: string; workflow_version: number; answers: Answers; started_at: string; updated_at: string; lang: string;
+  workspace_id?: string | null;  // the workspace this entry was started in (null when it can't be known for sure)
   followup_checks?: import("./followups").FollowupCheck[];
   questions?: string[];        // questions for Hermes written while filling in the form (0.2.6)
 }
@@ -28,6 +29,7 @@ export interface Draft {
 export interface LocalRecord {
   id: string;
   workflow_id: string;
+  workspace_id?: string | null;
   workflow_version: number;
   workflow_title: string;
   device_id: string;
@@ -117,6 +119,7 @@ export interface LocalQuestion {
   answer?: { answer: string; confidence?: string; uncertainty?: string; evidence_used?: string[]; next_steps?: string[];
     photos_seen?: number; model?: string };
   error?: string;
+  retry?: boolean;   // "Ask again" after Hermes could not answer: sent again with the same id
 }
 
 /** Feedback, follow-up outcomes and unanswered questions, queued for Hermes (0.2.5). */

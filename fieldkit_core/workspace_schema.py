@@ -112,6 +112,7 @@ EVIDENCE = {
         "applicability": {"type": "object", "required": ["matches_profile"], "additionalProperties": False,
                           "properties": {"jurisdiction": {"type": "string"}, "industry": {"type": "string"},
                                          "subject": {"type": "string"}, "matches_profile": {"type": "boolean"},
+                                         "governs": {"type": "string"}, "binding_for_this_work": {"type": "boolean"},
                                          "notes": {"type": "string"}}},
         "conflicts": {"type": "array", "items": {"type": "object", "required": ["source_id", "claim"], "additionalProperties": False,
                                                  "properties": {"source_id": ID, "claim": STR, "quote": {"type": "string"},
@@ -212,19 +213,25 @@ def item_key(part: str, item: Any) -> str:
 
 # ----------------------------------------------------------------------------- examples (proved valid in tests)
 EXAMPLES: dict[str, Any] = {
-    "sources": {"id": "s_fssai_dairy", "url": "https://www.fssai.gov.in/upload/uploadfiles/files/Compendium_Dairy.pdf",
-                "title": "Food Safety and Standards (Food Products Standards) Regulations — milk and milk products",
-                "publisher": "FSSAI", "type": "regulator", "retrieved_at": "2026-11-10"},
-    "evidence": {"id": "ev_cow_snf", "claim": "Cow milk must have at least 8.5% milk solids-not-fat",
-                 "excerpts": [{"source_id": "s_fssai_dairy", "quote": "<copy the exact sentence or table row from the page>",
-                               "locator": "Appendix B, 2.1.2, table row 'Cow Milk'"}],
-                 "applicability": {"jurisdiction": "IN (all states)", "subject": "raw cow milk", "matches_profile": True,
-                                   "notes": "Applies to milk sold or collected for sale."}},
+    "sources": {"id": "s_user", "type": "user_statement", "title": "Stated by the user in the setup interview",
+                "retrieved_at": "2026-11-10"},
+    # Two kinds of evidence, kept apart. The user's own procurement rule drives the collection decision:
+    "evidence": {"id": "ev_union_snf_rule", "claim": "Our union re-tests cow milk below 8.3% SNF and rejects it if still low",
+                 "excerpts": [{"source_id": "s_user", "quote": "<the user's own words from the interview>"}],
+                 "applicability": {"subject": "farmer milk at our collection centre", "matches_profile": True,
+                                   "governs": "acceptance at our collection centre", "binding_for_this_work": True},
+                 "user_procedure": True},
+    # A legal standard for a DIFFERENT stage is a reference only (e.g. FSSAI minimums for milk sold to consumers are
+    # not farmer-collection rejection thresholds). Example, as one more evidence item:
+    # {"id": "ev_fssai_sale_snf", "claim": "Cow milk sold to consumers must have at least 8.5% SNF (FSSAI)",
+    #  "excerpts": [{"source_id": "s_fssai", "quote": "<exact table row>"}],
+    #  "applicability": {"jurisdiction": "IN", "subject": "cow milk offered for sale", "matches_profile": False,
+    #                    "governs": "milk sold to consumers (point of sale)", "binding_for_this_work": False}}
     "report_policy": {"decision_scale": [
         {"id": "reject", "label": {"en": "Reject", "hi": "अस्वीकार"}, "severity": "high"},
         {"id": "retest", "label": {"en": "Re-test", "hi": "दोबारा जाँच"}, "severity": "medium"},
         {"id": "accept", "label": {"en": "Accept", "hi": "स्वीकार"}, "severity": "low"}],
-        "review_triggers": ["any reading below a legal minimum"], "escalation_rules": ["adulteration suspected → centre manager"]},
+        "review_triggers": ["reading below our procurement standard"], "escalation_rules": ["adulteration suspected → centre manager"]},
     "workflows": {"id": "milk-collection-check", "title": {"en": "Milk collection check", "hi": "दूध संग्रह जाँच"},
                   "languages": ["en", "hi"], "default_language": "en", "fields": [
                       {"id": "farmer_code", "type": "text", "label": {"en": "Farmer code", "hi": "किसान कोड"}, "required": True},
@@ -236,16 +243,16 @@ EXAMPLES: dict[str, Any] = {
                       {"id": "smell_ok", "type": "checkbox", "label": {"en": "Smell and colour normal", "hi": "गंध और रंग सामान्य"}},
                       {"id": "sample_photo", "type": "photo", "label": {"en": "Photo of the reading", "hi": "रीडिंग की फोटो"}}],
                   "classification": {"rules": [
-                      {"id": "cow_snf_low", "label": {"en": "SNF below the legal minimum", "hi": "SNF कानूनी न्यूनतम से कम"},
-                       "severity": "high", "evidence_ids": ["ev_cow_snf"],
+                      {"id": "cow_snf_low", "label": {"en": "SNF below our procurement standard", "hi": "SNF हमारे खरीद मानक से कम"},
+                       "severity": "high", "evidence_ids": ["ev_union_snf_rule"],
                        "when": {"op": "and", "all": [{"op": "eq", "field": "milk_type", "value": "cow"},
-                                                     {"op": "lt", "field": "snf_pct", "value": 8.5}]}},
+                                                     {"op": "lt", "field": "snf_pct", "value": 8.3}]}},
                       {"id": "smell_off", "label": {"en": "Abnormal smell or colour", "hi": "असामान्य गंध या रंग"},
                        "severity": "medium", "when": {"op": "eq", "field": "smell_ok", "value": False}}]}},
     "guides": {"id": "g_accept", "title": {"en": "Accept, re-test or reject", "hi": "स्वीकार, दोबारा जाँच या अस्वीकार"},
                "workflow_id": "milk-collection-check", "start": "n_snf", "nodes": {
                    "n_snf": {"slot": "snf_pct", "field": "snf_pct", "input": "number",
-                             "next": [{"when": {"op": "lt", "field": "snf_pct", "value": 8.5}, "to": "n_retested"}],
+                             "next": [{"when": {"op": "lt", "field": "snf_pct", "value": 8.3}, "to": "n_retested"}],
                              "default": "o_accept"},
                    "n_retested": {"slot": "retested", "input": "yes_no",
                                   "question": {"en": "Was the sample mixed and re-tested?", "hi": "क्या नमूना मिलाकर दोबारा जाँचा गया?"},
@@ -256,12 +263,13 @@ EXAMPLES: dict[str, Any] = {
                                                                                      "hi": "मिलाकर दोबारा जाँचें; फिर भी कम हो तो केंद्र प्रबंधक से पूछें"}}]}},
                    "o_reject": {"outcome": {"decision": "reject", "title": {"en": "Reject", "hi": "अस्वीकार करें"}, "actions": [
                        {"text": {"en": "Reject the milk and record the reading", "hi": "दूध अस्वीकार करें और रीडिंग लिखें"},
-                        "evidence_ids": ["ev_cow_snf"]}]}},
+                        "evidence_ids": ["ev_union_snf_rule"]}]}},
                    "o_accept": {"outcome": {"decision": "accept", "title": {"en": "Accept", "hi": "स्वीकार करें"}, "actions": [
-                       {"text": {"en": "Accept the milk", "hi": "दूध स्वीकार करें"}, "evidence_ids": ["ev_cow_snf"]}]}}}},
-    "knowledge": {"id": "k_snf_limit", "type": "explanation", "evidence_ids": ["ev_cow_snf"],
-                  "title": {"en": "Minimum SNF for cow milk", "hi": "गाय के दूध में न्यूनतम SNF"},
-                  "text": {"en": "Cow milk must have at least 8.5% SNF.", "hi": "गाय के दूध में कम से कम 8.5% SNF होना चाहिए।"}},
+                       {"text": {"en": "Accept the milk", "hi": "दूध स्वीकार करें"}, "evidence_ids": ["ev_union_snf_rule"]}]}}}},
+    "knowledge": {"id": "k_snf_limit", "type": "explanation", "evidence_ids": ["ev_union_snf_rule"],
+                  "title": {"en": "Our SNF rule for cow milk", "hi": "गाय के दूध के लिए हमारा SNF नियम"},
+                  "text": {"en": "Our union re-tests cow milk below 8.3% SNF and rejects it if it is still low.",
+                           "hi": "हमारा संघ 8.3% SNF से कम गाय के दूध की दोबारा जाँच करता है और फिर भी कम हो तो अस्वीकार करता है।"}},
     "vocabulary": {"term": "SNF", "lang": "en", "definition": "Solids-not-fat: milk solids other than fat",
                    "translations": {"hi": "वसा-रहित ठोस"}, "synonyms": ["solids not fat"]},
     "intents": {"id": "check_requirement", "examples": {"en": ["What is the minimum SNF for cow milk?"],
@@ -281,7 +289,11 @@ RULES = {
     "evidence": "Each excerpt quote must be copied verbatim from the page you opened with web_extract (FieldKit re-fetches "
                 "web pages in the background and drops quotes it cannot find; PDFs are read with Hermes' extractor). source_id must be "
                 "added in sources first. Do NOT send a status: FieldKit computes it. If sources disagree, add conflicts. "
-                "Model knowledge without a quote = no excerpts → 'unverified' (background only).",
+                "Model knowledge without a quote = no excerpts → 'unverified' (background only). For a law, regulation or "
+                "standard, say in applicability what it governs (governs) and whether it binds THIS work "
+                "(binding_for_this_work). A standard for another stage or party (e.g. a legal standard for food sold to "
+                "consumers, when the user buys raw produce from farmers) is binding_for_this_work=false: a reference, "
+                "never a rejection threshold. Acceptance rules for this work come from the user's procedure or buyer.",
     "report_policy": "One object. 2+ decisions ordered from most to least severe; decision ids are snake_case and are what "
                      "guide outcomes and reports use. Syncing never triggers AI work; Hermes answers when the user asks.",
     "workflows": "Use the user's units and terms. Choice fields need options [{value, label}]. Conditions use field ids of "
@@ -1009,6 +1021,8 @@ def format_doc(part: str | None = None) -> dict:
             "verified": "a tier-1 source (regulator/government on an official domain, standards body, manufacturer, the user's "
                         "own document) quoted and applicable to the profile, or two independent tier-2 publishers",
             "supported": "one tier-2/3 source, or a tier-1 source that does not fully apply",
+            "reference": "a standard that governs another stage or party (applicability.binding_for_this_work=false): "
+                         "shown for information; it can never drive a high/critical rule or the most severe decision",
             "conflicting": "applicable sources disagree (record both); guide actions must name escalate_to",
             "user_procedure": "the user's own process: their documents (user_document) or rules they stated or approved "
                               "in the conversation (user_statement, quote their words). Labelled 'Your procedure' on the phone",

@@ -127,6 +127,11 @@ MIGRATIONS: list[str] = [
     CREATE INDEX questions_record ON questions(record_id);
     CREATE INDEX questions_status ON questions(status, next_run_at);
     """,
+    # v7 (0.2.6 fix): descriptions of photos by Hermes' vision tool, for a text-only main model; reused across
+    # questions about the same visit. Additive only.
+    """
+    CREATE TABLE photo_descriptions (attachment_id TEXT PRIMARY KEY, description TEXT NOT NULL, created_at REAL);
+    """,
 ]
 
 
@@ -548,18 +553,23 @@ class Store:
     def save_question(self, owner: str, record_id: str, q: dict) -> dict:
         """Queue a question about one of the owner's records (idempotent on the phone's id)."""
         with self.tx() as c:
-            rec = c.execute("SELECT owner_user_id FROM records WHERE id=?", (record_id,)).fetchone()
+            rec = c.execute("SELECT owner_user_id, workspace_id FROM records WHERE id=?", (record_id,)).fetchone()
             if not rec or (owner is not ALL and rec["owner_user_id"] != owner):
                 raise NotFound(record_id)
             row = c.execute("SELECT * FROM questions WHERE id=?", (q["id"],)).fetchone()
             if row:
                 if row["record_id"] != record_id or (owner is not ALL and row["owner_user_id"] != owner):
                     raise Conflict({"error": "question id already used"})
+                if q.get("retry") and row["status"] == "failed":     # "Ask again" after a failure: a fresh set of attempts
+                    c.execute("UPDATE questions SET status='queued', attempts=0, error=NULL, next_run_at=? WHERE id=?",
+                              (_now(), q["id"]))
+                    self.audit(c, owner, "question.retried", record_id, {"question": q["id"], "previous_error": row["error"]})
+                    row = c.execute("SELECT * FROM questions WHERE id=?", (q["id"],)).fetchone()
                 return self._question_dict(row)
             now = _now()
             c.execute("INSERT INTO questions(id, owner_user_id, record_id, workspace_id, question, lang, attachment_ids, status, "
                       "attempts, next_run_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                      (q["id"], rec["owner_user_id"], record_id, q.get("workspace_id"), q["question"], q.get("lang") or "en",
+                      (q["id"], rec["owner_user_id"], record_id, rec["workspace_id"], q["question"], q.get("lang") or "en",
                        _j(q.get("attachment_ids") or []), "queued", 0, now, now))
             self.audit(c, owner, "question.queued", record_id, {"question": q["id"]})
             return self._question_dict(c.execute("SELECT * FROM questions WHERE id=?", (q["id"],)).fetchone())
@@ -583,11 +593,17 @@ class Store:
         sql += " ORDER BY created_at DESC LIMIT ?"
         return [self._question_dict(r) for r in self._q(sql, (*args, max(1, min(limit, 500))))]
 
+    #: A question waits for its visit's photos and voice notes to finish uploading (the phone sends questions once the
+    #: record is received, files may still be on their way); after this long it is answered with what arrived.
+    QUESTION_FILE_WAIT_S = 30 * 60
+
     def claim_questions(self, limit: int = 2) -> list[dict]:
         now = _now()
         with self.tx() as c:
-            rows = c.execute("SELECT * FROM questions WHERE status='queued' AND COALESCE(next_run_at,0)<=? ORDER BY created_at LIMIT ?",
-                             (now, limit)).fetchall()
+            rows = c.execute(
+                "SELECT q.* FROM questions q WHERE q.status='queued' AND COALESCE(q.next_run_at,0)<=? AND ("
+                " q.created_at < ? OR NOT EXISTS (SELECT 1 FROM attachments a WHERE a.record_id=q.record_id AND a.status!='stored'))"
+                " ORDER BY q.created_at LIMIT ?", (now, now - self.QUESTION_FILE_WAIT_S, limit)).fetchall()
             out = []
             for r in rows:
                 c.execute("UPDATE questions SET status='answering', attempts=attempts+1 WHERE id=? AND status='queued'", (r["id"],))
@@ -611,6 +627,15 @@ class Store:
             c.execute("UPDATE questions SET status=?, error=?, next_run_at=? WHERE id=?",
                       ("failed" if final else "queued", error[:500], _now() + min(3600, 30 * 2 ** (q.get("attempts", 1) - 1)), q["id"]))
         return "failed" if final else "queued"
+
+    def photo_description(self, attachment_id: str) -> Optional[str]:
+        rows = self._q("SELECT description FROM photo_descriptions WHERE attachment_id=?", (attachment_id,))
+        return rows[0]["description"] if rows else None
+
+    def save_photo_description(self, attachment_id: str, description: str) -> None:
+        with self.tx() as c:
+            c.execute("INSERT OR REPLACE INTO photo_descriptions(attachment_id, description, created_at) VALUES (?,?,?)",
+                      (attachment_id, description[:3000], _now()))
 
     def recover_stale_questions(self) -> None:
         """At worker start nothing is being answered: questions left 'answering' by a stopped process go back to the queue."""
@@ -648,9 +673,13 @@ class Store:
         chash = content_hash(answers)
         now = _now()
         conflict: Optional[dict] = None
+        ws_id, ws_note = self.resolve_record_workspace(rec.get("workflow_id"), rec.get("workspace_id"))
+        rec = dict(rec, workspace_id=ws_id)
         with self.tx() as c:
             resp = self._sync_tx(c, owner, idempotency_key, device_id, rec, rid, answers, base, local_results, chash, now,
                                  auto_analyze)
+            if ws_note and "__conflict__" not in resp:
+                resp = dict(resp, workspace_note=ws_note)
             if "__conflict__" in resp:
                 conflict = resp["__conflict__"]
         if conflict is not None:  # raised only after the conflict row is committed
@@ -689,15 +718,19 @@ class Store:
         att_meta = rec.get("attachments") or []
         if row is None:
             c.execute("INSERT INTO records(id, owner_user_id, device_id, workflow_id, workflow_version, revision, answers, "
-                      "local_results, content_hash, created_local_at, completed_at, received_at, updated_at, sync_status) "
-                      "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      "local_results, content_hash, created_local_at, completed_at, received_at, updated_at, sync_status, "
+                      "workspace_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (rid, owner, device_id, rec["workflow_id"], int(rec["workflow_version"]), revision, _j(answers),
-                       _j(local_results), chash, rec.get("created_local_at"), rec.get("completed_at"), now, now, "received"))
-        else:
+                       _j(local_results), chash, rec.get("created_local_at"), rec.get("completed_at"), now, now, "received",
+                       rec.get("workspace_id")))
+        else:  # an edit never clears a known workspace
             c.execute("UPDATE records SET revision=?, answers=?, local_results=?, content_hash=?, completed_at=?, "
-                      "updated_at=?, device_id=?, sync_status='received', workflow_version=? WHERE id=?",
+                      "updated_at=?, device_id=?, sync_status='received', workflow_version=?, "
+                      "workspace_id=COALESCE(?, workspace_id) WHERE id=?",
                       (revision, _j(answers), _j(local_results), chash, rec.get("completed_at"), now, device_id,
-                       int(rec["workflow_version"]), rid))
+                       int(rec["workflow_version"]), rec.get("workspace_id"), rid))
+            if rec.get("workspace_id"):
+                c.execute("UPDATE questions SET workspace_id=? WHERE record_id=?", (rec["workspace_id"], rid))
         c.execute("INSERT INTO record_revisions(record_id, revision, answers, local_results, device_id, created_at) "
                   "VALUES (?,?,?,?,?,?)", (rid, revision, _j(answers), _j(local_results), device_id, now))
         for a in att_meta:
@@ -751,7 +784,66 @@ class Store:
         need = [r["id"] for r in c.execute("SELECT id FROM attachments WHERE record_id=? AND status!='stored'", (rid,))]
         return {"record_id": rid, "revision": row["revision"], "received_at": row["received_at"],
                 "sync_status": row["sync_status"], "analysis_status": row["analysis_status"],
-                "analysis_job_id": row["analysis_job_id"], "attachments_needed": need}
+                "analysis_job_id": row["analysis_job_id"], "attachments_needed": need, "workspace_id": row["workspace_id"]}
+
+    # ------------------------------------------------------------------ record ↔ workspace (0.2.6 fix)
+    def workspaces_with_workflow(self, workflow_id: Any) -> list[str]:
+        """Published workspaces whose published or earlier published versions contain this workflow (own or referenced).
+        Workspaces are instance-wide, like published workflows; drafts never count."""
+        if not isinstance(workflow_id, str) or not workflow_id:
+            return []
+        key = tuple(self._q("SELECT COUNT(*) AS n, MAX(w.updated_at) AS u FROM workspace_versions v "
+                            "JOIN workspaces w ON w.id = v.workspace_id")[0])
+        cache = getattr(self, "_ws_members", None)
+        if not cache or cache[0] != key:
+            members: dict[str, set] = {}
+            for r in self._q("SELECT v.workspace_id, v.bundle FROM workspace_versions v JOIN workspaces w ON w.id = v.workspace_id "
+                             "WHERE w.published_version IS NOT NULL AND v.status IN ('published', 'superseded')"):
+                b = _uj(r["bundle"]) or {}
+                ids = [w.get("id") for w in (b.get("workflows") or []) if isinstance(w, dict)] + list(b.get("workflow_refs") or [])
+                for wf in ids:
+                    if isinstance(wf, str):
+                        members.setdefault(wf, set()).add(r["workspace_id"])
+            cache = (key, members)
+            self._ws_members = cache
+        return sorted(cache[1].get(workflow_id, set()))
+
+    def resolve_record_workspace(self, workflow_id: Any, claimed: Any) -> tuple[Optional[str], str]:
+        """The workspace a record belongs to: the phone's claim when that published workspace contains the record's
+        workflow; otherwise the only published workspace containing it; otherwise none (never a guess)."""
+        members = self.workspaces_with_workflow(workflow_id)
+        if isinstance(claimed, str) and claimed:
+            if claimed in members:
+                return claimed, ""
+            note = f"workspace {claimed!r} is not a published workspace containing workflow {workflow_id!r}"
+            if len(members) == 1:
+                return members[0], note + f"; stored as {members[0]!r}, the only workspace that contains it"
+            return None, note + "; not stored"
+        if len(members) == 1:
+            return members[0], ""
+        if len(members) > 1:
+            return None, f"workflow {workflow_id!r} is in {len(members)} workspaces and the phone did not say which; not stored"
+        return None, ""
+
+    def repair_record_workspaces(self) -> dict:
+        """Fill in the workspace of records synced without one, only where exactly one published workspace contains the
+        record's workflow. Never overwrites a stored workspace; ambiguous records stay empty. Idempotent."""
+        out = {"repaired": 0, "ambiguous": 0, "no_workspace": 0}
+        rows = self._q("SELECT id, owner_user_id, workflow_id FROM records WHERE workspace_id IS NULL")
+        for r in rows:
+            members = self.workspaces_with_workflow(r["workflow_id"])
+            if len(members) != 1:
+                out["ambiguous" if members else "no_workspace"] += 1
+                continue
+            with self.tx() as c:
+                n = c.execute("UPDATE records SET workspace_id=? WHERE id=? AND workspace_id IS NULL",
+                              (members[0], r["id"])).rowcount
+                if n:
+                    c.execute("UPDATE questions SET workspace_id=? WHERE record_id=?", (members[0], r["id"]))
+                    self.audit(c, r["owner_user_id"], "record.workspace_repaired", r["id"],
+                               {"workspace_id": members[0], "workflow_id": r["workflow_id"], "basis": "only workspace containing the workflow"})
+                    out["repaired"] += 1
+        return out
 
     def store_attachment(self, owner: str, aid: str, body: bytes, mime: str, base_dir: Path, auto_analyze: bool) -> dict:
         sha = hashlib.sha256(body).hexdigest()
