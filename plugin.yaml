@@ -1,5 +1,5 @@
 name: fieldkit
-version: "0.2.5"
+version: "0.2.6"
 description: "FieldKit: create offline mobile field workflows through Hermes, run them on a phone with no internet (installable PWA with local findings, knowledge Q&A, dictionaries, translation, OCR and voice), sync securely when back online, and get Hermes analysis and reports in the PWA, the dashboard and Hermes Mobile."
 author: "FieldKit contributors"
 license: MIT
@@ -37,6 +37,9 @@ provides_tools:
   - fieldkit_install_examples
   - fieldkit_workspace_format
   - fieldkit_save_workspace_brief
+  - fieldkit_start_workspace_build
+  - fieldkit_add_workspace_parts
+  - fieldkit_workspace_build_status
   - fieldkit_build_workspace
   - fieldkit_publish_workspace
   - fieldkit_get_workspace

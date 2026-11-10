@@ -25,48 +25,64 @@ Ask until each item is known or explicitly "unknown". Keep it conversational; a 
 Call `fieldkit_save_workspace_brief` with what you learned. Show the returned `summary` to the user, ask them to
 confirm or correct it, and call again with `confirmed: true` only after they confirm. Do not research before that.
 
-## 2. Research (Hermes' own tools)
+## 2. Start the build
 
-Call `fieldkit_workspace_format` once to see the bundle structure and evidence rules.
-For each responsibility and each decision:
+Call `fieldkit_start_workspace_build` with the brief id, a lowercase workspace id (e.g. `dairy-collection-pune`), the
+title in every content language and the languages. The build is saved by FieldKit as you go: **if this chat ends or
+gets long, a new chat continues with `fieldkit_workspace_build_status`** — never start over.
+
+Call `fieldkit_workspace_format` (no part) once for the steps and evidence rules. Before writing items for a part,
+call `fieldkit_workspace_format(part)` for its exact JSON Schema and a valid example, and copy that shape exactly.
+
+## 3. Research and add parts as you go (Hermes' own tools)
+
+Work one responsibility at a time. For each one and each decision it needs:
 1. `web_search` for the governing regulation/standard **for this country and region**, the official procedure, and
    manufacturer manuals for the user's actual instruments. Prefer, in order: regulators and government on official
    domains, standards bodies, manufacturers, the user's documents (tier 1); academic, university extension, recognised
    NGOs and international bodies (tier 2); industry bodies and trade publications (tier 3). Never use forums, Q&A sites,
-   social media or unattributed blogs as support. Use `delegate` for parallel topics if the job is broad.
+   social media or unattributed blogs as support.
 2. **Open the actual page or document with `web_extract`** (not just search snippets) and copy the exact sentence(s)
-   that state each rule or threshold, with a locator (page, section, table, clause). FieldKit re-fetches web pages and
-   drops quotes it cannot find; PDFs are not re-checked, so quote PDFs carefully and give the page number.
-3. Check **applicability**: does the rule cover this product/subject (e.g. raw cow milk, not cream), this jurisdiction
-   (state, not just country), this equipment? Record it in `applicability.matches_profile` with notes.
-4. If sources disagree, record both in `conflicts` and make the guide route to the user's escalation role or the
-   stricter rule. If you cannot find an authoritative source, add a `gaps` entry (what you searched) instead of filling
-   it from memory. Background explanations from your own knowledge may be included but stay labelled "unverified".
-5. Write all user-facing text in **every content language** the user needs (do it yourself; the phone's offline
-   translation is only a fallback).
+   that state each rule or threshold, with a locator (page, section, table, clause).
+3. **Add them right away** with `fieldkit_add_workspace_parts`: first the `sources` you opened, then the `evidence`
+   (claim, verbatim excerpts, applicability: does it cover this product, this state, this equipment?). FieldKit checks
+   each quote against its page and tells you the computed status; if a quote is "not found", re-open the page and copy
+   the exact text, or drop the claim. Don't keep long page text in the conversation once its evidence is added.
+4. If sources disagree, record both (`conflicts`) and make the guide route to the user's escalation role. If you cannot
+   find an authoritative source, add a `gaps` item (what you searched) instead of filling it from memory.
 
-## 3. Build
+Broad jobs: use `delegate` for a responsibility's research, asking the subagent to return ONLY compact JSON (sources and
+evidence items in FieldKit's shape, verbatim quotes, no page dumps); then add those items yourself.
 
-Create:
-- **Workflows**: one for each responsibility or decision that needs structured capture, with the user's units and
-  terms. Cite `evidence_ids` on classification rules with thresholds.
-- **Decision guides**: executable steps that read record fields or ask questions and end in an outcome on the
-  report policy's decision scale, with actions backed by evidence (or `kind: "escalate"`).
-- **Knowledge** (procedures and troubleshooting need evidence ≥ supported), **vocabulary**, **report policy** (decision
-  scale, review triggers, escalation), **intents** (example questions users would ask, in each language), **gaps**,
-  and **traceability** (every responsibility served).
+## 4. Build the rest, part by part
 
-Call `fieldkit_build_workspace`. Fix every error (usually: find and quote a qualifying source, or drop the unsupported
-instruction) and build again.
+In this order, each with `fieldkit_add_workspace_parts` (use `dry_run: true` first for large items):
+- `report_policy`: the decision scale (2+ decisions, most severe first) and escalation rules.
+- `workflows`: one per responsibility or decision that needs structured capture, with the user's units and terms.
+  Field types, options as `{value, label}` and conditions as FieldKit's AST exactly as in the schema. Cite
+  `evidence_ids` on classification rules with thresholds.
+- `guides`: executable decision steps that read record fields or ask questions and end in an outcome from the decision
+  scale; every action cites supported evidence or is `{"kind": "escalate"}`.
+- `knowledge` (procedures/troubleshooting need evidence ≥ supported), `vocabulary`, `intents` (extra example questions
+  for the phone, ids from the schema), `gaps`, and `traceability` (every responsibility served).
 
-## 4. Review and publish
+Write all user-facing text in **every content language** (the phone's offline translation is only a fallback).
+Every rejected item comes back with a path, the error and a hint: fix exactly that and add it again. Items with the
+same id replace earlier ones; `remove` deletes. FieldKit reports shape mistakes it repaired in `fixed_automatically`.
+
+Then call `fieldkit_build_workspace(workspace_id)`. If it reports `checks_pending`, some source pages are slow: wait a
+minute and build again (publishing is blocked until every quote has been checked). Fix any errors with
+`fieldkit_add_workspace_parts` and build again.
+
+## 5. Review and publish
 
 Show the user the research report in plain language: what is verified, supported, conflicting, unverified background,
-which sources were excluded or downgraded, and the gaps (with what they can do: share an SOP, ask their supervisor).
-Publish with `fieldkit_publish_workspace` and `user_approved: true` only after they approve. Give them the returned app
-link and tell them to tap "Download everything for offline" on the phone.
+which sources were excluded or downgraded, quotes that could not be confirmed, and the gaps (with what they can do:
+share an SOP, ask their supervisor). Publish with `fieldkit_publish_workspace` and `user_approved: true` only after they
+approve. Give them the returned app link and tell them to tap "Download everything for offline" on the phone.
 
-## 5. Updating
+## 6. Updating
 
-When the user's job changes, a gap can now be filled, or learning candidates are waiting, update the bundle (get it with
-`fieldkit_get_workspace` and `include_bundle: true`), rebuild with a `changelog`, review, and publish a new version.
+When the user's job changes, a gap can now be filled, or learning candidates are waiting: call
+`fieldkit_start_workspace_build` with the same workspace id (it starts from the latest version), add or replace only the
+parts that change, build with a `changelog`, review, and publish a new version.

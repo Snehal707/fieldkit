@@ -468,3 +468,49 @@ local score was inconsistent with the evidence.
   because Saved Records loads at most **500 records per account** and lost-record detection pauses when the list is not
   complete (behaviour since 0.2.2). The full suite passed on a fresh test database (the old one was kept, renamed). This
   is a real limit for very large accounts and is listed in the README's known limitations.
+
+### 0.2.6: workspace builder fix
+- **Part-by-part build:** `fieldkit_start_workspace_build`, `fieldkit_add_workspace_parts` (with `dry_run`),
+  `fieldkit_workspace_build_status`. `fieldkit_build_workspace` takes `workspace_id` or the older `brief_id` and `bundle`.
+- **Schemas** (`fieldkit_core/workspace_schema.py`): per-part JSON Schemas (Draft 2020-12), a valid example per part,
+  repairs of unambiguous shape mistakes (reported as `fixed_automatically`), cross-reference and type checks.
+  `validate_bundle` runs the same checks, so publishing is as strict.
+- **Background quote checks:** pages fetched by a 6-worker pool, cached in memory and in `source_pages` (migration v5).
+  Publishing is refused while a check is pending. PDFs are checked too, with Hermes' own document extractor
+  (`tools.read_extract`); a scanned PDF with a garbled text layer can give an `approximate` match (every number must
+  still match exactly), which is reported for checking by eye. `fieldkit_get_workspace` is compact unless
+  `include_bundle` is set.
+- **Phone packaging:** guide questions that read a workflow field carry that field's label, all its options and the
+  matching input (`workspace.phone_guides`).
+- **Tests:**
+  - `tests/python/test_workspace_schema.py` (16 tests): schemas, examples, repairs, item errors with paths and hints,
+    cross-references, type checks, bounded and cached page checks, PDF checks, approximate matches in scanned text,
+    guide keys written inside `nodes`, phone guide packaging.
+  - `tests/python/test_plugin.py`: a part-by-part tool flow test (start, add parts, dry run, status, build, publish).
+  - `tests/python/conftest.py`: clears the page cache between tests.
+- **Results:** pytest **187 passed**; vitest **126 passed**; typecheck clean. `hermes plugins validate .` passed;
+  `hermes plugins doctor . --ci`: fieldkit 0.2.6, **35 tools, 1 hook**.
+- **Real Hermes conversation (0.2.6, 2026-11-10).** Local throwaway Hermes v0.23.0 logged into Nous Portal (model
+  `x-ai/grok-4.7`, web search and extract through the Nous Tool Gateway). The tester played a milk-collection-centre
+  checker near Pune. Not run on the hosted Hermes.
+  1. *Interview:* Hermes asked about duties, decisions, instruments, SOPs, rules, languages, escalation and
+     connectivity; saved the brief; showed the summary; built nothing until the tester confirmed.
+  2. *Research and build (same chat):* `fieldkit_start_workspace_build`, schemas per part, web search/extract, then
+     parts added one by one: 5 sources (FSSAI x2, BIS, NDDB x2), 10 evidence items, decision policy, 1 workflow
+     (14 fields), 1 guide (21 nodes), 4 knowledge entries, 6 vocabulary terms, 4 intents, 5 gaps, traceability.
+     Every FieldKit call took 0.01-0.04 s. One item was rejected (the guide: `title`/`start`/`workflow_id` written
+     inside `nodes`); Hermes fixed it from the error and hint and resubmitted. First `fieldkit_build_workspace`:
+     **valid, 0 errors** (0.04 s). Hermes then showed an honest review (verified / supported / gaps) and asked
+     before publishing. The model provider returned "at capacity" several times; the turn recovered.
+  3. *New chat (resume):* "I'm back... double-check the quotes". Hermes called `fieldkit_workspace_build_status`,
+     found the saved build and continued. With PDF checks enabled, the rebuild fetched and extracted all 5 PDFs in
+     15 s: 17 of 19 quotes found; the 2 BIS quotes were not found (scanned 1982 PDF with a garbled text layer), so
+     that claim dropped to unverified. Hermes found a clean reprint of the same method (Andhra Pradesh milk rules,
+     labelled as not a Maharashtra rule), quoted it, and rebuilt: version 4 valid, 20 of 20 quotes found,
+     8 verified, 2 supported, 0 unverified, 6 gaps.
+  4. *Publish:* on "Yes, publish it", Hermes called `fieldkit_publish_workspace` with `user_approved` and returned the
+     app link.
+  5. *Phone (WebKit, offline after download):* the published workspace downloaded in one tap; its guide ran offline
+     to "Re-test once" for cow milk with fat 3.0 %. This step found the phone packaging bug above (raw field id and a
+     single option shown); fixed and re-checked.
+  The quotes in this run come from public regulator and standards pages; they are not committed to the repository.

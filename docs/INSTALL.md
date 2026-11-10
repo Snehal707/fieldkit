@@ -6,7 +6,7 @@ Requires **Hermes Agent ≥ 0.23.0** with the web dashboard.
 ```bash
 hermes plugins install Snehal707/fieldkit        # or: copy this repo to $HERMES_HOME/plugins/fieldkit
 hermes plugins enable fieldkit
-hermes plugins show fieldkit                  # 32 tools, 1 hook, dashboard tab, api: plugin_api.py
+hermes plugins show fieldkit                  # 35 tools, 1 hook, dashboard tab, api: plugin_api.py
 ```
 The repo ships its built front-ends (`dashboard/dist/`, `dashboard/app_dist/`), so no Node.js is needed on the host.
 Building yourself is covered in [Building from source](#building-from-source).

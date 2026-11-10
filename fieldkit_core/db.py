@@ -111,6 +111,13 @@ MIGRATIONS: list[str] = [
                              created_at REAL, decided_at REAL, decided_by TEXT, decision_note TEXT);
     ALTER TABLE records ADD COLUMN workspace_id TEXT;
     """,
+    # v5 (0.2.6): workspaces are built in checked parts that survive across Hermes chats; source pages fetched for the
+    # excerpt check are cached so a build never re-downloads them inside one tool call. Additive only.
+    """
+    CREATE TABLE workspace_builds (workspace_id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, brief_id TEXT NOT NULL,
+                                   header TEXT NOT NULL, parts TEXT NOT NULL, created_at REAL, updated_at REAL);
+    CREATE TABLE source_pages (url TEXT PRIMARY KEY, status TEXT NOT NULL, content TEXT, error TEXT, fetched_at REAL);
+    """,
 ]
 
 
@@ -490,6 +497,42 @@ class Store:
             c.execute("UPDATE workspace_versions SET status='published' WHERE workspace_id=? AND version=?", (wid, version))
             c.execute("UPDATE workspaces SET published_version=?, updated_at=? WHERE id=?", (version, now, wid))
             self.audit(c, ALL, "workspace.publish", wid, {"version": version, "pack": manifest_pack})
+
+    # ------------------------------------------------------------------ workspace builds (parts saved as Hermes adds them)
+    def save_workspace_build(self, owner: Any, wid: str, brief_id: str, header: dict, parts: dict) -> None:
+        owner_id = "owner" if owner is ALL else owner
+        now = _now()
+        with self.tx() as c:
+            c.execute("INSERT INTO workspace_builds(workspace_id, owner_user_id, brief_id, header, parts, created_at, updated_at) "
+                      "VALUES (?,?,?,?,?,?,?) ON CONFLICT(workspace_id) DO UPDATE SET brief_id=excluded.brief_id, "
+                      "header=excluded.header, parts=excluded.parts, updated_at=excluded.updated_at",
+                      (wid, owner_id, brief_id, _j(header), _j(parts), now, now))
+
+    def get_workspace_build(self, wid: str) -> Optional[dict]:
+        rows = self._q("SELECT * FROM workspace_builds WHERE workspace_id=?", (wid,))
+        if not rows:
+            return None
+        r = dict(rows[0])
+        return {"workspace_id": wid, "brief_id": r["brief_id"], "header": _uj(r["header"]), "parts": _uj(r["parts"]),
+                "created_at": r["created_at"], "updated_at": r["updated_at"]}
+
+    def list_workspace_builds(self) -> list[dict]:
+        return [self.get_workspace_build(r["workspace_id"]) for r in
+                self._q("SELECT workspace_id FROM workspace_builds ORDER BY updated_at DESC")]
+
+    def delete_workspace_build(self, wid: str) -> None:
+        with self.tx() as c:
+            c.execute("DELETE FROM workspace_builds WHERE workspace_id=?", (wid,))
+
+    def get_source_page(self, url: str) -> Optional[dict]:
+        rows = self._q("SELECT * FROM source_pages WHERE url=?", (url,))
+        return dict(rows[0]) if rows else None
+
+    def save_source_page(self, url: str, status: str, content: Optional[str], error: Optional[str]) -> None:
+        with self.tx() as c:
+            c.execute("INSERT INTO source_pages(url, status, content, error, fetched_at) VALUES (?,?,?,?,?) ON CONFLICT(url) "
+                      "DO UPDATE SET status=excluded.status, content=excluded.content, error=excluded.error, "
+                      "fetched_at=excluded.fetched_at", (url, status, content, error, _now()))
 
     # ------------------------------------------------------------------ sync
     def sync_record(self, owner: str, idempotency_key: str, device_id: str, rec: dict,

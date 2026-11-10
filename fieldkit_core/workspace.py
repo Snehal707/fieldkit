@@ -227,7 +227,7 @@ def validate_guide(g: dict, workflows: dict[str, dict], decisions: set[str], sta
 
 
 # ----------------------------------------------------------------------------- bundle validation
-def validate_bundle(b: Any, existing_workflow_ids: Optional[set] = None) -> dict:
+def validate_bundle(b: Any, existing_workflow_ids: Optional[Any] = None) -> dict:
     """Validate a workspace bundle and compute evidence statuses. Returns
     {ok, errors[], warnings[], statuses{evidence_id: status}, evidence_notes{}, tiers{source_id: tier}, summary{}}."""
     errs: list[str] = []
@@ -320,6 +320,15 @@ def validate_bundle(b: Any, existing_workflow_ids: Optional[set] = None) -> dict
             if not t or not (t.get("workflow_ids") or t.get("guide_ids") or t.get("entry_ids")):
                 errs.append(f"responsibility {r['id']} is not served by any workflow, guide or knowledge entry")
 
+    # The same schema, cross-reference and type checks Hermes gets when adding parts one by one.
+    from . import workspace_schema
+    defs = existing_workflow_ids if isinstance(existing_workflow_ids, dict) else {}
+    seen = set(errs)
+    for e in workspace_schema.bundle_errors(b, statuses, defs):
+        if e not in seen:
+            errs.append(e)
+            seen.add(e)
+
     counts = {s: sum(1 for v in statuses.values() if v == s) for s in STATUSES}
     summary = {**counts, "sources": len(sources), "sources_excluded": sum(1 for t in tiers.values() if t == 0),
                "gaps": len(b.get("gaps") or []), "workflows": len(workflows) + len(b.get("workflow_refs") or []),
@@ -348,6 +357,40 @@ def pack_ids(wid: str) -> dict:
     return {"workspace": f"ws-{wid}", "knowledge": f"ws-{wid}-knowledge", "dictionary": f"ws-{wid}-dictionary"}
 
 
+def phone_guides(guides: list, workflows: dict) -> list:
+    """Guides as the phone runs them. A question that reads a workflow field is asked when the record doesn't have the
+    value yet, so it carries that field's label, its full option list and the matching input (found in a real
+    Hermes-built guide: without this the phone showed the raw field id and only the options its conditions mention)."""
+    import copy as _copy
+    out = []
+    for g in guides:
+        if not isinstance(g, dict):
+            continue
+        g = _copy.deepcopy(g)
+        wf = workflows.get(g.get("workflow_id") or "") or {}
+        fields = {f.get("id"): f for f in wf.get("fields") or [] if isinstance(f, dict)}
+        for n in (g.get("nodes") or {}).values():
+            f = fields.get(n.get("field")) if isinstance(n, dict) and not n.get("outcome") else None
+            if not f:
+                continue
+            if not text_langs(n.get("question")):
+                n["question"] = f.get("label")
+            ftype = f.get("type")
+            if ftype in ("single_choice", "multi_choice") and f.get("options") and not n.get("options"):
+                n["options"] = f["options"]
+                n["input"] = "choice"
+            elif ftype == "checkbox":
+                n["input"] = "yes_no"
+            elif ftype == "number":
+                n["input"] = "number"
+            elif not n.get("input"):
+                n["input"] = "text"
+            if f.get("unit") and not n.get("unit"):
+                n["unit"] = f["unit"]
+        out.append(g)
+    return out
+
+
 def manifest(bundle: dict, v: dict, workflow_versions: dict[str, int], packs: dict) -> dict:
     """The ``workspace`` pack the phone downloads (profile, guides, policy, provenance; no server paths)."""
     statuses = v["statuses"]
@@ -357,7 +400,8 @@ def manifest(bundle: dict, v: dict, workflow_versions: dict[str, int], packs: di
         "profile": bundle.get("profile") or {}, "language_features": bundle.get("languages") or {},
         "workflows": [{"id": k, "version": ver} for k, ver in workflow_versions.items()],
         "packs": [p for p in (packs.get("knowledge_saved"), packs.get("dictionary_saved")) if p],
-        "guides": bundle.get("guides") or [], "report_policy": bundle.get("report_policy") or {},
+        "guides": phone_guides(bundle.get("guides") or [], {w["id"]: w for w in bundle.get("workflows") or [] if isinstance(w, dict)}),
+        "report_policy": bundle.get("report_policy") or {},
         "intents": bundle.get("intents") or [],
         "sources": [{**s, "tier": v["tiers"].get(s["id"])} for s in bundle.get("sources") or [] if isinstance(s, dict)],
         "evidence": [{**e, "status": statuses.get(e.get("id"), "unverified")} for e in bundle.get("evidence") or [] if isinstance(e, dict)],
@@ -405,10 +449,17 @@ def starter_bundle(wf: dict, packs: list[str]) -> dict:
             "gaps": [{"topic": "Example content", "note": "Synthetic demo workspace: not researched for a real site."}]}
 
 
+def existing_workflow_defs(store: Any) -> dict:
+    out = {}
+    for w in store.list_workflows(ALL_OWNERS()):
+        out[w["id"]] = store.get_workflow_any_owner(w["id"], w.get("published_version") or w["latest_version"]) or {}
+    return out
+
+
 def build_draft(store: Any, owner: Any, bundle: dict, brief_id: Optional[str] = None, changelog: Optional[list] = None) -> dict:
     """Validate and store a new draft version. Invalid bundles are stored too (so Hermes can fix them), but cannot
     be published. Returns the draft id/version, the validation and the research report."""
-    existing = {w["id"] for w in store.list_workflows(ALL_OWNERS())}
+    existing = existing_workflow_defs(store)
     v = validate_bundle(bundle, existing)
     d = store.save_workspace_draft(owner, bundle, v, brief_id=brief_id, changelog=changelog, starter=bool(bundle.get("starter")))
     return {**d, "ok": v["ok"], "validation": {k: v[k] for k in ("errors", "warnings", "summary")},
@@ -421,9 +472,11 @@ def publish(store: Any, wid: str, version: Optional[int] = None, actor: Any = No
     rec = store.get_workspace_version(wid, version or store.get_workspace_version(wid)["latest_version"])
     bundle = rec["bundle"]
     existing = {w["id"]: w for w in store.list_workflows(ALL_OWNERS())}
-    v = validate_bundle(bundle, set(existing))
+    v = validate_bundle(bundle, existing_workflow_defs(store))
     if not v["ok"]:
         raise Invalid("workspace is not valid: " + "; ".join(v["errors"][:8]))
+    if pending_checks(bundle):
+        raise Invalid("source quotes are still being checked; build again (fieldkit_build_workspace) and publish after the checks finish")
     ids = pack_ids(wid)
     versions: dict[str, int] = {}
     for w in bundle.get("workflows") or []:
@@ -519,14 +572,22 @@ def prompt_section(store: Any) -> str:
     """Bounded text added to each new Hermes session (ctx.register_system_prompt_section)."""
     try:
         built = [w for w in store.list_workspaces(published_only=True) if not w["starter"]]
+        open_builds = store.list_workspace_builds()
     except Exception:
         return ""
+    resume = ""
+    if open_builds:
+        resume = ("A FieldKit workspace build is in progress (" + ", ".join(
+            f"{b['workspace_id']}: {sum(len(v) for v in (b['parts'] or {}).values())} parts added" for b in open_builds[:3])
+            + "). If the user wants to continue, call fieldkit_workspace_build_status and carry on from there; never "
+              "start over. ")
     if not built:
-        return ("FieldKit (offline field-work plugin) is installed, but no workspace has been built for this user yet. "
+        return (resume + "FieldKit (offline field-work plugin) is installed, but no workspace has been built for this user yet. "
                 "When the user talks about their field work, inspections, surveys or FieldKit, offer once to build a "
                 "FieldKit workspace for their actual job, following the fieldkit-workspace-builder skill: interview, "
-                "confirm the brief (fieldkit_save_workspace_brief), research with web_search and web_extract quoting the "
-                "exact source text, fieldkit_build_workspace, show the research report, and publish only after the user approves.")
+                "confirm the brief (fieldkit_save_workspace_brief), fieldkit_start_workspace_build, research with "
+                "web_search and web_extract quoting the exact source text, add each part with fieldkit_add_workspace_parts, "
+                "fieldkit_build_workspace, show the research report, and publish only after the user approves.")[:1500]
     parts = []
     for w in built[:6]:
         try:
@@ -542,7 +603,7 @@ def prompt_section(store: Any) -> str:
                          f"{sm.get('conflicting', 0)} conflicting, {sm.get('gaps', 0)} gaps{extra})")
         except Exception:
             parts.append(f"{w['title']} (id {w['id']})")
-    return ("FieldKit workspaces built for this user: " + "; ".join(parts) + ". Use the fieldkit-workspace-builder skill "
+    return (resume + "FieldKit workspaces built for this user: " + "; ".join(parts) + ". Use the fieldkit-workspace-builder skill "
             "to update them (new responsibilities, gaps, conflicting evidence, learning candidates).")[:1500]
 
 
@@ -552,6 +613,26 @@ import socket  # noqa: E402
 import unicodedata  # noqa: E402
 
 MAX_FETCH = 2_000_000
+MAX_PDF_FETCH = 20_000_000
+
+
+def pdf_text(data: bytes) -> Optional[str]:
+    """Text of a PDF using Hermes' own document extractor (tools.read_extract, available inside the Hermes
+    process), else pypdf if installed. None when no extractor is available: the quote is then not checked."""
+    try:
+        from tools.read_extract import extract_document_bytes  # type: ignore[import-not-found]
+        return extract_document_bytes(data, "source.pdf")
+    except ImportError:
+        pass
+    except Exception:  # noqa: BLE001 (extractor present but failed: try the fallback)
+        pass
+    try:
+        import io
+
+        from pypdf import PdfReader  # type: ignore[import-not-found]
+        return "\n".join((p.extract_text() or "") for p in PdfReader(io.BytesIO(data)).pages)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _norm(t: str) -> str:
@@ -573,27 +654,193 @@ def _public_host(host: str) -> bool:
         return False
 
 
+class _SafeRedirect(__import__("urllib.request").request.HTTPRedirectHandler):
+    """Follow redirects only to public http(s) hosts (a public page must not bounce the check into the local network)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
+        u = urlparse(newurl)
+        if u.scheme not in ("http", "https") or not u.hostname or not _public_host(u.hostname):
+            raise ValueError("redirect to a non-public URL")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+FETCH_DEADLINE_S = 25      # per page, whole download (a slow-drip server cannot hold a worker longer)
+
+
 def default_fetch(url: str) -> tuple:
-    """(content_type, text). Only public http(s) hosts; size and time limited."""
+    """(content_type, text). Only public http(s) hosts (redirects re-checked); size and time limited."""
+    import time
     import urllib.request
     u = urlparse(url)
     if u.scheme not in ("http", "https") or not u.hostname or not _public_host(u.hostname):
         raise ValueError("not a public http(s) URL")
-    req = urllib.request.Request(url, headers={"User-Agent": "FieldKit-excerpt-check/0.2.5"})
-    with urllib.request.urlopen(req, timeout=8) as r:  # noqa: S310 (scheme and host checked above)
+    opener = urllib.request.build_opener(_SafeRedirect())
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; FieldKit-excerpt-check/0.2.6)",
+                                               "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5"})
+    t0 = time.monotonic()
+    with opener.open(req, timeout=10) as r:  # noqa: S310 (scheme and host checked above and on every redirect)
         ctype = r.headers.get("content-type", "")
-        body = r.read(MAX_FETCH)
-    return ctype, body.decode("utf-8", errors="replace")
+        is_pdf = "pdf" in ctype.lower() or u.path.lower().endswith(".pdf")
+        cap = MAX_PDF_FETCH if is_pdf else MAX_FETCH
+        chunks, size = [], 0
+        while size < cap:
+            if time.monotonic() - t0 > FETCH_DEADLINE_S:
+                raise TimeoutError("page download took too long")
+            b = r.read(65536)
+            if not b:
+                break
+            chunks.append(b)
+            size += len(b)
+        charset = r.headers.get_content_charset() or "utf-8"
+    body = b"".join(chunks)[:cap]
+    if is_pdf or body[:5] == b"%PDF-":
+        text = pdf_text(body)
+        if text is None:
+            return "application/pdf", ""            # no extractor: reported as "PDF: not checked"
+        return "text/plain; source=pdf", text
+    return ctype, body.decode(charset, errors="replace")
 
 
-def check_excerpts(bundle: dict, fetch: Any = None, limit: int = 40) -> dict:
+# Pages are fetched in a small background pool and cached (memory + the store), so a build tool call waits a bounded
+# time and later calls reuse the result. Injected fetchers (tests) bypass the caches.
+_POOL = None
+_INFLIGHT: dict = {}
+_MEM: dict = {}
+_POOL_LOCK = __import__("threading").RLock()
+OK_TTL_S, ERROR_TTL_S = 3 * 86400, 600
+MIN_PAGE_TEXT = 400        # fewer readable characters than this: probably a script-rendered page; don't judge quotes
+
+
+def _pool():
+    global _POOL
+    with _POOL_LOCK:
+        if _POOL is None:
+            from concurrent.futures import ThreadPoolExecutor
+            _POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="fieldkit-source")
+        return _POOL
+
+
+def _load_page(url: str, fetch: Any) -> tuple:
+    """(status, content): status ok / pdf / thin / error."""
+    try:
+        ctype, body = fetch(url)
+        if str(ctype).lower().startswith("application/pdf"):
+            return "pdf", None
+        text = _norm(body)
+        return ("ok" if len(text) >= MIN_PAGE_TEXT else "thin"), text
+    except Exception as exc:  # noqa: BLE001 (any network/parse failure is "could not check")
+        return "error", (type(exc).__name__ + (": " + str(exc))[:120] if str(exc) else type(exc).__name__)
+
+
+def _fresh(status: str, at: float) -> bool:
+    import time
+    return (time.time() - (at or 0)) < (ERROR_TTL_S if status == "error" else OK_TTL_S)
+
+
+def fetch_pages(urls: list, fetch: Any = None, store: Any = None, wait_s: Optional[float] = None) -> dict:
+    """url → (status, content) with status ok / pdf / thin / error / pending (still downloading in the background)."""
+    import time
+    from concurrent.futures import wait as fwait
+    out: dict = {}
+    if fetch is not None:      # injected fetcher (tests): synchronous, uncached
+        for u in urls:
+            out[u] = _load_page(u, fetch)
+        return out
+    futs = {}
+    for u in dict.fromkeys(urls):
+        hit = _MEM.get(u)
+        if hit and _fresh(hit[0], hit[2]):
+            out[u] = hit[:2]
+            continue
+        if store is not None:
+            try:
+                row = store.get_source_page(u)
+            except Exception:
+                row = None
+            if row and _fresh(row["status"], row["fetched_at"]):
+                _MEM[u] = (row["status"], row["content"] if row["status"] != "error" else row["error"], row["fetched_at"])
+                out[u] = _MEM[u][:2]
+                continue
+        with _POOL_LOCK:
+            f = _INFLIGHT.get(u)
+            if f is None:
+                def job(url=u):
+                    st, content = _load_page(url, default_fetch)
+                    _MEM[url] = (st, content, time.time())
+                    if store is not None:
+                        try:
+                            store.save_source_page(url, st, content if st != "error" else None, content if st == "error" else None)
+                        except Exception:
+                            pass
+                    with _POOL_LOCK:
+                        _INFLIGHT.pop(url, None)
+                    return st, content
+                f = _INFLIGHT[u] = _pool().submit(job)
+        futs[u] = f
+    if futs:
+        fwait(list(futs.values()), timeout=wait_s)
+    for u, f in futs.items():
+        out[u] = f.result() if f.done() else ("pending", None)
+    return out
+
+
+def _quote_found(quote: str, page: str) -> bool:
+    q = _norm(quote)
+    if not q:
+        return False
+    if q[:160] in page:
+        return True
+    # Quotes copied from extracted markdown can cross a table cell or line break: accept when every 6-word window of
+    # the quote appears on the page (still exact text, just not one contiguous run).
+    words = q.split()
+    if len(words) < 6:
+        return False
+    wins = [" ".join(words[i:i + 6]) for i in range(0, len(words) - 5, 3)]
+    return all(w in page for w in wins)
+
+
+APPROX_MIN = 0.85
+
+
+def _approx_match(quote: str, page: str) -> float:
+    """Best similarity of the quote to a same-length run of page words, for text extracted from scanned or garbled
+    documents (OCR turns "milk is for" into "111 milk is or"). Every number in the quote must appear, in order and
+    exactly, in that run: a misquoted threshold never matches approximately. Returns 0..1."""
+    import difflib
+    q = _norm(quote)
+    qw, pw = q.split(), page.split()
+    n = len(qw)
+    if n < 6 or not pw:
+        return 0.0
+    nums = [w for w in qw if any(ch.isdigit() for ch in w)]
+    qs = set(qw)
+    hits = [1 if w in qs else 0 for w in pw]
+    win = sum(hits[:n])
+    cands = []
+    for i in range(0, max(1, len(pw) - n + 1)):
+        if i:
+            win += (hits[i + n - 1] if i + n - 1 < len(hits) else 0) - hits[i - 1]
+        if win >= 0.5 * n:
+            cands.append((win, i))
+    best = 0.0
+    for _, i in sorted(cands, reverse=True)[:300]:
+        seg = pw[max(0, i - 2): i + n + 2]
+        it = iter(seg)
+        if nums and not all(any(x == num for x in it) for num in nums):
+            continue
+        best = max(best, difflib.SequenceMatcher(None, q, " ".join(pw[i:i + n])).ratio())
+    return best
+
+
+def check_excerpts(bundle: dict, fetch: Any = None, limit: int = 80, wait_s: Optional[float] = None, store: Any = None) -> dict:
     """Confirm each quoted excerpt appears on its source page. Marks excerpts in place with check = found /
-    not_found / not_checked (+ check_note). PDFs and user documents are not checked automatically. A not_found
-    excerpt no longer counts as evidence."""
-    fetch = fetch or default_fetch
+    not_found / not_checked / pending (+ check_note). PDFs are read with Hermes' document extractor; user documents are not checked; a page
+    with almost no readable text (script-rendered) is not judged. A not_found excerpt no longer counts as evidence;
+    a pending one blocks publishing until the check finishes."""
     sources = {x.get("id"): x for x in bundle.get("sources") or [] if isinstance(x, dict)}
-    pages: dict = {}
-    counts = {"found": 0, "not_found": 0, "not_checked": 0}
+    counts = {"found": 0, "approximate": 0, "not_found": 0, "not_checked": 0, "pending": 0}
+    todo: list = []
+    marks: list = []
     for ev in bundle.get("evidence") or []:
         if not isinstance(ev, dict):
             continue
@@ -605,30 +852,39 @@ def check_excerpts(bundle: dict, fetch: Any = None, limit: int = 40) -> dict:
             why = ""
             if not src or src.get("type") == "user_document" or not url:
                 why = "user document or no URL"
-            elif url.lower().split("?")[0].endswith(".pdf"):
-                why = "PDF: not checked automatically"
-            elif url not in pages and len(pages) >= limit:
+            elif url not in todo and len(todo) >= limit:
                 why = "check limit reached"
             if why:
                 x["check"], x["check_note"] = "not_checked", why
                 counts["not_checked"] += 1
                 continue
-            if url not in pages:
-                try:
-                    ctype, body = fetch(url)
-                    pages[url] = None if "pdf" in str(ctype).lower() else _norm(body)
-                except Exception as exc:
-                    pages[url] = "!" + type(exc).__name__
-            page = pages[url]
-            if page is None or page.startswith("!"):
-                x["check"], x["check_note"] = "not_checked", ("PDF" if page is None else "could not fetch (" + page[1:] + ")")
-                counts["not_checked"] += 1
-                continue
-            q = _norm(str(x.get("quote", "")))[:160]
-            if q and q in page:
-                x["check"] = "found"
-                counts["found"] += 1
-            else:
-                x["check"], x["check_note"] = "not_found", "quote not found on the page"
-                counts["not_found"] += 1
+            if url not in todo:
+                todo.append(url)
+            marks.append((x, url))
+    pages = fetch_pages(todo, fetch=fetch, store=store, wait_s=wait_s) if todo else {}
+    for x, url in marks:
+        st, content = pages.get(url, ("error", "not fetched"))
+        x.pop("check_note", None)
+        found = st in ("ok", "thin") and _quote_found(str(x.get("quote", "")), content or "")
+        if st == "pending":
+            x["check"], x["check_note"] = "pending", "the page is still being fetched"
+        elif st == "pdf":
+            x["check"], x["check_note"] = "not_checked", "PDF: no text extractor available, or a scanned PDF"
+        elif st == "error":
+            x["check"], x["check_note"] = "not_checked", f"could not fetch ({content})"
+        elif found:
+            x["check"] = "found"
+        elif st == "ok" and _approx_match(str(x.get("quote", "")), content or "") >= APPROX_MIN:
+            x["check"], x["check_note"] = "approximate", ("close match in text extracted from a scanned or garbled "
+                                                          "document; numbers match exactly; check the wording by eye")
+        elif st == "thin":
+            x["check"], x["check_note"] = "not_checked", "the page has almost no readable text (it may need a browser); quote not verified"
+        else:
+            x["check"], x["check_note"] = "not_found", "quote not found on the page"
+        counts[x["check"]] += 1
     return counts
+
+
+def pending_checks(bundle: dict) -> int:
+    return sum(1 for ev in bundle.get("evidence") or [] if isinstance(ev, dict)
+               for x in ev.get("excerpts") or [] if isinstance(x, dict) and x.get("check") == "pending")

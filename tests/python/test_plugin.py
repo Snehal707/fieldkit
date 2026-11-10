@@ -177,12 +177,16 @@ def test_workspace_builder_flow_through_tools(ctx, monkeypatch):
     assert "not confirmed" in call(ctx, "fieldkit_build_workspace", brief_id=bid, bundle=bundle())["error"]
     assert call(ctx, "fieldkit_save_workspace_brief", brief=brief, brief_id=bid, confirmed=True)["confirmed"] is True
     # Build: quotes are checked against pages (fake fetch); a quote missing from its page stops counting.
-    pages = {"https://www.nddb.coop/information/milk-testing": "<p>ILLUSTRATIVE TEST TEXT: re-test borderline samples once.</p>",
-             "https://icar.org.in/dairy-quality": "<html>nothing relevant here</html>"}
+    filler = "<p>General background about milk testing at village collection centres.</p>" * 10
+    pages = {"https://www.nddb.coop/information/milk-testing": filler + "<p>ILLUSTRATIVE TEST TEXT: re-test borderline samples once.</p>",
+             "https://icar.org.in/dairy-quality": "<html>" + filler + "nothing relevant here</html>"}
+    pages["https://www.fssai.gov.in/upload/uploadfiles/files/Dairy_Regulations.pdf"] = filler + (
+        "ILLUSTRATIVE TEST TEXT: cow milk minimum SNF 8.5 percent. ILLUSTRATIVE TEST TEXT: buffalo milk fat minimum A. "
+        "ILLUSTRATIVE TEST TEXT: rule for a different state.")
     monkeypatch.setattr(ws, "default_fetch", lambda url: ("text/html", pages.get(url, "")))
     out = call(ctx, "fieldkit_build_workspace", brief_id=bid, bundle=bundle())
     assert out["workspace_id"] == "dairy-collection-mh" and out["version"] == 1
-    assert out["research_report"]["excerpt_check"]["not_found"] >= 1        # the ICAR quote is not on its page
+    assert out["research_report"]["quote_check"]["not_found"] >= 1        # the ICAR quote is not on its page
     # ev_two_t2 now has only one found tier-2 quote (NDDB) → supported, not verified.
     got = call(ctx, "fieldkit_get_workspace", workspace_id="dairy-collection-mh", include_bundle=True)
     assert got["ok"] and got["status"] == "draft"
@@ -212,7 +216,7 @@ def test_invalid_build_reports_errors_and_unsafe_urls_are_never_fetched(ctx):
     b["guides"][0]["nodes"]["o_accept"]["outcome"]["actions"][0]["evidence_ids"] = ["ev_model_only"]
     out = call(ctx, "fieldkit_build_workspace", brief_id=bid, bundle=b, check_excerpts=False)
     assert out["valid"] is False and any("no supporting evidence" in e for e in out["errors"])
-    assert "find and quote a qualifying source" in out["next"]
+    assert "quoted qualifying source" in out["next"]
     for url in ("http://127.0.0.1/x", "http://localhost:9300/api", "file:///etc/passwd", "http://169.254.169.254/latest"):
         with pytest.raises(ValueError):
             ws.default_fetch(url)
@@ -291,3 +295,75 @@ def test_local_practice_needs_real_outcomes():
     assert ws.evidence_status(fake, src)[0] == "unverified"
     ok = {"id": "e", "claim": "x", "local_practice": True, "outcomes": {"n": 3, "done": 3, "records": ["a", "b", "c"]}}
     assert ws.evidence_status(ok, src)[0] == "local_practice"
+
+
+# ----------------------------------------------------------------------------- 0.2.6: part-by-part builds
+def test_workspace_built_part_by_part_survives_chats_and_rejects_bad_items(ctx, monkeypatch):
+    """The hosted failure mode: one huge bundle with wrong shapes. Now each part is checked as it is added, saved
+    server-side (a later chat resumes it), and the final build waits only a bounded time for source pages."""
+    from fieldkit_core import workspace as ws, workspace_schema as S, workspace_tools as wst
+    BUNDLE, bundle = _ws_fixture()
+    b = bundle()
+    filler = "<p>General background about milk testing at village collection centres.</p>" * 10
+    monkeypatch.setattr(ws, "default_fetch", lambda url: ("text/html", filler + "<p>ILLUSTRATIVE TEST TEXT: re-test borderline samples once.</p>"
+                                                          "<p>ILLUSTRATIVE TEST TEXT: cow milk minimum SNF 8.5 percent</p>"
+                                                          "<p>ILLUSTRATIVE TEST TEXT: buffalo milk fat minimum A</p>"))
+    brief = {**BUNDLE["profile"], "languages": BUNDLE["languages"], "escalation": ["centre manager"]}
+    bid = call(ctx, "fieldkit_save_workspace_brief", brief=brief, confirmed=True)["brief_id"]
+    unconfirmed = call(ctx, "fieldkit_save_workspace_brief", brief=brief)["brief_id"]
+    assert "not confirmed" in call(ctx, "fieldkit_start_workspace_build", brief_id=unconfirmed, workspace_id="dairy-x")["error"]
+    assert "slug" in call(ctx, "fieldkit_start_workspace_build", brief_id=bid, workspace_id="Dairy X")["error"]
+    st = call(ctx, "fieldkit_start_workspace_build", brief_id=bid, workspace_id=b["id"], title=b["title"], languages=b["languages"])
+    assert st["ok"] and st["started"] and "sources: researched sources" in st["missing"]
+    fmt = call(ctx, "fieldkit_workspace_format", part="guides")["format"]
+    assert fmt["schema"]["properties"]["nodes"] and fmt["example"]["nodes"]
+
+    def add(part, items, **kw):
+        return call(ctx, "fieldkit_add_workspace_parts", workspace_id=b["id"], part=part, items=items, **kw)
+    # Evidence before its sources: rejected with the path and what to do.
+    r = add("evidence", b["evidence"][:1])
+    assert r["accepted"] == [] and "add it to sources first" in r["rejected"][0]["errors"][0]["error"]
+    assert add("sources", b["sources"])["accepted"] == [s["id"] for s in b["sources"]]
+    r = add("evidence", b["evidence"])
+    assert len(r["accepted"]) == len(b["evidence"]) and r["quote_check"]["found"] >= 1 and r["evidence_status"]
+    # A guide before the report policy: decision unknown. Then the hosted-style broken workflow: repaired + type errors.
+    assert "add report_policy first" in str(add("guides", b["guides"])["rejected"])
+    assert add("report_policy", [b["report_policy"]])["accepted"] == ["report_policy"]
+    broken = {"id": "milk-collection-check", "title": "Milk", "fields": [
+        {"name": "farmer_code", "type": "string", "label": "Farmer"},
+        {"id": "milk_type", "type": "dropdown", "label": "Milk", "options": ["cow", "buffalo"]},
+        {"id": "snf_pct", "type": "decimal", "label": "SNF"}],
+        "classification": {"rules": [{"id": "snf_low", "label": "Low", "when": {"op": "<", "field": "snf_pct", "value": "8.5"},
+                                      "evidence_ids": ["ev_snf_cow"]}]}}
+    r = add("workflows", [broken], dry_run=True)
+    assert r["dry_run"] and r["fixed_automatically"]["milk-collection-check"]
+    assert "compare it with a number" in r["rejected"][0]["errors"][0]["error"] and r["rejected"][0]["errors"][0]["hint"]
+    assert call(ctx, "fieldkit_workspace_build_status", workspace_id=b["id"])["parts"]["workflows"] == 0   # dry run saved nothing
+    assert add("workflows", b["workflows"])["accepted"] == ["milk-collection-check"]
+    # --- the chat ends here; a new chat finds the build and continues ---
+    lst = call(ctx, "fieldkit_workspace_build_status")
+    assert [x["workspace_id"] for x in lst["builds"]] == [b["id"]]
+    again = call(ctx, "fieldkit_start_workspace_build", brief_id=bid, workspace_id=b["id"])
+    assert again["resumed"] and again["parts"]["evidence"] == len(b["evidence"])
+    for part in ("guides", "knowledge", "vocabulary", "gaps", "traceability"):
+        items = b[part]["entries"] if part in ("knowledge", "vocabulary") else b[part]
+        r = add(part, items)
+        assert r["rejected"] == [], (part, r["rejected"])
+    r = add("intents", [{"id": "check_requirement", "examples": ["Minimum SNF for cow milk?"]}])
+    assert r["accepted"] == ["check_requirement"] and r["fixed_automatically"]
+    assert add("knowledge", [], remove=["k_retest"])["removed"] == ["k_retest"]
+    out = call(ctx, "fieldkit_build_workspace", workspace_id=b["id"])
+    assert out["valid"] is False and any("k_retest" in str(e) for e in out["errors"])      # traceability now dangles
+    forged = dict(b["evidence"][0], id="ev_fake", local_practice=True, outcomes={"n": 9, "done": 9, "records": ["a"] * 9})
+    assert "only by FieldKit" in str(add("evidence", [forged])["rejected"])
+    add("knowledge", b["knowledge"]["entries"])
+    out = call(ctx, "fieldkit_build_workspace", workspace_id=b["id"])
+    assert out["valid"] is True and out["checks_pending"] == 0, out["errors"]
+    assert out["research_report"]["summary"]["workflows"] == 1
+    pub = call(ctx, "fieldkit_publish_workspace", workspace_id=b["id"], user_approved=True)
+    assert pub["ok"] and pub["version"] == out["version"]
+    assert call(ctx, "fieldkit_workspace_build_status")["builds"] == []            # finished builds are closed
+    # Updating later starts from the published version.
+    upd = call(ctx, "fieldkit_start_workspace_build", brief_id=bid, workspace_id=b["id"])
+    assert upd["from_version"] == out["version"] and upd["parts"]["guides"] == 1
+    assert wst.BUILD_WAIT_S <= 25 and S.PARTS[0] == "sources"

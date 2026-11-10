@@ -71,7 +71,7 @@ network_disclosure: "PWA downloads pinned on-device model files from huggingface
 - Hermes OAuth sessions last 15 minutes. Sync pauses and asks you to sign in; nothing is lost.
 - The offline assistant answers only from workspace content, records and reports. Without the 118 MB understanding pack it uses basic word search.
 - Local-practice learning needs at least 3 consistent verified outcomes.
-- PDF sources in a workspace are not checked automatically.
+- PDF sources are checked with Hermes' own document extractor; a scanned PDF with a damaged text layer may only give an approximate match (numbers must still match exactly), reported for checking by eye.
 
 ## Checklist before submitting
 - [ ] Confirm the deadline (reported as Nov 11 2026, 5 PM ET) and the submission format (catalog PR, form, or both) against the official announcement.

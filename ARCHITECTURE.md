@@ -4,7 +4,7 @@ One Hermes plugin repository, three integrated components, one database.
 
 ```text
  Hermes Mobile app ──conversation──▶ Hermes Agent ──tools──▶ FieldKit plugin (Python)
-                                          │                    │  register(ctx): 32 tools, 2 skills, hook
+                                          │                    │  register(ctx): 35 tools, 2 skills, hook
                                           │ ctx.llm            │  fieldkit_core: engine, db, packs, analysis
                                           ▼                    ▼
                               Hermes dashboard ── /api/plugins/fieldkit/ (FastAPI router, auth-gated)
@@ -21,7 +21,7 @@ and FieldKit tools, the PWA through the authenticated plugin API.
 ## Components
 
 ### A. Native plugin (`__init__.py`, `fieldkit_core/`)
-- `register(ctx)` binds `ctx.llm` and plugin config into `fieldkit_core.runtime`, registers the 32 tools
+- `register(ctx)` binds `ctx.llm` and plugin config into `fieldkit_core.runtime`, registers the 35 tools
   (`tools.py` and `workspace_tools.py`), the bundled skills (`skills/fieldkit/SKILL.md` and
   `skills/fieldkit-workspace-builder/SKILL.md`), a system prompt section (`fieldkit.workspace`), and adds an
   `on_session_start` hook. It does no I/O.
@@ -123,7 +123,8 @@ Interview (Hermes, skill fieldkit-workspace-builder)
 | Module | Role |
 |---|---|
 | `fieldkit_core/workspace.py` | Bundle and brief validation, source tiers, evidence status, decision guide graph checks, excerpt checks, publishing as workflows and packs, starter workspaces, the onboarding prompt text |
-| `fieldkit_core/workspace_tools.py` | The 9 workspace and learning tools (schemas and handlers) |
+| `fieldkit_core/workspace_schema.py` | Per-part JSON Schemas and examples, repairs of unambiguous shape mistakes (`normalize`), item checks with paths and hints, cross-reference and type checks (0.2.6) |
+| `fieldkit_core/workspace_tools.py` | The 12 workspace, build and learning tools (schemas and handlers): 9 from 0.2.5, 3 build tools from 0.2.6 |
 | `fieldkit_core/decision.py` | Decision scale, report v2 schema additions, deterministic report checks, follow-ups from next actions |
 | `fieldkit_core/learning.py` | Learning events (idempotent per key), verified outcomes from follow-up checks, candidate clustering, confirmation rules |
 | `app/src/workspace.ts` | Installs and lists workspaces on the phone, with SHA-256 checked packs |
@@ -142,6 +143,22 @@ Rules that do not depend on the model:
 
 The phone and Hermes exchange only through the plugin API: `GET workspaces`, `GET workspaces/{id}` and
 `POST learning/events` (see [docs/API.md](docs/API.md)).
+
+## Building in parts and background quote checks (0.2.6)
+
+A single build call used to re-fetch every quoted page in turn and receive the whole workspace as one JSON argument,
+which timed out. Now:
+- `fieldkit_start_workspace_build` starts or resumes a build for a confirmed brief. `fieldkit_workspace_build_status`
+  shows where a build stands, so a new chat can resume it.
+- `fieldkit_add_workspace_parts` adds, replaces or removes items of one part (sources, evidence, workflows, guides and
+  so on). Each item is checked against its schema when it is saved. Unambiguous shape mistakes are repaired and listed
+  as `fixed_automatically`.
+- `fieldkit_build_workspace` assembles the saved parts into a draft. Publishing applies the same checks.
+- Builds are stored server-side. DB migration v5 is additive only and adds the tables `workspace_builds` and `source_pages`.
+- Quote checks run in a background pool of 6 workers: at most 25 s per page, 2 MB cap, and redirects to non-public hosts
+  are refused. Pages are cached in memory and in `source_pages` for 3 days; errors are retried after 10 minutes. A build
+  call waits at most 20 s and reports `checks_pending`. Publishing is refused while any quote check is pending. A page
+  with almost no readable text (for example, script-rendered) is marked not checked, not not found.
 
 ## Security
 

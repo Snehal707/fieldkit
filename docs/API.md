@@ -154,16 +154,22 @@ are still written for older readers. The v2 fields are:
 `fieldkit_process_pending_jobs`, `fieldkit_install_examples`.
 
 Workspaces and learning (0.2.5, 9 tools):
-- `fieldkit_workspace_format`: the bundle format and the evidence rules FieldKit enforces.
+Workspace build tools (0.2.6, 3 new):
+- `fieldkit_start_workspace_build`: starts or resumes a build for a confirmed brief. When the workspace exists, it starts from the latest version.
+- `fieldkit_add_workspace_parts`: adds, replaces or removes items of one part. `dry_run` validates without saving. Each item is checked against its part's schema.
+- `fieldkit_workspace_build_status`: shows a build's progress, so a new chat can resume it.
+
+Workspaces and learning (0.2.5, 9 tools):
+- `fieldkit_workspace_format`: takes `part` (`sources`, `evidence`, `report_policy`, `workflows`, `guides`, `knowledge`, `vocabulary`, `intents`, `gaps` or `traceability`) and returns that part's JSON Schema, a valid example and its rules. The evidence rules FieldKit enforces are included.
 - `fieldkit_save_workspace_brief`: saves the interview result. An incomplete brief cannot be confirmed.
-- `fieldkit_build_workspace`: validates and stores a draft for a confirmed brief. Re-fetches cited web pages and drops quotes that are not on them. PDFs are marked not checked. Private, loopback and metadata addresses are never fetched.
-- `fieldkit_publish_workspace`: publishes a valid draft. Requires `user_approved`.
+- `fieldkit_build_workspace`: takes `workspace_id` (assembles the parts saved for the build) or the older `brief_id` and `bundle`. Validates and stores a draft. Quote checks run in the background: the call waits at most 20 s and reports `checks_pending`. Cited web pages are re-fetched and quotes that are not on them are dropped. PDFs are marked not checked. Private, loopback and metadata addresses are never fetched.
+- `fieldkit_publish_workspace`: publishes a valid draft. Requires `user_approved`. Refused while any quote check is pending.
 - `fieldkit_get_workspace`, `fieldkit_list_workspaces`: read workspace versions and their research report.
 - `fieldkit_propose_workspace_changes`: turns learning events into candidates (research gaps, local practices, reviews).
 - `fieldkit_list_learning`: learning events and candidates.
 - `fieldkit_decide_candidate`: accepts or rejects a candidate. Requires `user_confirmed`. An accepted candidate creates a validated new workspace version with a changelog.
 
-With these, FieldKit has 32 Hermes tools (23 before 0.2.5).
+With these, FieldKit has 35 Hermes tools (32 in 0.2.5, 23 before 0.2.5).
 
 All tools return a JSON string `{ok: true, …}` or `{ok: false, error}`. They act as the instance owner.
 
