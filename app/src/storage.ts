@@ -72,29 +72,11 @@ export function requestOutcome(kind: StorageKind): { text: string; tone: "ok" | 
   return { text: "The browser kept standard storage (common on iPhone). Your records are still saved on this device — keep syncing regularly.", tone: "info" };
 }
 
-// ------------------------------------------------------------------ voices
-export interface VoiceInfo { name: string; lang: string; localService: boolean }
-export interface VoiceSummary { total: number; languages: { code: string; label: string; voices: string[] }[] }
-
+// ------------------------------------------------------------------ language names
 export function languageLabel(code: string, uiLang = "en"): string {
   const base = code.split(/[-_]/)[0].toLowerCase();
   try {
     const dn = new (Intl as any).DisplayNames([uiLang], { type: "language" });
     return dn.of(code.replace("_", "-")) || dn.of(base) || code;
   } catch { return code; }
-}
-
-/** Group on-device voices by language (deduplicated, sorted), so Settings can show a summary + expandable list. */
-export function summarizeVoices(voices: VoiceInfo[], uiLang = "en"): VoiceSummary {
-  const local = voices.filter((v) => v.localService);
-  const byLang = new Map<string, Set<string>>();
-  for (const v of local) {
-    const code = v.lang.replace("_", "-");
-    if (!byLang.has(code)) byLang.set(code, new Set());
-    byLang.get(code)!.add(v.name);
-  }
-  const languages = [...byLang.entries()]
-    .map(([code, names]) => ({ code, label: languageLabel(code, uiLang), voices: [...names].sort() }))
-    .sort((a, b) => a.label.localeCompare(b.label) || a.code.localeCompare(b.code));
-  return { total: local.length, languages };
 }

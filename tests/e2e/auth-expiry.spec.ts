@@ -6,6 +6,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { signIn } from "./auth";
+import { downloadWorkspace, startEntry } from "./helpers";
 
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
@@ -59,13 +60,10 @@ test("expired session: offline data stays accessible without login; online sync 
   const profile = mkdtempSync(join(tmpdir(), "fk-exp-off-"));
   let ctx = await engine.launchPersistentContext(profile, { viewport: { width: 390, height: 844 } });
   await signIn(ctx.request);
-  await ctx.request.post(`${API}/examples/install`);
   let page = await ctx.newPage();
   await page.goto(APP);
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);
-  await page.goto(`${APP}#/packs`);
-  await page.locator("li", { hasText: "Equipment inspection" }).getByRole("button", { name: /Download for offline|Re-download|Update/ }).first().click();
-  await expect(page.locator("text=Downloaded Equipment inspection")).toBeVisible({ timeout: 30_000 });
+  await downloadWorkspace(page, APP);
   await ctx.close();
 
   // Offline + expired session: the app and its data open without any login.
@@ -74,8 +72,7 @@ test("expired session: offline data stays accessible without login; online sync 
   page = await ctx.newPage();
   await page.goto(APP);
   await expect(page.locator("body")).not.toContainText("session_expired");
-  await page.goto(`${APP}#/workflows`);
-  await page.getByRole("button", { name: "Start" }).click();
+  await startEntry(page, APP);
   await page.locator("#in-asset_id").fill("PMP-8001");
   await page.locator("#in-asset_id").blur();
   await page.locator("#in-inspection_date").fill("2026-11-09");

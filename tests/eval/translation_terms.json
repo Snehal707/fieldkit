@@ -1,0 +1,306 @@
+{
+ "description": "Synthetic term pairs for the translation evaluation (formerly the example dictionaries).",
+ "entries": [
+  {
+   "term": "chlorosis",
+   "lang": "en",
+   "definition": "Yellowing of leaf tissue caused by a lack of chlorophyll.",
+   "translations": {
+    "hi": "हरिमाहीनता"
+   },
+   "examples": [
+    "Chlorosis appeared on the lower leaves."
+   ],
+   "synonyms": [
+    "yellowing"
+   ],
+   "related": [
+    "nitrogen"
+   ]
+  },
+  {
+   "term": "nitrogen",
+   "lang": "en",
+   "definition": "A major plant nutrient needed for leaf and stem growth.",
+   "translations": {
+    "hi": "नाइट्रोजन"
+   },
+   "examples": [],
+   "synonyms": [],
+   "related": [
+    "fertiliser"
+   ]
+  },
+  {
+   "term": "irrigation",
+   "lang": "en",
+   "definition": "Supplying water to crops by artificial means.",
+   "translations": {
+    "hi": "सिंचाई"
+   },
+   "examples": [],
+   "synonyms": [
+    "watering"
+   ],
+   "related": [
+    "waterlogging"
+   ]
+  },
+  {
+   "term": "waterlogging",
+   "lang": "en",
+   "definition": "Saturation of soil with water so roots lack air.",
+   "translations": {
+    "hi": "जलभराव"
+   },
+   "examples": [],
+   "synonyms": [],
+   "related": [
+    "drainage"
+   ]
+  },
+  {
+   "term": "seedling",
+   "lang": "en",
+   "definition": "A young plant grown from a seed.",
+   "translations": {
+    "hi": "अंकुर"
+   },
+   "examples": [],
+   "synonyms": [],
+   "related": []
+  },
+  {
+   "term": "सिंचाई",
+   "lang": "hi",
+   "definition": "फसलों को कृत्रिम रूप से पानी देना।",
+   "translations": {
+    "en": "irrigation"
+   },
+   "examples": [],
+   "synonyms": [],
+   "related": []
+  },
+  {
+   "term": "photosynthesis",
+   "lang": "en",
+   "definition": "The process by which green plants use sunlight to make food from carbon dioxide and water.",
+   "translations": {
+    "hi": "प्रकाश संश्लेषण"
+   },
+   "examples": [
+    "Photosynthesis happens mainly in leaves."
+   ],
+   "synonyms": [],
+   "related": [
+    "chlorophyll"
+   ]
+  },
+  {
+   "term": "chlorophyll",
+   "lang": "en",
+   "definition": "The green pigment in plants that absorbs light energy.",
+   "translations": {
+    "hi": "पर्णहरित"
+   },
+   "examples": [],
+   "synonyms": [],
+   "related": [
+    "photosynthesis"
+   ]
+  },
+  {
+   "term": "evaporation",
+   "lang": "en",
+   "definition": "The change of a liquid into vapour, usually by heating.",
+   "translations": {
+    "hi": "वाष्पीकरण"
+   },
+   "examples": [
+    "Evaporation is faster on hot days."
+   ],
+   "synonyms": [
+    "vaporisation"
+   ],
+   "related": [
+    "condensation"
+   ]
+  },
+  {
+   "term": "condensation",
+   "lang": "en",
+   "definition": "The change of vapour into liquid when it cools.",
+   "translations": {
+    "hi": "संघनन"
+   },
+   "examples": [],
+   "synonyms": [],
+   "related": [
+    "evaporation"
+   ]
+  },
+  {
+   "term": "circuit",
+   "lang": "en",
+   "definition": "A closed path through which electric current flows.",
+   "translations": {
+    "hi": "परिपथ"
+   },
+   "examples": [],
+   "synonyms": [],
+   "related": [
+    "current"
+   ]
+  },
+  {
+   "term": "current",
+   "lang": "en",
+   "definition": "The flow of electric charge, measured in amperes.",
+   "translations": {
+    "hi": "विद्युत धारा"
+   },
+   "examples": [],
+   "synonyms": [],
+   "related": [
+    "circuit"
+   ]
+  },
+  {
+   "term": "वाष्पीकरण",
+   "lang": "hi",
+   "definition": "गर्म करने पर द्रव का वाष्प में बदलना।",
+   "translations": {
+    "en": "evaporation"
+   },
+   "examples": [],
+   "synonyms": [],
+   "related": []
+  },
+  {
+   "term": "bearing",
+   "lang": "en",
+   "definition": "A machine part that supports a rotating shaft and reduces friction.",
+   "translations": {
+    "hi": "बेयरिंग"
+   },
+   "examples": [
+    "The bearing was hot to the touch."
+   ],
+   "synonyms": [],
+   "related": [
+    "lubrication",
+    "shaft"
+   ]
+  },
+  {
+   "term": "vibration",
+   "lang": "en",
+   "definition": "Rapid back-and-forth motion of a machine or part.",
+   "translations": {
+    "hi": "कंपन"
+   },
+   "examples": [
+    "Vibration increased after the motor was replaced."
+   ],
+   "synonyms": [
+    "oscillation"
+   ],
+   "related": [
+    "imbalance",
+    "misalignment"
+   ]
+  },
+  {
+   "term": "misalignment",
+   "lang": "en",
+   "definition": "When two connected shafts are not on the same centre line.",
+   "translations": {
+    "hi": "गलत संरेखण"
+   },
+   "examples": [],
+   "synonyms": [],
+   "related": [
+    "coupling",
+    "alignment"
+   ]
+  },
+  {
+   "term": "coupling",
+   "lang": "en",
+   "definition": "A device that joins two shafts so they turn together.",
+   "translations": {
+    "hi": "कपलिंग"
+   },
+   "examples": [],
+   "synonyms": [],
+   "related": [
+    "misalignment"
+   ]
+  },
+  {
+   "term": "lubrication",
+   "lang": "en",
+   "definition": "Applying grease or oil to reduce friction and wear.",
+   "translations": {
+    "hi": "स्नेहन"
+   },
+   "examples": [],
+   "synonyms": [
+    "greasing"
+   ],
+   "related": [
+    "bearing"
+   ]
+  },
+  {
+   "term": "seal",
+   "lang": "en",
+   "definition": "A part that stops fluid leaking along a shaft or joint.",
+   "translations": {
+    "hi": "सील"
+   },
+   "examples": [],
+   "synonyms": [],
+   "related": [
+    "leak"
+   ]
+  },
+  {
+   "term": "lockout",
+   "lang": "en",
+   "definition": "Isolating energy sources and locking them off before work.",
+   "translations": {
+    "hi": "लॉकआउट"
+   },
+   "examples": [],
+   "synonyms": [
+    "isolation"
+   ],
+   "related": [
+    "tagout"
+   ]
+  },
+  {
+   "term": "कंपन",
+   "lang": "hi",
+   "definition": "किसी मशीन या भाग की तेज़ आगे-पीछे गति।",
+   "translations": {
+    "en": "vibration"
+   },
+   "examples": [],
+   "synonyms": [],
+   "related": []
+  },
+  {
+   "term": "स्नेहन",
+   "lang": "hi",
+   "definition": "घर्षण और घिसाव कम करने के लिए ग्रीस या तेल लगाना।",
+   "translations": {
+    "en": "lubrication"
+   },
+   "examples": [],
+   "synonyms": [],
+   "related": []
+  }
+ ]
+}

@@ -4,26 +4,20 @@ import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { Answers, Finding, Workflow } from "./engine";
 
 export type SyncStatus = "local" | "pending" | "syncing" | "received" | "synced" | "conflict" | "error";
-export type AnalysisStatus = "not_requested" | "pending" | "processing" | "completed" | "failed" | "requires_review";
-
-export interface Reference { pack_id: string; entry_id: string; title: string; source: string; excerpt?: string }
+/** What the phone records about an entry when it is completed: validation only. FieldKit before 0.3 also stored
+ *  rule findings and knowledge references here; those old values stay readable (optional fields). */
 export interface LocalResults {
-  followup_checks?: import("./followups").FollowupCheck[];   // answers to the previous report's checks (0.2.5)
   generated_at: string;
   source: "local";
   validation: { complete: boolean; errors: Record<string, string[]>; messages: Record<string, string[]> };
   questions_answered: number;
   questions_visible: number;
-  findings: Finding[];
-  references: Reference[];
-  explanations: { field_id: string; title: string; text: string; source: string }[];
+  findings?: Finding[];
 }
 
 export interface Draft {
   id: string; workflow_id: string; workflow_version: number; answers: Answers; started_at: string; updated_at: string; lang: string;
   workspace_id?: string | null;  // the workspace this entry was started in (null when it can't be known for sure)
-  followup_checks?: import("./followups").FollowupCheck[];
-  questions?: string[];        // questions for Hermes written while filling in the form (0.2.6)
 }
 
 export interface LocalRecord {
@@ -45,12 +39,10 @@ export interface LocalRecord {
   sync_error?: string;
   last_sync_attempt?: string;
   conflict?: { conflict_id: string; server_revision: number; server_answers: Answers };
-  // analysis
-  analysis_status: AnalysisStatus;
-  analysis_job_id?: string | null;
+  // set by FieldKit before 0.3 (reports made by its analysis); kept so those entries still show their report
+  analysis_status?: string;
   report_id?: string | null;
   report_version?: number | null;
-  report_downloaded_at?: string;
 }
 
 export interface Attachment {
@@ -65,12 +57,12 @@ export interface OutboxOp {
 }
 
 export interface InstalledPack {
-  id: string; kind: "knowledge" | "dictionary" | "classification" | "workspace"; version: number; sha256: string; size: number;
+  id: string; kind: string; version: number; sha256: string; size: number;
   title: string; languages: string[]; domain: string; installed_at: string; content: any;
 }
 
 export interface InstalledModel {
-  id: string; capability: "translation" | "ocr" | "stt" | "embedding"; version: number; title: string; installed_at: string;
+  id: string; capability: string; version: number; title: string; installed_at: string;
   verified: boolean; verify_detail?: string; size?: number; manifest: any;
 }
 
@@ -78,10 +70,10 @@ export interface StoredReport { record_id: string; report_id: string; version: n
 /** A read-only offline copy of a record made on ANOTHER device (kept apart from this device's own records). */
 export interface RemoteCopy {
   id: string; workflow_id: string; workflow_title: string; workflow_version: number; device_id: string; device_label: string;
-  completed_at?: string; received_at?: number; revision: number; analysis_status: string; answers: Record<string, unknown>;
+  completed_at?: string; received_at?: number; revision: number; analysis_status?: string; answers: Record<string, unknown>;
   local_results: any; report: any | null; report_id?: string | null; downloaded_at: string;
   owner?: string;        // Hermes account that downloaded it; only shown to that account
-  attachments?: { id: string; field_id?: string; mime: string; size?: number; sha256?: string; status?: string }[];   // metadata only; files load from Hermes on demand
+  attachments?: { id: string; field_id?: string; kind?: string; mime: string; size?: number; sha256?: string; status?: string }[];   // metadata only; files load from Hermes on demand
 }
 export interface StoredWorkflow {
   id: string; version: number; downloaded_at: string; definition: Workflow;
@@ -107,29 +99,17 @@ interface FieldKitDB extends DBSchema {
   outbox: { key: number; value: OutboxOp; indexes: { by_record: string } };
   reports: { key: string; value: StoredReport };
   remote: { key: string; value: RemoteCopy };
-  learning: { key: string; value: LearningEvent; indexes: { by_sent: number } };
-  vectors: { key: string; value: { key: string; vec: number[] } };
-  questions: { key: string; value: LocalQuestion; indexes: { by_record: string } };
+  questions: { key: string; value: StoredQuestion; indexes: { by_record: string } };
 }
 
-/** A question about one visit, queued on the phone and answered by Hermes from that record (0.2.6). */
-export interface LocalQuestion {
-  id: string; record_id: string; workspace_id: string | null; question: string; lang: string; attachment_ids: string[];
-  status: "queued" | "sent" | "answered" | "failed"; created_at: string; sent_at?: string; answered_at?: string;
-  answer?: { answer: string; confidence?: string; uncertainty?: string; evidence_used?: string[]; next_steps?: string[];
-    photos_seen?: number; model?: string };
-  error?: string;
-  retry?: boolean;   // "Ask again" after Hermes could not answer: sent again with the same id
-}
-
-/** Feedback, follow-up outcomes and unanswered questions, queued for Hermes (0.2.5). */
-export interface LearningEvent {
-  id: string; kind: "knowledge_gap" | "user_feedback" | "verified_outcome"; workspace_id?: string; ref_type?: string; ref_id?: string;
-  payload: Record<string, unknown>; created_at: string; sent: 0 | 1; idempotency_key: string;
+/** A question about an entry asked with FieldKit 0.2.6 and the answer Hermes gave then (kept, read-only). */
+export interface StoredQuestion {
+  id: string; record_id: string; question: string; status: string; created_at: string;
+  answer?: { answer: string; confidence?: string; uncertainty?: string; next_steps?: string[] };
 }
 
 export const DB_NAME = "fieldkit";
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 let dbp: Promise<IDBPDatabase<FieldKitDB>> | null = null;
 
 export function db(): Promise<IDBPDatabase<FieldKitDB>> {
@@ -156,13 +136,21 @@ export function db(): Promise<IDBPDatabase<FieldKitDB>> {
           d.createObjectStore("remote", { keyPath: "id" });
         }
         if (oldVersion < 3) {
-          // v3 (0.2.5): learning events for Hermes, and cached sentence vectors for the offline assistant.
-          d.createObjectStore("learning", { keyPath: "id" }).createIndex("by_sent", "sent");
-          d.createObjectStore("vectors", { keyPath: "key" });
+          // v3 (0.2.5): learning events for Hermes, and cached sentence vectors for the offline assistant
+          // (removed again in v5; created here only so every upgrade path stays the same)
+          const legacy = d as unknown as IDBPDatabase;
+          legacy.createObjectStore("learning", { keyPath: "id" }).createIndex("by_sent", "sent");
+          legacy.createObjectStore("vectors", { keyPath: "key" });
         }
         if (oldVersion < 4) {
-          // v4 (0.2.6): questions about one visit, answered by Hermes after sync. Existing stores are untouched.
+          // v4 (0.2.6): questions about one entry (answered by Hermes then). Kept read-only since 0.3.
           d.createObjectStore("questions", { keyPath: "id" }).createIndex("by_record", "record_id");
+        }
+        if (oldVersion < 5) {
+          // v5 (0.3): the offline assistant's sentence vectors and the queue of learning events are gone. Neither holds
+          // anything the user recorded (entries, files, drafts and answers are untouched).
+          const legacy = d as unknown as IDBPDatabase;
+          for (const name of ["vectors", "learning"]) if (legacy.objectStoreNames.contains(name)) legacy.deleteObjectStore(name);
         }
       },
       blocked() { console.warn("FieldKit DB upgrade blocked by another tab"); },
@@ -191,11 +179,6 @@ export async function deviceId(): Promise<string> {
     await setSetting("device_id", id);
   }
   return id;
-}
-
-export async function unsyncedCount(): Promise<number> {
-  const all = await (await db()).getAll("records");
-  return all.filter((r) => !["synced", "received"].includes(r.sync_status)).length;
 }
 
 /** Only synced records may be removed without an explicit unsafe confirmation. */

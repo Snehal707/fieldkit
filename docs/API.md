@@ -1,194 +1,137 @@
-# FieldKit plugin API
+# FieldKit plugin API (0.3.0)
 
 Base path: `/api/plugins/fieldkit/`.
 - Every route needs a Hermes dashboard session (cookie), or the session token on a loopback dashboard.
 - Without one, Hermes returns `401` before FieldKit runs.
 - Records, attachments, questions, reports and conflicts are scoped to the signed-in user. Another user's id returns `404`.
+- Forms are called **workflows** in the route names. Workspaces are groups of forms.
 
 ## Meta
-| Method | Path | Notes |
+| Method | Path | Result |
 |---|---|---|
 | GET | `me` | `{user_id, display_name, provider}` |
-| GET | `status` | `analysis_mode` (`automatic` \| `on-demand` \| `deferred`), `llm_available`, `worker`, `jobs`, `app_built`, `public_url`, `version`, `instance` `{machine, region, pid}` (machine = `FLY_MACHINE_ID` or host name), `store` `{store_id, created_at, path, records_for_you, last_received_at}`. `store_id` is a permanent random id kept inside the FieldKit database: two installs on the same account that see different ids are using different databases. `records_for_you` counts only the caller's records. |
+| GET | `status` | `{plugin, version, instance: {machine, region, pid}, store, app_built, public_url}`. `store` is `{store_id, created_at, path, records_for_you, last_received_at}`. `store_id` is a random id kept inside the database: two installs on the same account that see different ids use different databases. `records_for_you` counts only the caller's records. |
 
-## Workflows
-Workflows are built and published as parts of a workspace. The standalone authoring routes below (`workflows/validate`, `POST workflows`, `workflows/{id}/publish`) are from before 0.2.6, when standalone workflows were part of the product. They are not part of the current story.
-
-| Method | Path | Body / query | Result |
+## Forms (workflows)
+| Method | Path | Query / body | Result |
 |---|---|---|---|
-| GET | `workflows` | `include_drafts=true` | `{workflows:[{id,title,domain,status,latest_version,published_version,…}]}` |
-| GET | `workflows/{id}` | `version`, `draft=true` | Definition. Published by default; 404 if none is published |
-| POST | `workflows/validate` | `{definition}` | `{problems:[{path,message}]}` |
-| POST | `workflows` | `{definition, publish}` | `{workflow}` with a new version, or 422 `{problems}` |
-| POST | `workflows/{id}/publish` | `{version?}` | `{workflow}` (owner only) |
-| POST | `workflows/restore` | `{definition}` | `{restored, version}`. Puts back one exact version this Hermes lacks (its FieldKit data was reset or moved), from a copy a device downloaded. Validated like any workflow (422 `{problems}`); never overwrites an existing version (`restored:false`); 404 for a workflow owned by another user. |
+| GET | `workflows` | `include_drafts=true` (drafts only for their owner) | `{workflows: [...]}` with `id`, `title`, `status`, `latest_version`, `published_version` |
+| GET | `workflows/{id}` | `version`, `draft=true` | The form definition. Published by default; `404` if none is published |
+| POST | `workflows/restore` | `{definition}` | `{restored, version}`. Puts back one exact form version that this Hermes lacks (for example after its data was reset), from the copy a phone downloaded. Validated like any form (`422` with `{problems}`). Never overwrites an existing version (`restored: false`). Never touches another user's form. |
 
-## Packs
-Standalone knowledge and dictionary pack routes are from before 0.2.6 and are not part of the current story. Workspace packs (`ws-<id>…`) and model manifests are used by the phone.
-
-| Method | Path | Notes |
+## Packs and model catalog
+| Method | Path | Query / notes |
 |---|---|---|
-| GET | `packs` | `kind=` filter. Metadata includes `sha256` and `size` |
-| GET | `packs/{id}` | Raw JSON body. Header `X-FieldKit-SHA256` must match the SHA-256 of the body |
-| POST | `packs` | `{pack}`. Validated (knowledge \| dictionary \| classification \| model) |
-| POST | `packs/from-document` | `{pack_id,title,document,domain?,language?}`. Deterministic chunking |
-| DELETE | `packs/{id}` | Owner only |
-| GET | `models` | Pinned upstream on-device model manifests and runtimes (metadata only) |
+| GET | `packs` | `kind=` filter. Each pack has `id`, `kind`, `version`, `title`, `languages`, `sha256`, `size`. Workspace packs are `ws-<id>`. |
+| GET | `packs/{id}` | The raw JSON body, with header `X-FieldKit-SHA256` (must match the SHA-256 of the body) |
+| GET | `models` | The pinned upstream on-device model catalog (metadata only). The phone downloads the files from their upstream hosts. |
 
-## Workspaces (0.2.5)
-| Method | Path | Notes |
+## Workspaces
+| Method | Path | Query / result |
 |---|---|---|
-| GET | `workspaces` | Published workspaces. Instance-wide, like published workflows. `{workspaces:[…]}`. Starter workspaces are labelled `starter` |
-| GET | `workspaces/{id}` | Optional `version` query. Returns `workspace_id`, `version`, `status`, `published_version`, `starter`, `manifest_pack`, `changelog`, `summary`, `title`, `profile`, `gaps`. An unknown id returns an error (the exact status code is not checked here) |
+| GET | `workspaces` | `{workspaces: [...]}`: published workspaces, instance-wide. Each has `id`, `title`, `latest_version`, `published_version`, `starter` (true for example workspaces) and `updated_at`. |
+| GET | `workspaces/{id}` | `version` optional. Returns `workspace_id`, `version`, `status`, `published_version`, `starter`, `manifest_pack`, `changelog`, `summary`, `title`, `profile`. `404` for an unknown id. |
 
-Workspaces are built and published by Hermes through the workspace tools (see [Hermes tools](#hermes-tools)).
-The phone opens them at `#/workspace/<id>`, the link Hermes returns.
-
-Older workspaces may contain `report_policy.after_sync`; it is accepted and ignored. Syncing never starts AI work.
+The phone opens a workspace at `#/workspace/<id>`. Hermes returns that link when a workspace is published. Workspaces are built and changed by Hermes through the tools below.
 
 ## Sync
 `POST sync/records`
 ```json
 {"idempotency_key": "idk_…", "device_id": "dev_…",
  "record": {"id": "rec_…", "workflow_id": "equipment-inspection", "workflow_version": 1, "base_revision": 0,
-            "answers": {…}, "local_results": {…}, "workspace_id": "…", "created_local_at": "…", "completed_at": "…",
+            "answers": {…}, "workspace_id": "…", "created_local_at": "…", "completed_at": "…",
             "attachments": [{"id": "att_…", "field_id": "photos", "mime": "image/jpeg", "size": 123, "sha256": "…"}]}}
 ```
 
 **200 response:**
 ```json
-{"record_id", "revision", "received_at", "sync_status": "received|complete", "analysis_status", "analysis_job_id", "attachments_needed": [ids]}
+{"record_id", "revision", "received_at", "sync_status": "received|complete", "attachments_needed": [ids], "workspace_id"}
 ```
-**Workspace on a record.** `record.workspace_id` is the workspace the phone recorded the entry in. The phone sends none when it cannot tell. The server stores it only if it is a published workspace whose published or earlier published versions contain the record's form. Otherwise it stores the only published workspace that contains the form, or none. The 200 response includes `workspace_id` (the stored workspace, or none) and, when the phone's value was not used, `workspace_note`. An edit without a workspace never clears a stored one. At worker start, records with no workspace get one only when exactly one published workspace contains their form. Each repair writes a `record.workspace_repaired` audit event; nothing else in the record changes.
+- `sync_status` is `received` while files are outstanding and `complete` when every declared file is stored. Syncing never starts any processing.
+- The same `idempotency_key` returns the stored response with `duplicate: true`.
+- A stale `base_revision` with identical content is acknowledged without a new revision.
 
-The same `idempotency_key` returns the stored response with `duplicate: true`. Identical content re-sent under a new key is acknowledged without creating a new revision.
+**Workspace on a record.** `record.workspace_id` is the workspace the phone recorded the entry in. The server stores it only if it is a published workspace whose published or earlier published versions contain the record's form. Otherwise it stores the only published workspace that contains the form, or none. When the phone's value was not used, the response includes `workspace_note`. An edit without a workspace never clears a stored one. When the store first opens, a record with no workspace gets one only if exactly one published workspace contains its form. Each such repair writes a `record.workspace_repaired` audit event.
 
 **Error responses:**
-- `409 {conflict:{conflict_id, record_id, base_revision, server_revision, server_answers}}`: the stale base revision is recorded and never overwrites.
-- `422`: invalid record or unknown workflow version.
+- `409 {conflict: {conflict_id, record_id, base_revision, server_revision, server_answers}}`: the base revision is stale and the content differs. The conflict is recorded; the server never overwrites.
+- `422`: invalid record, unknown `workflow_id` or `workflow_version`, or an invalid attachment declaration.
 - `404`: the record id belongs to another user.
 
 **Related routes:**
-- `PUT attachments/{id}`: the raw body with `Content-Type` set to an allowed image/audio type, ≤ 15 MB. The SHA-256 must equal the declared value (422 otherwise). Repeating an upload is idempotent.
-- `GET attachments/{id}`: returns the file, with an `X-FieldKit-SHA256` header.
-- Voice notes uploaded without a transcript are transcribed by Hermes only when a question about their visit needs the transcript. Upload never starts transcription. The work runs in the background in the dashboard process, one at a time, and never blocks or fails the upload. It uses Hermes' own speech-to-text (`tools.transcription_tools.transcribe_audio`), which is the service Hermes uses for voice messages. That service may be a local engine or a cloud provider, depending on the Hermes operator's configuration. The transcript, or the reason there isn't one, is stored on the attachment. See the `voice_transcription` setting (below).
-- `GET sync/status`: per-user counts, outstanding attachments, open conflicts, devices and jobs.
-- `GET sync/conflicts`; `POST sync/conflicts/{id}/resolve` with `{resolution: keep_server|use_client|merge, merged_answers?}`.
+- `PUT attachments/{id}`: the raw body, with `Content-Type` set to an allowed type (`image/jpeg`, `image/png`, `image/webp`, `audio/webm`, `audio/ogg`, `audio/mp4`, `audio/mpeg`, `audio/wav`, `audio/x-wav`). Other types return `415`. Max 15 MB (`413`). The SHA-256 must equal the declared value (`422` otherwise). Repeating the same upload returns `duplicate: true`. Response: the same fields as the sync response, plus `attachment_id` and `status: "stored"`.
+- `GET attachments/{id}`: the file, with `X-FieldKit-SHA256`. Only for stored files of the caller.
+- `GET sync/status`: `{records_by_sync_status, attachments_outstanding, open_conflicts, last_received_at, devices}`.
+- `GET sync/conflicts`: `{conflicts: [...]}`.
+- `POST sync/conflicts/{id}/resolve`: body `{resolution: keep_server | use_client | merge, merged_answers?}`. Returns `{conflict_id, resolution, record_id, revision}`.
 
 ## Devices
 | Method | Path | Body | Result |
 |---|---|---|---|
-| GET | `devices` | | `{devices:[{id,label,first_seen,last_seen}]}`. The signed-in user's devices only |
-| POST | `devices` | `{device_id, label}` | Registers or renames this user's device. `device_id` must match `dev_<4-40 letters/digits>`, otherwise 422. Control characters are stripped from `label`; max 80 characters |
+| GET | `devices` | | `{devices: [{id, label, first_seen, last_seen}]}`: the caller's devices only |
+| POST | `devices` | `{device_id, label}` | Registers or renames one of the caller's devices. `device_id` must match `dev_<4-40 letters or digits>` (`422` otherwise). Control characters are removed from `label`; max 80 characters. |
 
-## Records, analysis, reports
-| Method | Path | Notes |
+## Records
+| Method | Path | Query / result |
 |---|---|---|
-| GET | `records` | `workflow_id`, `analysis_status`, `limit`. Summaries include `workflow_title` |
-| GET | `records/{id}` | Full record, including attachment metadata. Each attachment has `kind` (`photo`, `audio` for a voice note, or `signature`), `field_label`, and `signed_at` (signatures). Voice notes also have `transcript`, `transcript_source` (`device` or `hermes`) and `transcript_error` (why there is no transcript). The record has `attachment_counts` (`{photo, audio, signature}`) and `attachment_summary` (for example "1 photo · 1 voice note"). |
-| POST | `records/{id}/analyze` | Earlier version. Queues (or re-queues a failed or completed) durable job. Only on request; sync never queues one |
-| GET | `records/{id}/report` | Earlier version. Latest report version. The PWA downloads this for offline use |
-| POST | `records/{id}/questions` | Queues a question about this record (0.2.6). Body `{id, question, lang, workspace_id, attachment_ids, retry?}`. Idempotent on `id` (the phone's id); with `"retry": true` a `failed` question is requeued with fresh attempts. Takes the record's workspace (the phone's `workspace_id` is ignored). Owner-checked: another user's record returns `404`. Answered after sync |
-| GET | `records/{id}/questions` | The record's questions (0.2.6), with `status` (`queued`, `answering`, `answered` or `failed`). `answer` once answered, with `route`, `model`, `provider`, `photos_seen` and `fallbacks`. `error` when failed. Owner-checked |
-| GET | `reports`, `reports/{id}` | Earlier version. Older reports stay readable |
-| GET | `jobs` | Recent jobs, counts and analysis mode |
-| POST | `examples/install` | Synthetic demo workflows and packs. Idempotent |
+| GET | `records` | `workflow_id`, `limit` (default 50, max 500). Summaries include `workflow_title` and `subject`. |
+| GET | `records/{id}` | The full entry: answers, `revision`, sync fields, and attachments. Each attachment has `kind` (`photo`, `audio` for a voice note, or `signature`), `field_label`, `captured_at`, `signed_at` (signatures), `phone_transcript` and `phone_ocr_text` (text the phone read, if any). Also `attachment_counts` (`{photo, audio, signature}`) and `attachment_summary` (for example "1 photo · 1 voice note"). |
+| GET | `records/{id}/questions` | Read-only. Questions asked about this entry in FieldKit before 0.3, with their status and answers. |
+| GET | `records/{id}/report` | Read-only. The latest report made before 0.3. `404` when there is none. |
 
-**Questions with photos (answer routes).** Within one attempt, answers try these routes in order:
-1. The `fieldkit_vision` slot with the photos, when `auxiliary.fieldkit_vision` has a model or provider in Hermes' config, or when the plugin setting `vision_task` is `true`. `vision_task: false` never uses it.
-2. Hermes' main model with the photos.
-3. If the main model takes no images: Hermes' own vision tool (`tools.vision_tools.vision_analyze_tool`) describes each photo (up to 2), and the main model answers from those descriptions. Descriptions are kept per photo in the table `photo_descriptions` (DB migration v7) and reused by later questions.
-4. The text evidence only. The answer says the photos were not seen.
-
-A rate limit (HTTP 429) stops the chain. The question waits as the provider says, without using an attempt. Each answer records `route` (`vision_slot`, `main_model_with_photos`, `photo_descriptions` or `text_only`), `model`, `provider`, `photos_seen` and `fallbacks` (what each earlier route returned).
-
-A question waits until its visit's photos and voice notes have finished uploading. After 30 minutes it is answered with what arrived.
-
-If every route fails, `error` lists each route's error (for example `vision_slot: NotFoundError 404: …; main_model_with_photos: …`). After 3 attempts the question is `failed`. The phone shows "Hermes could not answer: <reason>" and **Ask again**. Ask again works offline. At the next sync the phone re-sends the same question id with `"retry": true`, which requeues the question with fresh attempts.
+## Reports (read-only, before 0.3)
+| Method | Path | Query / result |
+|---|---|---|
+| GET | `reports` | `record_id`, `limit` (default 50, max 200). Reports made before 0.3. |
+| GET | `reports/{id}` | One report made before 0.3. |
 
 ## PWA
-The app is served publicly at `/dashboard-plugins/fieldkit/app_dist/index.html`, outside Hermes' `/api` login gate. The page contains no data; every data call below still requires sign-in.
+The app is served publicly at `/dashboard-plugins/fieldkit/app_dist/index.html`, outside Hermes' `/api` login gate. The page holds no data; every data call above still requires sign-in.
 
-`GET /api/plugins/fieldkit/app/{path}` remains as the legacy authenticated address. It serves `dashboard/app_dist`:
-- `index.html`, `sw.js` and `manifest.json` are sent with `no-cache`; hashed assets are immutable.
-- Unknown extension-less paths fall back to `index.html`.
-- Path traversal returns 404.
-
-## Report schema (earlier version; stored reports, `source: "hermes"`)
-Reports were written before 0.2.6. They are still stored and readable. Sync does not write one now.
-`summary, issues[{title,severity,evidence,field_ids}], missing_information[], references[], suggested_actions[{action,priority}], followups[{title,detail,due_date}], requires_review, review_reason, workflow, observations, local_findings, available_references, attachments, report_id, version, record_revision, generated_at, generated_by, provider, model`.
-
-**`attachments` block (0.2.4):**
-- `counts` (`{photo, audio, signature}`) and `summary` (text, for example "1 photo · 1 voice note · 1 signature").
-- `voice_notes`: `{attached, transcribed, from_device, from_hermes}`.
-- `signatures`: `[{attachment_id, field_label, signed_at, stored}]`.
-- `evidence`: one entry per attachment, `{attachment_id, kind, field_id, field_label, mime, size, sha256, stored, integrity, url}`, plus:
-  - `signed_at` for signatures;
-  - `transcript`, `transcript_source` and `transcript_error` for voice notes;
-  - `ocr_text` for photos that have OCR text.
-- `integrity` is `intact`, `mismatch`, `missing` or `not_uploaded`. It is recomputed from the stored file at report time.
-- `url` is a relative `attachments/<id>` path. Reports never contain server file paths.
-
-Photos are sent to the vision model only; signatures are never sent as photos.
-
-**Report v2 (0.2.5).** `schema_version: 2` is set on new reports. Report v1 fields (`suggested_actions`, `followups`)
-are still written for older readers. The v2 fields are:
-- `decision`: `{outcome, rationale, confidence (high | medium | low), deadline_days?, escalate_to?}`. `outcome` is an id
-  from the workspace's decision scale (default: `stop`, `act_soon`, `monitor`, `no_action`).
-- `issues[]`: as in v1, plus `interpretation` and `evidence_refs[{kind, ref, quote?}]`. `kind` is one of `answer`,
-  `photo`, `photo_text`, `voice_quote`, `measurement`, `local_finding`, `previous_record`, `followup_check`, `reference`.
-  Also `guidance_refs[]`.
-- `next_actions[]`: `{order, action, who, by_when_days, guide_id?, entry_id?, verify_by, origin}`. `origin` is `guide`,
-  `knowledge` or `ai_suggestion`.
-- `uncertainty[]`: `{unknown, impact?, how_to_resolve}`.
-- `differences_from_local_findings[]`: `{local, hermes, why}`.
-- `follow_up_verification[]`: `{what, how, due_in_days?}`. These checks are asked on the next inspection.
-- `translations`: keyed by language code, each with `summary`, `rationale`, `next_actions[]`, `issues[]`.
-- `quality`: `{problems[], repaired}`, from the deterministic checks run after the model answers.
-- `review_triggers[]`: why the report needs review. Empty means it does not.
+`GET /api/plugins/fieldkit/app/{path}` is the older authenticated address, and `GET app` redirects to `app/`. It serves `dashboard/app_dist`:
+- `index.html`, `sw.js` and the manifest are sent with `no-cache`. Hashed assets are immutable.
+- Unknown paths without a file extension return `index.html` (client-side routes).
+- Path traversal returns `404`.
 
 ## Hermes tools
-Hermes registers 20 tools in 0.2.6 (37 before):
+Hermes registers 12 tools. They act as the Hermes instance owner. Every tool returns a JSON string: `{"ok": true, ...}` or `{"ok": false, "error": "..."}`.
 
-- Workspaces: `fieldkit_workspace_format`, `fieldkit_save_workspace_brief`, `fieldkit_start_workspace_build`, `fieldkit_add_workspace_parts`, `fieldkit_workspace_build_status`, `fieldkit_build_workspace`, `fieldkit_publish_workspace`, `fieldkit_undo_workspace_update`, `fieldkit_get_workspace`, `fieldkit_list_workspaces`.
-- Phone link and examples: `fieldkit_get_app_link`, `fieldkit_install_examples`.
-- Records and questions: `fieldkit_list_records`, `fieldkit_get_record`, `fieldkit_get_report` (reads older reports), `fieldkit_ask_about_record`, `fieldkit_list_questions`.
-- Sync and jobs: `fieldkit_get_sync_status`, `fieldkit_resolve_conflict`, `fieldkit_process_pending_jobs`.
+### Entries
+| Tool | Arguments | Result |
+|---|---|---|
+| `fieldkit_list_records` | `workspace_id`, `workflow_id`, `subject` (partial match), `since`, `until` (completion date on the phone), `limit` (default 50, max 500), `include_answers`, `language` | Entries, newest first, with `subject`, `attachments` counts and sync state. With `include_answers`, each entry's answers with their questions. Entries of a form shared by several workspaces and synced without their workspace are counted in `unassigned_records` and not listed. |
+| `fieldkit_get_record` | `record_id`, `language`, `history_limit` (default 5) | The entry with its answers and questions, attachments (kind, field, integrity check), revisions, the subject and its earlier entries, and `from_earlier_fieldkit_versions` (reports, questions and answers, and on-phone findings from before 0.3, read-only). |
+| `fieldkit_get_attachment` | `attachment_id` | A local copy of a photo, voice note or signature, with the right file extension, for Hermes' own vision and speech-to-text tools. Returns `path`, `kind`, `field_label`, `integrity`, and any text the phone read. A file still uploading returns an error saying so. |
 
-Retired from Hermes in 0.2.6 (code kept for existing data, not registered): create, validate, publish, list and get workflow; create knowledge pack; create dictionary pack; list knowledge packs; search knowledge; analyze record; generate report; save report; list reports; create and list follow-ups; propose workspace changes; list learning; decide candidate. Reports created before 0.2.6 remain readable (`fieldkit_get_report`, the phone and the dashboard).
+### Sync
+| Tool | Arguments | Result |
+|---|---|---|
+| `fieldkit_get_sync_status` | | Entries received, files still uploading, open conflicts, devices |
+| `fieldkit_resolve_conflict` | `conflict_id`, `resolution` (`keep_server`, `use_client`, `merge`), `merged_answers` | The resolved conflict |
 
-Workspace tools:
-Workspace build tools (0.2.6):
-- `fieldkit_start_workspace_build`: starts or resumes a build for a confirmed brief. When the workspace exists, it starts from the latest version.
-- `fieldkit_add_workspace_parts`: adds, replaces or removes items of one part. `dry_run` validates without saving. Each item is checked against its part's schema.
-- `fieldkit_workspace_build_status`: shows a build's progress, so a new chat can resume it.
+### Phone link
+| Tool | Arguments | Result |
+|---|---|---|
+| `fieldkit_get_app_link` | `workflow_id` (optional) | The phone app link. `absolute` is true when a full address is known. Otherwise it returns a path and a note. |
 
-Workspace tools (0.2.5):
-- `fieldkit_workspace_format`: takes `part` (`sources`, `evidence`, `report_policy`, `workflows`, `guides`, `knowledge`, `vocabulary`, `intents`, `gaps` or `traceability`) and returns that part's JSON Schema, a valid example and its rules. The evidence rules FieldKit enforces are included.
-- `fieldkit_save_workspace_brief`: saves the interview result. An incomplete brief cannot be confirmed.
-- `fieldkit_build_workspace`: takes `workspace_id` (assembles the parts saved for the build) or the older `brief_id` and `bundle`. Validates and stores a draft. Quote checks run in the background: the call waits at most 20 s and reports `checks_pending`. Cited web pages are re-fetched and quotes that are not on them are dropped. PDFs are checked with Hermes' own document extractor. Private, loopback and metadata addresses are never fetched.
-- `fieldkit_publish_workspace`: publishes a valid draft. Requires `user_approved`. Refused while any quote check is pending.
-- `fieldkit_get_workspace`, `fieldkit_list_workspaces`: read workspace versions, their changelog and their research report.
-- `fieldkit_undo_workspace_update` (0.2.6): republishes the previous version as a new version (phones get it as an update) and lists what changed back. An explicit undo request counts as approval; if unclear, Hermes previews first.
+### Workspaces
+| Tool | Arguments | Result |
+|---|---|---|
+| `fieldkit_workspace_format` | | The form format: field types, rules, an example form and the JSON Schema. Read it before writing forms. |
+| `fieldkit_draft_workspace` | `workspace_id` (required), and for a new workspace `title`, `purpose`, `languages`, `forms`; for an edit only what changes: `forms` (each changed form in full; same id replaces it), `remove_forms`, `title`, `purpose`, `profile`, `languages`, `workflow_refs`, `changelog` | A new draft version, never published. Returns `valid`, `errors`, `warnings`, `summary`, `forms`, `fixed_automatically` (shape repairs FieldKit made), and for an edit `changes_since_published`. |
+| `fieldkit_publish_workspace` | `workspace_id`, `version` (optional), `user_approved` (must be true) | Publishes a valid draft, returns its changes and the app link. Refused without `user_approved`. |
+| `fieldkit_undo_workspace_update` | `workspace_id`, `to_version` (optional), `user_confirmed` | Without `user_confirmed`, lists what would change back. With it, republishes the earlier version as a new version, so phones see an update. Entries keep their form version. |
+| `fieldkit_get_workspace` | `workspace_id`, `version` (optional), `include_forms` (default true) | Purpose, languages, forms, version history with changelogs, validation, and `legacy_parts_not_used` for parts from earlier versions. |
+| `fieldkit_list_workspaces` | `include_drafts` (optional) | Published workspaces; with `include_drafts`, drafts too |
 
-Changes by chat (0.2.6): Hermes starts a build on the existing workspace, changes only what was asked, and builds. FieldKit returns a change summary (`changes_since_published`). Hermes asks before it calls `fieldkit_publish_workspace` with `user_approved`. The summary becomes the version's changelog.
+### Forms and checks
+A form is a JSON object with `id`, `title`, `languages`, `metadata.subject_field` (optional), and `fields`. Field types: `text`, `multiline`, `number`, `date`, `time`, `checkbox`, `single_choice`, `multi_choice`, `photo`, `audio` (voice note), `gps`, `signature`, `instruction`. Fields can have `required`, `required_if`, `visible_if`, `unit`, `validation` (for example `min`, `max`, `min_length`, `max_length`, rules) and `options` (`[{value, label}]`).
 
-Questions about a visit (0.2.6, 2 new):
-- `fieldkit_ask_about_record`: answers a question about one visit (`record_id`, `question`, optional `language`). It looks at the record's evidence itself (photos, voice notes, procedures, earlier visits), returns the answer with uncertainty and next steps, and saves it on that visit for the phone. It answers at once and does not use the queue.
-- `fieldkit_list_questions`: lists questions asked about a visit from the phone, queued or answered.
-
-
-**`fieldkit_list_records` `workspace_id` and `include_answers` (0.2.6).** `workspace_id` lists the records of every workflow in that workspace, including unassigned records (no workspace stored) whose form is only in that workspace. The result reports `unassigned_records` and a `note` for records of a shared form that were synced without a workspace. Set `include_answers: true` to get each record's answers in the result. Use it for summaries, counts, trends and comparisons across records, when you ask Hermes in chat. Without it, the result lists record summaries only.
-
-All tools return a JSON string `{ok: true, …}` or `{ok: false, error}`. They act as the instance owner.
-
-`fieldkit_get_record` returns the same attachment fields as `GET records/{id}` (0.2.4): `kind`, `field_label`, `signed_at`, transcript fields, `attachment_counts` and `attachment_summary`.
+Conditions use `{op, field, value}`, with `and`, `or` and `not`. Errors point to the path and say why, for example that a number field needs a number, or that a value is not an option of a choice field.
 
 ## Plugin settings
-| Setting | Default | Environment variable | Effect |
-|---|---|---|---|
-| `voice_transcription` | `true` | `FIELDKIT_VOICE_TRANSCRIPTION=false` | When on, Hermes may transcribe a voice note that has no phone transcript, only when a question about its visit needs one (see `attachments/{id}` above). When off, each untranscribed voice note's `transcript_error` says that transcription is turned off. |
-| `auto_analyze` | `true` | — | When on, a background worker in the dashboard process answers queued questions. Sync never queues work, so this setting does not affect saving or syncing. |
-| `vision_task` | unset | — | Controls the `fieldkit_vision` model slot. Unset: the slot is used only when `auxiliary.fieldkit_vision` is configured. `true`: always try it. `false`: never use it. |
+| Setting | Environment variable | Effect |
+|---|---|---|
+| `public_url` | `FIELDKIT_PUBLIC_URL` | The address used for phone links. Set it when FieldKit cannot detect the address (see [INSTALL.md](INSTALL.md)). An explicit setting always wins. |
 
-The `transcribe_on_upload` setting was removed in 0.2.6. Voice notes are not transcribed on upload.
+FieldKit has no other settings.

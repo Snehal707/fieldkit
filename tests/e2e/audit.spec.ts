@@ -11,6 +11,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { signIn } from "./auth";
+import { downloadWorkspace, EXAMPLE_FORM, EXAMPLE_WS, publishFormAsWorkspace, startEntry } from "./helpers";
 
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
@@ -26,7 +27,7 @@ function sql(script: string, ...args: string[]) {
   execFileSync(PY, ["-c", `import sqlite3, sys\nc = sqlite3.connect(sys.argv[1]); c.execute("PRAGMA foreign_keys=ON")\n${script}\nc.commit()`,
     join(DATA_DIR, "data.db"), ...args]);
 }
-const dropRecord = (id: string) => sql(`for t in ("sync_ops", "jobs"): c.execute(f"DELETE FROM {t} WHERE record_id=?", (sys.argv[2],))
+const dropRecord = (id: string) => sql(`for t in ("sync_ops",): c.execute(f"DELETE FROM {t} WHERE record_id=?", (sys.argv[2],))
 c.execute("DELETE FROM records WHERE id=?", (sys.argv[2],))`, id);
 
 async function client(profile = mkdtempSync(join(tmpdir(), "fk-audit-")), offline = false): Promise<{ ctx: BrowserContext; page: Page; profile: string }> {
@@ -36,19 +37,15 @@ async function client(profile = mkdtempSync(join(tmpdir(), "fk-audit-")), offlin
   return { ctx, page, profile };
 }
 
-async function ready(c: { ctx: BrowserContext; page: Page }, workflowTitle = "Equipment inspection") {
+async function ready(c: { ctx: BrowserContext; page: Page }, wid = EXAMPLE_WS) {
   await signIn(c.ctx.request);
-  await c.ctx.request.post(`${API}/examples/install`);
   await c.page.goto(APP);
   await expect.poll(() => c.page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);
-  await c.page.goto(`${APP}#/packs`);
-  await c.page.locator("li", { hasText: workflowTitle }).first().getByRole("button").click();
-  await expect(c.page.locator(`text=Downloaded ${workflowTitle}`)).toBeVisible({ timeout: 30_000 });
+  await downloadWorkspace(c.page, APP, wid);
 }
 
-async function complete(page: Page, asset: string, workflowTitle = "Equipment inspection"): Promise<string> {
-  await page.goto(`${APP}#/workflows`);
-  await page.locator("li", { hasText: workflowTitle }).getByRole("button", { name: "Start" }).click();
+async function complete(page: Page, asset: string, form = EXAMPLE_FORM, wid = EXAMPLE_WS): Promise<string> {
+  await startEntry(page, APP, form, wid);
   await page.locator("#in-asset_id").fill(asset);
   await page.locator("#in-asset_id").blur();
   await page.locator("#in-inspection_date").fill("2026-11-09");
@@ -107,13 +104,13 @@ test("a record Hermes rejected can be retried; removal never deletes what Hermes
   // A uniquely named workflow that Hermes will "lose" before the record is uploaded.
   const wfId = `audit-test-${run}`;
   const wfTitle = `Audit test ${run}`;
-  const wf = JSON.parse(readFileSync(resolve(import.meta.dirname, "../../examples/maintenance/workflow.json"), "utf-8"));
-  expect((await A.ctx.request.post(`${API}/workflows`, { data: { definition: { ...wf, id: wfId, title: { en: wfTitle } }, publish: true } })).ok()).toBe(true);
-  await ready(A, wfTitle);
+  const wf = JSON.parse(readFileSync(resolve(import.meta.dirname, "../fixtures/forms/maintenance.json"), "utf-8"));
+  const wsId = publishFormAsWorkspace({ ...wf, id: wfId, title: { en: wfTitle } }, `audit-ws-${run}`);
+  await ready(A, wsId);
   sql(`c.execute("DELETE FROM workflow_versions WHERE workflow_id=?", (sys.argv[2],)); c.execute("DELETE FROM workflows WHERE id=?", (sys.argv[2],))`, wfId);
 
   // 3. Rejected → visible problem with a way out → accepted after Try again.
-  const rejected = await complete(A.page, `AUR-${run}`, wfTitle);
+  const rejected = await complete(A.page, `AUR-${run}`, wfId, wsId);
   await A.page.goto(`${APP}#/results/${rejected}?r=${Date.now()}`);
   await expect(A.page.locator("text=Hermes didn't accept this record")).toBeVisible({ timeout: 30_000 });
   await A.page.locator(`[data-retry="${rejected}"]`).click();
@@ -140,9 +137,9 @@ test("a record Hermes rejected can be retried; removal never deletes what Hermes
     records: [{ id: imported, workflow_id: wfId, workflow_version: 1, workflow_title: wfTitle, device_id: "dev_old",
       answers: { asset_id: `AUI-${run}`, inspection_date: "2026-11-09", condition: "fair", guard_ok: false },
       local_results: { generated_at: "", source: "local", validation: { complete: true, errors: {}, messages: {} }, questions_answered: 4,
-        questions_visible: 4, findings: [], references: [], explanations: [] },
+        questions_visible: 4 },
       created_local_at: new Date().toISOString(), completed_at: new Date().toISOString(), lang: "en",
-      sync_status: "pending", server_revision: 0, analysis_status: "not_requested" }],
+      sync_status: "pending", server_revision: 0 }],
     drafts: [], reports: [], attachments: [] };
   const file = join(mkdtempSync(join(tmpdir(), "fk-backup-")), "backup.json");
   writeFileSync(file, JSON.stringify(backup));

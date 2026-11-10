@@ -1,5 +1,5 @@
-// Offline pack manager: workflows, knowledge, dictionaries (JSON from the plugin, SHA-256 verified)
-// and on-device model packs (pinned upstream files, cached by the runtimes).
+// Offline downloads: forms and workspace manifests (JSON from the plugin, SHA-256 verified) and the optional
+// on-device OCR and translation packs (pinned upstream files, cached by their runtimes).
 import { api, apiRaw } from "./api";
 import { db, type InstalledPack, type StoredWorkflow } from "./db";
 import type { Workflow } from "./engine";
@@ -38,13 +38,7 @@ export async function installWorkflow(id: string): Promise<{ workflow: StoredWor
   const stored: StoredWorkflow = { id: def.id, version: def.version ?? 1, downloaded_at: nowIso(), definition: def,
     ...(Object.keys(previous).length ? { previous } : {}) };
   await d.put("workflows", stored);
-  const wanted = [...(def.knowledge_packs ?? []), ...(def.dictionary_packs ?? [])];
-  const done: string[] = [];
-  const failed: string[] = [];
-  for (const pid of wanted) {
-    try { await installPack(pid); done.push(pid); } catch { failed.push(pid); }
-  }
-  return { workflow: stored, packs: done, failed };
+  return { workflow: stored, packs: [], failed: [] };
 }
 
 export async function removeWorkflow(id: string): Promise<void> {
@@ -52,10 +46,6 @@ export async function removeWorkflow(id: string): Promise<void> {
   const drafts = (await d.getAll("drafts")).filter((x) => x.workflow_id === id);
   if (drafts.length) throw new Error("This workflow has unfinished drafts on the device.");
   await d.delete("workflows", id);
-}
-
-export async function removePack(id: string): Promise<void> {
-  await (await db()).delete("packs", id);
 }
 
 export async function installedPacks(kind?: InstalledPack["kind"]): Promise<InstalledPack[]> {
@@ -67,19 +57,6 @@ export async function installedWorkflows(): Promise<StoredWorkflow[]> {
   return (await db()).getAll("workflows");
 }
 
-/** Versions newer on the server than on the device. */
-export function updatesAvailable(cat: Catalog, wfs: StoredWorkflow[], packs: InstalledPack[]): { workflows: string[]; packs: string[] } {
-  const w = wfs.filter((x) => {
-    const s = cat.workflows.find((c) => c.id === x.id);
-    return s && s.published_version && s.published_version > x.version;
-  }).map((x) => x.id);
-  const p = packs.filter((x) => {
-    const s = cat.packs.find((c) => c.id === x.id);
-    return s && s.version > x.version;
-  }).map((x) => x.id);
-  return { workflows: w, packs: p };
-}
-
 export interface StorageInfo { usage?: number; quota?: number; persisted: boolean | null; supported: boolean }
 
 export async function storageInfo(): Promise<StorageInfo> {
@@ -87,10 +64,6 @@ export async function storageInfo(): Promise<StorageInfo> {
   if (!s) return { persisted: null, supported: false };
   const [est, persisted] = await Promise.all([s.estimate?.() ?? Promise.resolve({}), s.persisted?.() ?? Promise.resolve(null)]);
   return { usage: (est as StorageEstimate).usage, quota: (est as StorageEstimate).quota, persisted, supported: true };
-}
-
-export async function requestPersistence(): Promise<boolean | null> {
-  try { return (await navigator.storage?.persist?.()) ?? null; } catch { return null; }
 }
 
 /** Is the app shell present in the service worker cache (i.e. will it reopen offline)? */

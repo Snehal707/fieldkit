@@ -5,6 +5,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { signIn } from "./auth";
+import { downloadWorkspace, startEntry } from "./helpers";
 
 // FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
@@ -21,20 +22,16 @@ test("network up but Hermes unreachable or captive portal: honest status, nothin
   test.skip(process.env.FIELDKIT_E2E_BROWSER === "webkit", "route() cannot block SW-controlled traffic in WebKit");
   const ctx = await engine.launchPersistentContext(mkdtempSync(join(tmpdir(), "fieldkit-unreach-")), { viewport: { width: 390, height: 844 } });
   await signIn(ctx.request);
-  await ctx.request.post(`${API}/examples/install`);
   const page = await ctx.newPage();
   await page.goto(APP);
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);
-  await page.goto(`${APP}#/packs`);
-  await page.locator("li", { hasText: "Equipment inspection" }).first().getByRole("button").click();
-  await expect(page.locator("text=Downloaded Equipment inspection")).toBeVisible({ timeout: 30_000 });
+  await downloadWorkspace(page, APP);
 
   // Captive portal: every API call returns a 200 HTML login page (navigator.onLine stays true).
   const portal = (r: any) => r.fulfill({ status: 200, contentType: "text/html", body: "<html>Hotel Wi-Fi login</html>" });
   const refused = (r: any) => r.abort("connectionrefused");
   await ctx.route(isApi, portal);
-  await page.goto(`${APP}#/workflows`);
-  await page.getByRole("button", { name: "Start" }).click();
+  await startEntry(page, APP);
   await page.locator("#in-asset_id").fill("PMP-0043");
   await page.locator("#in-asset_id").blur();
   await page.locator("#in-inspection_date").fill("2026-11-09");

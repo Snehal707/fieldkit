@@ -1,11 +1,12 @@
 # Testing FieldKit
 
 
-> **Current behaviour (0.2.6), in short.** Syncing never triggers AI work. Hermes answers questions about a visit
-> (asked on the phone, queued offline) and requests in chat. Workspaces are built from a purpose-first interview and
-> edited by chat with a change summary, approval and undo. Hermes sees 20 tools. Questions with photos use the fieldkit_vision slot when configured, else Hermes' vision descriptions; records carry their workspace. The sections below are a dated log:
-> later sections replace earlier ones (for example the after-sync modes, automatic reports, follow-up checks and the
-> learning loop described for 0.2.5 and early 0.2.6 were removed). The latest results are at the end.
+> **Current behaviour (0.3.0), in short.** FieldKit collects and syncs; it never calls a model. Workspaces are set up,
+> edited and undone by Hermes conversation, and Hermes publishes only after the user approves. Hermes has 12 tools and
+> reads entries, photos and voice notes with its own tools when asked. The sections below are a dated log, and later
+> sections replace earlier ones. The latest results are in "0.3.0 cleanup (2026-11-10)" at the end.
+>
+> Sections before 0.3.0 describe removed features (assistant, decision guides, reports, questions, speech-to-text).
 
 All results below were produced on 2026-11-08/09 on Windows 11 with Hermes Agent **v0.23.0**, Python 3.11 and
 Node 22. Anything not listed as run here is marked **unverified**.
@@ -325,23 +326,24 @@ offline reports and Saved Records across Safari and the Home Screen app.
 ## Device checklist
 Run on each phone over HTTPS:
 1. Open the app link and sign in.
-2. **Offline Packs:** download *Equipment inspection*; install English→Hindi, OCR English and Speech to text.
-3. Install the PWA:
+2. **Workspace:** set one up by chat (or use a synthetic starter workspace on a test Hermes), open it, and tap **Download everything for offline**.
+3. **Offline Packs (optional):** install English→Hindi translation and OCR English (Hindi→English and OCR Hindi if needed).
+4. Install the PWA:
    - Android: menu → Install app.
    - iOS: Share → Add to Home Screen. Open the installed app and sign in again inside it.
-4. Home: Offline readiness shows ✔ for the app, workflows and packs.
-5. Turn on airplane mode. Swipe the app away completely, then reopen it from the home screen.
-6. Use the assistant ("equipment vibration"), the dictionary ("bearing"), Translate ("The pump is vibrating."), and Scan text on a printed label.
-7. Run the workflow:
+5. Home: Offline readiness marks the app, workspace and packs as ready.
+6. Turn on airplane mode. Swipe the app away completely, then reopen it from the home screen.
+7. Use Translate ("The pump is vibrating."), and Scan text on a printed label or Extract text on a photo inside a form.
+8. Record an entry in the workspace's form:
    - Photo: camera opens, and the thumbnail appears.
-   - Voice note: record, play back and transcribe.
+   - Voice note: record and play back.
    - GPS: accuracy is shown.
    - Signature.
-   - Complete it, and check the Results page.
-8. Swipe the app away, reopen it offline, and check that the record and results are still there.
-9. Turn airplane mode off. If asked, sign in. Check Pending Sync is empty and the Results page says *Synchronised*.
-10. Dashboard → FieldKit → Records: the record is there with its photo and audio.
-11. After analysis, open Results and tap **Download report**. Turn airplane mode on again, and check the report is still readable.
+   - Complete it, and check the entry.
+9. Swipe the app away, reopen it offline, and check that the entry and its files are still there.
+10. Turn airplane mode off. If asked, sign in. Check Pending Sync is empty.
+11. Dashboard → FieldKit → Records: the entry is there with its photo and audio.
+12. In Hermes chat, ask about the entry. Hermes reads it, and its photo and voice note, with its own tools.
 
 Record: device model, OS and browser version, which steps passed, timings for translation and OCR, and any memory errors.
 
@@ -656,3 +658,30 @@ Local test Hermes v0.23.0 only: **not the hosted Hermes and not a real iPhone**.
 | Unit tests | 224 Python, 132 TypeScript |
 
 **NOT verified:** the hosted Hermes and the owner's iPhone. The hosted dairy workspace correction still has to be done by the owner in chat.
+
+## 0.3.0 cleanup (2026-11-10)
+
+**What changed.** Removed from the product: the Workspace Assistant, decision guides, knowledge and dictionary packs, the
+Reports list, on-phone speech-to-text and read-aloud, "Ask Hermes about this visit" questions, rule findings, analysis jobs,
+follow-ups, the learning loop, the example-install tool and route, and the standalone workflow and pack authoring routes.
+Hermes has 12 tools. All tables and migrations are kept. IndexedDB v5 drops only the assistant's vector cache and the
+learning queue; entries, files, drafts and answers are untouched.
+
+**Results** (local test Hermes v0.23.0, Windows 11, model `openai/gpt-5.4-mini` via Nous):
+
+| Check | Result |
+|---|---|
+| Unit tests | 88 Python, 100 TypeScript; typecheck clean |
+| Hermes tooling | `hermes plugins validate` passed; `hermes plugins doctor --ci`: 12 tools, 0 hooks |
+| Browser E2E, Chromium | 27 passed, 2 skipped (the model-download and update-notice tests need extra environment variables) |
+| Browser E2E, WebKit | 19 passed, 8 skipped, 2 failures. Both passed on rerun after a fix: the workspace update banner timing was fixed in code, and the accounts test passed on rerun |
+| Setup by chat | Oral-history workspace (participant code, date, village, consent signature, audio, photos, notes; subject = participant code): drafted in 70 s, published after approval in 20 s, using only the new tools |
+| Edit by chat | Added "Language of the interview" (Hindi, Marathi, English): the change was shown and Hermes asked "Publish these changes?" (18 s); published after yes (13 s) |
+| Undo by chat | "Undo my last workspace update" restored the earlier content as version 3 (16 s) |
+| Ask about a synced visit | Kitchen visit: Hermes called `fieldkit_list_records`, `fieldkit_get_record`, `fieldkit_get_attachment` twice and its own `vision_analyze`, and described the photo correctly. FieldKit made no model call |
+| Old data | Copies of two databases from earlier real-Hermes runs opened with 0.3.0: row counts unchanged (records, attachments, reports, workspace versions, revisions); 96 of 96 and 167 of 167 entries readable; 33 and 73 old reports shown; 8 of 8 workspaces readable; all published versions still valid |
+| Size | Phone main bundle about 130 KB (plus the lazily loaded translation runtime). `fieldkit_core/*.py`: 2,438 lines, down from 6,659 at the last commit (measured 2026-11-10) |
+
+**NOT verified:** the hosted Hermes, the owner's iPhone, and Android. Everything in the table ran against a local test
+Hermes only. The owner's 0.2.4 iPhone run (offline recording, sync, media and Saved Records) is recorded in section 5; the
+collection code is unchanged in 0.3.0.

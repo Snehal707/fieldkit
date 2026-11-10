@@ -1,4 +1,4 @@
-# Installing FieldKit
+# Installing FieldKit (0.3.0)
 
 Requires **Hermes Agent ≥ 0.23.0** with the web dashboard.
 
@@ -6,17 +6,18 @@ Requires **Hermes Agent ≥ 0.23.0** with the web dashboard.
 ```bash
 hermes plugins install Snehal707/fieldkit        # or: copy this repo to $HERMES_HOME/plugins/fieldkit
 hermes plugins enable fieldkit
-hermes plugins show fieldkit                  # 20 tools, 1 hook, dashboard tab, api: plugin_api.py
+hermes plugins show fieldkit                     # 12 tools, 0 hooks, dashboard tab, api: plugin_api.py
 ```
 The repo ships its built front-ends (`dashboard/dist/`, `dashboard/app_dist/`), so no Node.js is needed on the host.
-Building yourself is covered in [Building from source](#building-from-source).
+To build them yourself, see [Building from source](#building-from-source).
 
 ## 2. Configure (optional)
-No configuration is needed for app links. The first time anyone opens the **FieldKit** dashboard tab or the app over
-**https**, FieldKit records that public URL. Proxy headers and path prefixes are respected, https is preferred, and
-loopback addresses are ignored. Hermes then returns full, tappable app links.
+No setting is needed for phone links. When a signed-in user opens the **FieldKit** dashboard tab or the app, FieldKit
+records the address they used. https is preferred and loopback addresses are ignored. Hermes then returns full, tappable
+links.
 
-To set the address explicitly, use the command below. An explicit setting always wins over the detected URL. It is read live, so no restart is needed.
+To set the address explicitly, use the command below. An explicit setting always wins over the recorded address. It is
+read live, so no restart is needed.
 ```bash
 hermes config set plugins.entries.fieldkit.settings.public_url https://YOUR-DOMAIN
 ```
@@ -27,82 +28,77 @@ plugins:
   entries:
     fieldkit:
       settings:
-        public_url: https://your-hermes.example.org   # optional; overrides the detected URL
-        auto_analyze: true                           # run queued questions in the background
+        public_url: https://your-hermes.example.org   # optional
 ```
 
+`public_url` is the only FieldKit setting.
+
 ## 3. Load it
-- **Install and enable** do not need a dashboard restart (verified with Hermes v0.23.0). A plugin enabled after the dashboard started is hot-mounted on its first request; Hermes does this itself.
-- **Updates:** the phone app files take effect immediately (installed apps show "Update ready"). Changes to FieldKit's **Python** code (API, tools, analysis) take effect only after Hermes reloads the plugin code, i.e. the next dashboard/gateway restart, because Python keeps an already-loaded plugin in memory. After `hermes plugins update fieldkit`, restart **both** the Hermes gateway and the dashboard; otherwise an old question worker keeps answering with the old code.
-- **Tools and the skill** load in the next Hermes session.
-- **Don't restart a shared or hosted instance without its operator's agreement.**
+- **Install and enable** do not need a dashboard restart. A plugin enabled after the dashboard started is mounted on its
+  first request (verified with Hermes v0.23.0).
+- **Updates:** after `hermes plugins update fieldkit`, restart **both** the Hermes dashboard and any running Hermes
+  gateway. A running gateway keeps the old plugin code loaded. The phone app files update on their own: an installed app
+  shows **Update ready**.
+- **Tools and skills** load in the next Hermes session.
+- **Do not restart a shared or hosted instance** without its operator's agreement.
 
 ## 4. Phones
 1. The phone must reach the dashboard over **HTTPS**, because service workers need a secure context.
-2. Open the dashboard → **FieldKit** tab → **Mobile Access**. Scan the QR code, or open `https://<host>/dashboard-plugins/fieldkit/app_dist/index.html`.
-3. Sign in to Hermes. If your session has expired later, the app still opens and offers **Sign in**.
-4. In **Offline Packs**, download workflows, then optional models (translation about 110 MB per direction, English speech about 64 MB, OCR 1–3 MB per language, and the **Question understanding — English and Hindi** pack, about 118 MB).
-5. Install the app:
+2. Open the dashboard → **FieldKit** tab → **Mobile Access**. Scan the QR code, or open
+   `https://<host>/dashboard-plugins/fieldkit/app_dist/index.html`.
+3. Sign in to Hermes. If your session expires later, the app still opens and offers **Sign in**.
+4. Set up a workspace (section 5), open its link on the phone, and tap **Download everything for offline**.
+5. Optional, in **Offline Packs**: English → Hindi and Hindi → English translation (about 110 MB each), and OCR for
+   English (about 3 MB) and Hindi (about 1.4 MB).
+6. Install the app:
    - Android Chrome: menu → **Install app**.
    - iPhone Safari: Share → **Add to Home Screen**.
    - On iOS the installed app has its own storage, separate from Safari. Open it and sign in once from inside it.
-6. Check that **Home → Offline readiness** shows ✔ for the first three checks.
+7. Check **Home → Offline readiness**: the first three checks should be marked as ready.
 
-**Installed from the old address?** If you added FieldKit to your Home Screen from `/api/plugins/fieldkit/app/`, the app asks you to re-add it. Open the new address in Safari → Share → **Add to Home Screen**, sign in once inside the new icon, then remove the old icon. Records are not lost.
+**Installed from the old address?** If you added FieldKit to your Home Screen from `/api/plugins/fieldkit/app/`, the app
+asks you to re-add it. Open the new address in Safari → Share → **Add to Home Screen**, sign in once inside the new icon,
+then remove the old icon. Records are not lost.
 
-**Storage on iPhone.** Browsers keep FieldKit's records on the device, but by default they may clear data of sites unused for a long time or when the device is almost full ([WebKit storage policy](https://webkit.org/?p=14403)). FieldKit asks for protection; Safari decides by itself and often says no, even for Home Screen apps. That is normal. **Settings → Storage on this device** shows *Protected*, *Standard storage (not protected)* or *Standard storage* (no protection API). Records stay on the phone until Hermes confirms them, so open FieldKit and sync regularly, and use **Export** for an extra backup.
+**Storage on iPhone.** Browsers keep FieldKit's data on the device, but by default they may clear the data of sites that
+have not been used for a long time, or when the device is almost full
+([WebKit storage policy](https://webkit.org/?p=14403)). FieldKit asks for protection; Safari decides, and may say no even for
+Home Screen apps. **Settings → Storage on this device** shows what the browser allows. Entries stay on the phone until
+Hermes confirms them, so open FieldKit and sync regularly, and use **Export** for an extra backup.
 
-The app header shows the device network, Hermes reachability, records awaiting confirmation and "N not submitted" drafts. Tap the status pill to open **Connection diagnostics**, which runs a live connection test and shows evidence of every request.
+The app header shows the device network, Hermes reachability, entries awaiting confirmation and unsubmitted drafts. Tap
+the status pill to open **Connection diagnostics**, which runs a live connection test and shows what each request got back.
 
-## 5. Questions about visits
-Saving or syncing a visit never starts AI work. Syncing only uploads. Hermes works when you ask:
-- **A question about a visit** (asked on the phone) is answered after the visit syncs.
-- **A question in Hermes chat** (`fieldkit_ask_about_record`) is answered at once.
+## 5. Set up a workspace
+In Hermes (Mobile, chat or dashboard), say: "Set up FieldKit for my work."
+1. Hermes asks what the workspace is for, which languages you use (English or Hindi), and what each entry records.
+2. It shows you a summary of the forms and their questions.
+3. It publishes only after you approve, and returns an app link.
+4. Open the link on your phone and tap **Download everything for offline**.
 
-Older workspaces may contain `report_policy.after_sync`; it is accepted and ignored.
+To change the workspace later, ask in chat, for example "add a question about the door seal" or "remove the GPS field".
+Hermes shows the changes and asks before it publishes. To undo the last update, ask "Undo my last workspace update". The
+phone shows **Update available** for each new version.
 
-Answers use Hermes' main model. Check which main model your Hermes uses. On a local test install without a configured main model, Hermes fell back to a free model that was rate-limited. In local test runs with `openai/gpt-5.4-mini` via Nous, answers came back in 32–37 s. If the provider rate-limits a request (HTTP 429 with `retry_after`), FieldKit waits as long as it is told, and the question stays queued rather than failed.
+The synthetic example forms in `tests/fixtures/forms` (Equipment inspection, Classroom observation, Crop health survey)
+are for tests. `tests/fixtures/seed.py` publishes them as starter workspaces on a test Hermes. They are not part of the
+plugin.
 
-- **Automatic mode** (`/status` → `analysis_mode: automatic`): a background worker in the dashboard process answers queued questions with Hermes' own LLM.
-- **Deferred mode** (no LLM handle in that process): questions wait until Hermes processes them. Ask Hermes to "process pending FieldKit jobs".
-
-## 6. Build your workspace
-A workspace is your job turned into an offline kit: workflows, decision guides, knowledge and sources. Hermes builds it.
-1. In Hermes (Mobile, chat or dashboard), ask: "Set up FieldKit for my work."
-2. Hermes asks what the workspace is for, then 5–8 follow-up questions chosen for that purpose. It shows you a brief to confirm, and builds the workspace straight away. There is no up-front web research. Your own rules are labelled "Your procedure". Checking a rule against official sources is optional. A source check uses Hermes' own `web_search` and `web_extract` tools, so it needs web search configured in Hermes.
-3. Hermes publishes the workspace only after you approve it. It then returns an app link.
-4. Open the link on your phone (it opens `#/workspace/<id>`) and tap **Download everything for offline**.
-5. In **Offline Packs**, install the optional **Question understanding — English and Hindi** pack (about 118 MB). Without it, the Workspace Assistant uses basic word search.
-
-The bundled examples are starter workspaces, labelled synthetic. In local tests on a local test Hermes, a build took about 2.5 minutes on average. Workspace builds are not yet verified on the owner's iPhone or the hosted Hermes.
-
-To change the workspace later, ask Hermes in chat, for example "add a question…" or "change our rule". Hermes shows what changed and asks before it publishes. To undo the last update, ask "Undo my last workspace update." The phone shows **Update available** for each new version.
-
-## Photo analysis with a vision model
-To send photos to a separate vision model when answering questions about a visit, without changing the gateway's default model, set FieldKit's own model slot. These settings are read live, so no restart is needed:
-```bash
-hermes config set auxiliary.fieldkit_vision.provider <provider>
-hermes config set auxiliary.fieldkit_vision.model <vision-model-id>
-hermes config set plugins.entries.fieldkit.settings.vision_task true
-```
-If `config set` refuses the unknown key, add `--force`.
-
-The slot is used whenever `auxiliary.fieldkit_vision` has a model or provider, so the `vision_task` line is optional: `true` always tries the slot, and `false` never does.
-
-If the slot's model fails, FieldKit tries the main model with the photos, then Hermes' vision descriptions, then text only (see [API.md](API.md)). After a plugin update, ask Hermes to "process pending FieldKit jobs with `retry_failed: true`" once to re-run jobs that failed before the fix.
-
-## Photos with a text-only main model
-A text-only main model cannot read photos. Hermes' main model gets the photos first and rejects them (`400 This model does not support image inputs`, or `404` from some providers), and FieldKit then falls back to Hermes' vision descriptions. To use a vision model for photos, set it in `config.yaml`:
-```yaml
-auxiliary:
-  fieldkit_vision:
-    provider: nous
-    model: google/gemini-3.6-flash
-```
-Without this, Hermes' vision tool picks a model itself. In our test it picked a free model that was rate-limited.
+## 6. Photos and voice notes
+Your Hermes agent reads photos and voice notes with its own tools, when you ask. FieldKit does not analyse them.
+- **Photos** need Hermes' vision tool. With a text-only main model, configure a vision model in Hermes' own
+  `config.yaml`, under `auxiliary.vision`. Use the provider and model keys from Hermes' documentation, for example:
+  ```yaml
+  auxiliary:
+    vision:
+      provider: <provider>
+      model: <vision-model-id>
+  ```
+- **Voice notes** need Hermes' speech-to-text tool.
 
 ## Building from source
 ```bash
 npm ci --legacy-peer-deps
-npm run build          # PWA → dashboard/app_dist (fails if any binary/WASM would ship), tab → dashboard/dist
+npm run build          # PWA → dashboard/app_dist (fails if any binary or WASM file would ship), tab → dashboard/dist
+npm run typecheck
 ```

@@ -9,24 +9,18 @@ export interface Option { value: string | number | boolean; label: Label }
 export interface Field {
   id: string; type: string; label: Label; help?: Label; placeholder?: Label; section?: Label;
   required?: boolean; required_if?: Cond; visible_if?: Cond; default?: unknown; unit?: string;
-  options?: Option[]; knowledge_query?: string; explain_topic?: string;
+  options?: Option[];
   validation?: {
     min?: number; max?: number; integer?: boolean; min_length?: number; max_length?: number; pattern?: string;
     min_items?: number; max_items?: number; max_accuracy_m?: number; rules?: { when: Cond; message: Label }[];
   };
 }
-export interface TreeNode { result?: { label: Label; severity?: string }; if?: Cond; then?: TreeNode; else?: TreeNode }
 export interface Workflow {
   id: string; version?: number; status?: string; title: Label; description?: Label; domain?: string;
-  languages?: string[]; default_language?: string; knowledge_packs?: string[]; dictionary_packs?: string[];
-  review_required?: boolean; fields: Field[];
-  classification?: {
-    rules?: { id: string; label: Label; when: Cond; severity?: string; finding?: Label }[];
-    keywords?: { id: string; label: Label; fields: string[]; keywords: string[]; min_hits?: number; severity?: string }[];
-    scores?: { id: string; label: Label; items: { when: Cond; points: number }[]; bands?: { min: number; label: Label; severity?: string }[] }[];
-    decision_trees?: { id: string; label: Label; root: TreeNode }[];
-  };
+  languages?: string[]; default_language?: string; fields: Field[];
+  metadata?: { subject_field?: string };
 }
+/** A finding computed on the phone by FieldKit before 0.3 (forms no longer classify; kept to show old entries). */
 export interface Finding {
   kind: string; id: string; label: string; severity: string; detail?: string; score?: number; matched?: string[]; source: "local";
 }
@@ -201,53 +195,10 @@ export function cleanAnswers(wf: Workflow, answers: Answers): Answers {
   return out;
 }
 
-function answerText(v: unknown): string {
-  if (Array.isArray(v)) return v.map(answerText).join(" ");
-  if (v && typeof v === "object") {
-    return Object.entries(v as Record<string, unknown>)
-      .filter(([k]) => k === "text" || k === "transcript" || k === "ocr_text").map(([, x]) => String(x)).join(" ");
-  }
-  return v === null || v === undefined ? "" : String(v);
-}
-
-function walk(node: TreeNode | undefined, answers: Answers, depth = 0): TreeNode["result"] | null {
-  if (!node || typeof node !== "object" || depth > 32) return null;
-  if (node.result) return node.result;
-  return walk(evaluate(node.if, answers) ? node.then : node.else, answers, depth + 1);
-}
-
-export function classify(wf: Workflow, rawAnswers: Answers, lang = "en"): Finding[] {
-  const cls = wf.classification ?? {};
-  const answers = cleanAnswers(wf, rawAnswers);
-  const out: Finding[] = [];
-  for (const r of cls.rules ?? []) {
-    if (evaluate(r.when, answers)) {
-      out.push({ kind: "rule", id: r.id, label: text(r.label, lang), severity: r.severity ?? "info", detail: text(r.finding ?? "", lang), source: "local" });
-    }
-  }
-  for (const kw of cls.keywords ?? []) {
-    const hay = kw.fields.map((f) => answerText(answers[f])).join(" ").toLowerCase();
-    const hits = [...new Set(kw.keywords.filter((k) => hay.includes(k.toLowerCase())))].sort();
-    if (hits.length >= (kw.min_hits ?? 1)) {
-      out.push({ kind: "keyword", id: kw.id, label: text(kw.label, lang), severity: kw.severity ?? "info", detail: hits.join(", "), matched: hits, source: "local" });
-    }
-  }
-  for (const s of cls.scores ?? []) {
-    const total = s.items.filter((i) => evaluate(i.when, answers)).reduce((a, i) => a + (i.points ?? 0), 0);
-    let band: { min: number; label: Label; severity?: string } | undefined;
-    for (const b of [...(s.bands ?? [])].sort((a, b) => a.min - b.min)) if (total >= b.min) band = b;
-    out.push({ kind: "score", id: s.id, label: text(s.label, lang), severity: band?.severity ?? "info", score: total, detail: text(band?.label ?? "", lang), source: "local" });
-  }
-  for (const t of cls.decision_trees ?? []) {
-    const res = walk(t.root, answers);
-    if (res) out.push({ kind: "decision_tree", id: t.id, label: text(t.label, lang), severity: res.severity ?? "info", detail: text(res.label, lang), source: "local" });
-  }
-  return out;
-}
 
 export interface Summary {
   validation: { complete: boolean; errors: Record<string, string[]>; messages: Record<string, string[]> };
-  questions_answered: number; questions_visible: number; findings: Finding[];
+  questions_answered: number; questions_visible: number;
 }
 
 export function summarize(wf: Workflow, answers: Answers, lang = "en"): Summary {
@@ -258,7 +209,6 @@ export function summarize(wf: Workflow, answers: Answers, lang = "en"): Summary 
     validation: { complete: st.complete, errors: st.errors, messages: st.messages },
     questions_answered: asked.filter((f) => !isEmpty(answers[f.id])).length,
     questions_visible: asked.length,
-    findings: classify(wf, answers, lang),
   };
 }
 

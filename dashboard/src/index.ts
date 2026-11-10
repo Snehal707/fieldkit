@@ -48,30 +48,24 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
 
   // ---------------------------------------------------------------- Overview
   function Overview() {
-    const [st, err, reload] = useLoad(() => Promise.all([get("status"), get("sync/status"), get("records?limit=5"), get("reports?limit=5")]));
-    const [msg, setMsg] = useState("");
+    const [st, err] = useLoad(() => Promise.all([get("status"), get("sync/status"), get("records?limit=5"), get("workspaces")]));
     if (!st) return h(Err, { msg: err }) || h("div", null, "Loading…");
-    const [status, sync, recs, reps] = st as any[];
+    const [status, sync, recs, wss] = st as any[];
+    const own = (wss.workspaces ?? []).filter((w: any) => !w.starter);
     return h("div", null,
-      h(Section, { title: "FieldKit status", actions: h(Button, { onClick: () => post("examples/install").then((r: any) => { setMsg(`Installed ${r.workflows.length} workflows, ${r.packs.length} packs`); reload(); }) }, "Install example workflows") },
-        msg && h("div", { style: { marginBottom: 8 } }, msg),
-        h("div", { style: row },
-          h(Badge, null, `analysis: ${status.analysis_mode}`), h(Badge, null, `LLM ${status.llm_available ? "available" : "not in this process"}`),
-          h(Badge, null, `auto-analyze ${status.auto_analyze ? "on" : "off"}`), h(Badge, null, `app ${status.app_built ? "built" : "NOT built"}`)),
-        status.analysis_mode === "deferred" && h("p", { style: { fontSize: 13, opacity: .8 } },
-          "Automatic analysis jobs are queued durably. Ask Hermes to run “fieldkit_process_pending_jobs”, or schedule it with a Hermes cron job."),
-        h("p", null, `Records: ${counts(sync.records_by_sync_status)} · Analysis: ${counts(sync.records_by_analysis_status)} · Jobs: ${counts(sync.jobs)} · Open conflicts: ${sync.open_conflicts}`)),
-      h(Section, { title: "Recent records" }, h(RecordList, { records: recs.records })),
-      h(Section, { title: "Recent reports" }, reps.reports.length ? reps.reports.map((r: any) => h("div", { key: r.id, style: box },
-        h("b", null, title(r)), ` · report v${r.version} · ${ts(r.created_at)}`, r.requires_review && h(Badge, { style: { marginLeft: 8, color: "#d97706" } }, "needs review"),
-        h("div", null, r.summary))) : "No reports yet."));
+      h(Section, { title: "FieldKit status" },
+        h("div", { style: row }, h(Badge, null, `version ${status.version}`), h(Badge, null, `app ${status.app_built ? "built" : "NOT built"}`)),
+        h("p", null, `Records: ${counts(sync.records_by_sync_status)} · Files still uploading: ${sync.attachments_outstanding} · Open conflicts: ${sync.open_conflicts}`),
+        h("p", { style: { fontSize: 13, opacity: .8 } }, "FieldKit collects and syncs. Ask your Hermes agent to read, analyse or summarise synced entries.")),
+      h(Section, { title: "Workspaces" }, own.length ? own.map((w: any) => h("div", { key: w.id, style: box },
+        h("b", null, w.title), ` · version ${w.published_version ?? "draft"}`, h("div", { style: small }, w.id)))
+        : "No workspace yet. In Hermes: “Set up FieldKit for my work.”"),
+      h(Section, { title: "Recent records" }, h(RecordList, { records: recs.records })));
   }
 
   // ---------------------------------------------------------------- Records
   const STATE_WORDS: Record<string, string> = {
-    complete: "complete", received: "files still uploading", not_requested: "not analysed", pending: "waiting for analysis",
-    processing: "being analysed", completed: "analysed", failed: "failed", requires_review: "need human review",
-    done: "done", queued: "queued",
+    complete: "complete", received: "files still uploading",
   };
   /** {"complete": 7} → "7 complete" */
   function counts(o: any): string {
@@ -83,8 +77,6 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
     return `${r.workflow_title || r.workflow_id}${r.subject ? ` · ${r.subject}` : ""}`;
   }
   const small = { fontSize: 11, opacity: .55, fontFamily: "monospace" };
-  const ANALYSIS_LABEL: Record<string, string> = { requires_review: "needs review", completed: "analysed", pending: "waiting",
-    processing: "analysing", failed: "failed", not_requested: "not analysed" };
 
   function RecordList({ records }: { records: any[] }) {
     const [open, setOpen] = useState(null);
@@ -92,7 +84,7 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
     return h("div", null, records.map((r: any) => h("div", { key: r.id, style: box },
       h("div", { style: row }, h("div", { style: { flex: 1 } }, h("b", null, title(r)), h("div", { style: small }, r.id)),
         h(Badge, null, r.sync_status === "complete" ? "synced" : STATE_WORDS[r.sync_status] ?? r.sync_status),
-        h(Badge, null, ANALYSIS_LABEL[r.analysis_status] ?? r.analysis_status), h("span", null, ts(r.received_at)),
+        h("span", null, ts(r.received_at)),
         h(Button, { onClick: () => setOpen(open === r.id ? null : r.id) }, open === r.id ? "Hide" : "Details")),
       open === r.id && h(RecordDetail, { id: r.id }))));
   }
@@ -123,16 +115,15 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
     return h("div", { style: { marginTop: 8 } },
       h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
         h("div", null, h("b", null, "Answers"), h("pre", { style: pre }, JSON.stringify(rec.answers, null, 2))),
-        h("div", null, h("b", { style: { color: "#7c3aed" } }, "Local findings (computed on the phone)"),
-          (rec.local_results?.findings ?? []).map((f: any, i: number) => h("div", { key: i }, h(Sev, { s: f.severity }), " ", f.label, f.detail ? ` — ${f.detail}` : "")))),
+        (rec.local_results?.findings ?? []).length ? h("div", null, h("b", { style: { color: "#7c3aed" } }, "Phone findings (FieldKit before 0.3)"),
+          rec.local_results.findings.map((f: any, i: number) => h("div", { key: i }, h(Sev, { s: f.severity }), " ", f.label, f.detail ? ` — ${f.detail}` : ""))) : h("div", null)),
       rec.attachments?.length > 0 && h("div", { style: { marginTop: 8 } }, h("b", null, rec.attachment_summary || `${rec.attachments.length} file(s)`),
         h("div", { style: { ...row, flexWrap: "wrap" } }, rec.attachments.map((a: any) => h(Attachment, { key: a.id, a })))),
-      h("div", { style: { marginTop: 8 } }, h("b", { style: { color: "#0f766e" } }, "Questions about this visit"),
-        (qs.questions ?? []).length ? (qs.questions as any[]).map((q: any) => h("div", { key: q.id, style: { margin: "6px 0" } },
-          h("div", null, h("b", null, q.question), ` · ${q.status}`),
-          q.answer ? h("div", null, q.answer.answer, q.answer.uncertainty ? h("div", { style: small }, `Not certain: ${q.answer.uncertainty}`) : null) : null))
-          : h("div", { style: small }, "No questions. Ask about this visit on the phone, or in the Hermes chat (e.g. “what do you think about this visit?”).")),
-      rep ? h("div", { style: { marginTop: 8 } }, h("b", { style: { color: "#0f766e" } }, "Earlier Hermes report"), h(ReportView, { r: rep })) : null);
+      (qs.questions ?? []).length ? h("div", { style: { marginTop: 8 } }, h("b", { style: { color: "#0f766e" } }, "Questions answered by FieldKit before 0.3"),
+        (qs.questions as any[]).map((q: any) => h("div", { key: q.id, style: { margin: "6px 0" } },
+          h("div", null, h("b", null, q.question), ` · ${q.status}`), q.answer ? h("div", null, q.answer.answer) : null))) : null,
+      rep ? h("div", { style: { marginTop: 8 } }, h("b", { style: { color: "#0f766e" } }, "Report from FieldKit before 0.3"), h(ReportView, { r: rep })) : null,
+      h("div", { style: { ...small, marginTop: 8 } }, "To analyse this entry, ask your Hermes agent (it can open the photos and voice notes)."));
   }
 
   const INTEGRITY: Record<string, string> = { intact: "intact (SHA-256 verified)", mismatch: "DOES NOT MATCH the captured file",
@@ -185,9 +176,9 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
 
   // ---------------------------------------------------------------- Sync
   function Sync() {
-    const [data, err, reload] = useLoad(() => Promise.all([get("sync/status"), get("sync/conflicts"), get("jobs")]));
+    const [data, err, reload] = useLoad(() => Promise.all([get("sync/status"), get("sync/conflicts")]));
     if (!data) return h(Err, { msg: err }) || h("div", null, "Loading…");
-    const [st, cf, jobs] = data as any[];
+    const [st, cf] = data as any[];
     return h("div", null,
       h(Section, { title: "Synchronisation", actions: h(Button, { onClick: reload }, "Refresh") },
         h("div", null, `Last record received: ${ts(st.last_received_at)} · Attachments outstanding: ${st.attachments_outstanding} · Open conflicts: ${st.open_conflicts}`),
@@ -197,8 +188,7 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
         h("div", null, `Record ${c.record_id}: phone edited revision ${c.base_revision}, server is at ${c.server_revision}`),
         h("pre", { style: pre }, JSON.stringify(c.client_payload?.record?.answers, null, 2)),
         h("div", { style: row }, h(Button, { onClick: () => post(`sync/conflicts/${c.id}/resolve`, { resolution: "keep_server" }).then(reload) }, "Keep server version"),
-          h(Button, { onClick: () => post(`sync/conflicts/${c.id}/resolve`, { resolution: "use_client" }).then(reload) }, "Use phone version")))) : "No open conflicts."),
-      h("div", { style: small }, `Syncing never triggers AI work. Questions asked about visits are answered by FieldKit's worker (mode: ${jobs.mode}).`));
+          h(Button, { onClick: () => post(`sync/conflicts/${c.id}/resolve`, { resolution: "use_client" }).then(reload) }, "Use phone version")))) : "No open conflicts."));
   }
 
   // ---------------------------------------------------------------- Mobile access
@@ -214,7 +204,7 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
           h("p", null, h("a", { href: url, target: "_blank", rel: "noopener" }, url)),
           h("ol", null,
             h("li", null, "Scan the code (or open the link) on the phone while online and sign in to Hermes."),
-            h("li", null, "Open Offline Packs and download workflows, knowledge, dictionaries and any translation / OCR / speech models."),
+            h("li", null, "Open your workspace and tap “Download everything for offline”. Optional: OCR and translation packs in Offline Packs."),
             h("li", null, "Add to Home Screen (Android: menu → Install app; iPhone: Share → Add to Home Screen)."),
             h("li", null, "Check the Offline readiness card on Home, then it works with no connection.")),
           h("p", { style: { fontSize: 13, opacity: .8 } }, "Service workers need HTTPS. The phone must reach this dashboard over https:// (or localhost)."))));

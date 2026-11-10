@@ -84,12 +84,6 @@ export async function getAttachment(id: string): Promise<Attachment | undefined>
   return (await db()).get("attachments", id);
 }
 
-export async function deleteLocalAttachment(id: string): Promise<void> {
-  const d = await db();
-  const a = await d.get("attachments", id);
-  if (a && !a.uploaded) await d.delete("attachments", id);  // only drafts' unsent media can be removed by the user
-}
-
 export interface GpsFix { lat: number; lon: number; accuracy: number; altitude?: number | null; timestamp: string; source: "device" | "manual" }
 
 export function captureGps(timeoutMs = 20000): Promise<GpsFix> {

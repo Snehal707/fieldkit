@@ -17,18 +17,9 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 
-
-@pytest.fixture(autouse=True)
-def _review_every_record(monkeypatch):
-    """These tests exercise the report job queue, which since 0.2.6 no sync triggers (test-only hook)."""
-    from fieldkit_core import db as _db
-    monkeypatch.setattr(_db, "_AUTO_REVIEW_FOR_TESTS", True)
-
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(Path(__file__).parent))
-from hermes_stub import GOOD_REPORT, Recorder, make_llm  # noqa: E402
-
-from fieldkit_core import analysis, db, runtime  # noqa: E402
+from fieldkit_core import db  # noqa: E402
+from seed import example_forms, seed  # noqa: E402
 
 PREFIX = "/api/plugins/fieldkit"
 
@@ -44,10 +35,8 @@ def _load_router():
 @pytest.fixture()
 def env(tmp_path, monkeypatch):
     monkeypatch.setenv("FIELDKIT_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("FIELDKIT_AUTO_ANALYZE", "true")
     store = db.Store(path=str(tmp_path / "test.db"))
     db.set_store(store)
-    runtime.llm = None
     mod = _load_router()
     app = FastAPI()
     app.state.auth_required = True
@@ -64,7 +53,6 @@ def env(tmp_path, monkeypatch):
     client = TestClient(app)
     yield SimpleNamespace(client=client, store=store, mod=mod, tmp=tmp_path)
     db.set_store(None)
-    runtime.llm = None
 
 
 def H(user="alice"):
@@ -72,9 +60,7 @@ def H(user="alice"):
 
 
 def _install(env, user="alice"):
-    r = env.client.post(f"{PREFIX}/examples/install", headers=H(user))
-    assert r.status_code == 200, r.text
-    return r.json()
+    return seed(env.store)
 
 
 def _record(answers=None, rid=None, base=0, attachments=None, wf="equipment-inspection", ver=1):
@@ -100,52 +86,11 @@ def test_unauthenticated_is_401(env):
 def test_me_and_status(env):
     assert env.client.get(f"{PREFIX}/me", headers=H()).json()["user_id"] == "alice"
     st = env.client.get(f"{PREFIX}/status", headers=H()).json()
-    assert st["analysis_mode"] == "deferred" and st["llm_available"] is False
+    assert st["plugin"] == "fieldkit" and st["version"] == "0.3.0"
+    assert not {"analysis_mode", "llm_available", "worker", "jobs", "auto_analyze"} & set(st)
 
 
 # ----------------------------------------------------------------------------- workflows & packs
-def test_examples_install_idempotent_and_shared(env):
-    first = _install(env)
-    assert sorted(first["workflows"]) == ["classroom-observation", "crop-health-survey", "equipment-inspection"]
-    assert len(first["packs"]) == 6
-    assert _install(env)["workflows"] == []
-    wfs = env.client.get(f"{PREFIX}/workflows", headers=H("bob")).json()["workflows"]
-    assert len(wfs) == 3  # published workflows are instance-wide
-
-
-def test_pack_integrity_header(env):
-    _install(env)
-    r = env.client.get(f"{PREFIX}/packs/maintenance-basics", headers=H())
-    assert r.status_code == 200
-    assert hashlib.sha256(r.content).hexdigest() == r.headers["x-fieldkit-sha256"]
-
-
-def test_invalid_workflow_rejected(env):
-    r = env.client.post(f"{PREFIX}/workflows", headers=H(), json={"definition": {"id": "x", "title": "X", "fields": []}})
-    assert r.status_code == 422 and r.json()["problems"]
-
-
-def test_workflow_versioning(env):
-    wf = json.loads((ROOT / "examples/education/workflow.json").read_text(encoding="utf-8"))
-    wf["id"] = "obs-copy"
-    r1 = env.client.post(f"{PREFIX}/workflows", headers=H(), json={"definition": wf, "publish": False}).json()
-    assert r1["workflow"]["version"] == 1 and r1["workflow"]["status"] == "draft"
-    assert env.client.get(f"{PREFIX}/workflows/obs-copy", headers=H()).status_code == 404  # not published yet
-    env.client.post(f"{PREFIX}/workflows/obs-copy/publish", headers=H(), json={})
-    assert env.client.get(f"{PREFIX}/workflows/obs-copy", headers=H()).json()["version"] == 1
-    r2 = env.client.post(f"{PREFIX}/workflows", headers=H(), json={"definition": wf, "publish": True}).json()
-    assert r2["workflow"]["version"] == 2
-    # bob may not publish alice's workflow
-    assert env.client.post(f"{PREFIX}/workflows/obs-copy/publish", headers=H("bob"), json={}).status_code == 404
-
-
-def test_document_import(env):
-    doc = "# Proof of delivery\nA signed record that goods arrived.\n\n# Exceptions:\nDamaged goods must be photographed."
-    r = env.client.post(f"{PREFIX}/packs/from-document", headers=H(),
-                        json={"pack_id": "logistics-pod", "title": "POD guide", "document": doc, "domain": "logistics"})
-    assert r.status_code == 200 and r.json()["entries"] == 2
-
-
 # ----------------------------------------------------------------------------- sync
 def test_sync_idempotent(env):
     _install(env)
@@ -153,7 +98,8 @@ def test_sync_idempotent(env):
     r1 = _sync(env, rec, key="k1")
     assert r1.status_code == 200, r1.text
     body = r1.json()
-    assert body["revision"] == 1 and body["sync_status"] == "complete" and body["analysis_status"] == "pending"
+    assert body["revision"] == 1 and body["sync_status"] == "complete" and body["workspace_id"] == "starter-equipment-inspection"
+    assert "analysis_status" not in body and env.store.conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
     r2 = _sync(env, rec, key="k1")
     assert r2.json()["duplicate"] is True and r2.json()["revision"] == 1
     # same content resent under a new key after a lost ack → acknowledged, not duplicated
@@ -189,7 +135,7 @@ def test_cross_user_isolation(env):
     assert env.client.get(f"{PREFIX}/records", headers=H("bob")).json()["records"] == []
     # bob cannot overwrite alice's record id
     assert _sync(env, dict(rec, base_revision=1), user="bob").status_code == 404
-    assert env.client.post(f"{PREFIX}/records/{rec['id']}/analyze", headers=H("bob")).status_code == 404
+    assert env.client.get(f"{PREFIX}/records/{rec['id']}/questions", headers=H("bob")).status_code == 404
 
 
 def test_attachment_flow_and_integrity(env):
@@ -199,7 +145,6 @@ def test_attachment_flow_and_integrity(env):
     rec = _record(attachments=[{"id": "att_0001_photo", "field_id": "photos", "mime": "image/jpeg", "size": len(body), "sha256": sha}])
     r = _sync(env, rec).json()
     assert r["sync_status"] == "received" and r["attachments_needed"] == ["att_0001_photo"]
-    assert r["analysis_status"] == "not_requested"  # analysis waits for complete upload
     bad = env.client.put(f"{PREFIX}/attachments/att_0001_photo", headers={**H(), "Content-Type": "image/jpeg"}, content=body[:-2])
     assert bad.status_code == 422  # truncated upload detected
     assert env.client.put(f"{PREFIX}/attachments/att_0001_photo", headers={**H("bob"), "Content-Type": "image/jpeg"},
@@ -207,7 +152,7 @@ def test_attachment_flow_and_integrity(env):
     assert env.client.put(f"{PREFIX}/attachments/att_0001_photo", headers={**H(), "Content-Type": "text/html"},
                           content=body).status_code == 415
     ok = env.client.put(f"{PREFIX}/attachments/att_0001_photo", headers={**H(), "Content-Type": "image/jpeg"}, content=body)
-    assert ok.status_code == 200 and ok.json()["sync_status"] == "complete" and ok.json()["analysis_status"] == "pending"
+    assert ok.status_code == 200 and ok.json()["sync_status"] == "complete"
     again = env.client.put(f"{PREFIX}/attachments/att_0001_photo", headers={**H(), "Content-Type": "image/jpeg"}, content=body)
     assert again.json()["duplicate"] is True
     got = env.client.get(f"{PREFIX}/attachments/att_0001_photo", headers=H())
@@ -226,83 +171,6 @@ def _llm(recorder):
     if llm is None:
         pytest.skip("Hermes source not available for PluginLlm")
     return llm
-
-
-def test_job_processing_creates_report(env):
-    _install(env)
-    rec = _record()
-    _sync(env, rec)
-    rec_obj = Recorder({"default": GOOD_REPORT})
-    done = analysis.process_pending(env.store, _llm(rec_obj))
-    assert done[0]["status"] == "requires_review"
-    call = rec_obj.calls[0]
-    assert call["response_format"] if "response_format" in call else True
-    user_text = json.dumps(call["messages"], ensure_ascii=False)
-    assert "Common reasons for equipment vibration" in user_text  # knowledge grounding passed to the model
-    r = env.client.get(f"{PREFIX}/records/{rec['id']}", headers=H()).json()
-    assert r["analysis_status"] == "requires_review" and r["report_version"] == 1
-    rep = env.client.get(f"{PREFIX}/records/{rec['id']}/report", headers=H()).json()
-    assert rep["source"] == "hermes" and rep["summary"].startswith("Guard missing")
-    assert rep["local_findings"][0]["source"] == "local"  # local findings preserved separately
-    fus = env.client.get(f"{PREFIX}/followups", headers=H()).json()["followups"]
-    # Report v2: each next action and each follow-up check becomes a task that says how to verify it.
-    by_title = {f["title"]: f for f in fus}
-    assert by_title["Tag out the machine until the guard is refitted."]["detail"].startswith("Verify: Guard refitted")
-    check = by_title["Check: Vibration after alignment"]
-    assert check["due_date"] and check["detail"] == "How: Measure at both bearings"
-    assert rep["decision"]["outcome"] == "stop" and rep["schema_version"] == 2 and rep["quality"]["problems"] == []
-    assert env.client.get(f"{PREFIX}/records/{rec['id']}/report", headers=H("bob")).status_code == 404
-
-
-def test_job_retry_then_fail_permanently(env):
-    _install(env)
-    rec = _record()
-    _sync(env, rec)
-    llm = _llm(Recorder({"default": GOOD_REPORT}, fail_times=10))
-    out = analysis.process_pending(env.store, llm)
-    assert out[0]["status"] == "pending"
-    assert env.client.get(f"{PREFIX}/records/{rec['id']}", headers=H()).json()["analysis_status"] == "pending"
-    for _ in range(2):
-        env.store.conn.execute("UPDATE jobs SET next_run_at=0")
-        out = analysis.process_pending(env.store, llm)
-    assert out[0]["status"] == "failed"
-    assert env.client.get(f"{PREFIX}/records/{rec['id']}", headers=H()).json()["analysis_status"] == "failed"
-    # explicit re-request resets the same durable job
-    r = env.client.post(f"{PREFIX}/records/{rec['id']}/analyze", headers=H()).json()
-    assert r["analysis_status"] == "pending"
-    assert env.store.job_counts() == {"pending": 1}
-
-
-def test_schema_violating_output_fails_job(env):
-    _install(env)
-    _sync(env, _record())
-    out = analysis.process_pending(env.store, _llm(Recorder({"default": {"summary": 3}})))
-    assert out[0]["status"] == "pending" and "schema" in out[0]["error"]
-
-
-def test_no_double_processing(env):
-    _install(env)
-    _sync(env, _record())
-    assert len(env.store.claim_jobs(5)) == 1
-    assert env.store.claim_jobs(5) == []
-
-
-def test_worker_thread_processes_automatically(env):
-    import time
-    _install(env)
-    rec = _record()
-    _sync(env, rec)
-    runtime.llm = _llm(Recorder({"default": GOOD_REPORT}))
-    try:
-        assert runtime.start_worker(interval_s=0.2)
-        for _ in range(50):
-            if env.store.get_record(db.ALL, rec["id"])["analysis_status"] == "requires_review":
-                break
-            time.sleep(0.1)
-        assert env.store.get_record(db.ALL, rec["id"])["analysis_status"] == "requires_review"
-        assert runtime.mode() == "automatic"
-    finally:
-        runtime.stop_worker()
 
 
 # ----------------------------------------------------------------------------- PWA serving
@@ -348,16 +216,6 @@ def test_observed_url_keeps_dashboard_prefix(env):
     from fieldkit_core import runtime as rt
     rt.record_observed_url("https://example.org/hermes")
     assert rt.observed_url() == "https://example.org/hermes"
-
-
-def test_jobs_are_scoped_to_their_owner(env):
-    _install(env)
-    _sync(env, _record(rid="rec_alice_job_01"), user="alice")
-    _sync(env, _record(rid="rec_bob_job_0001"), user="bob")
-    a = env.client.get(f"{PREFIX}/jobs", headers=H("alice")).json()
-    b = env.client.get(f"{PREFIX}/jobs", headers=H("bob")).json()
-    assert [j["record_id"] for j in a["jobs"]] == ["rec_alice_job_01"] and a["counts"] == {"pending": 1}
-    assert [j["record_id"] for j in b["jobs"]] == ["rec_bob_job_0001"]
 
 
 # ----------------------------------------------------------------------------- devices & cross-device records
@@ -419,8 +277,7 @@ def test_v1_database_upgrades_keeps_records_and_gets_a_stable_store_id(tmp_path)
 
 
 def test_restore_workflow_version_puts_back_exact_version_and_enables_resync(env):
-    wf = json.loads((ROOT / "examples" / "maintenance" / "workflow.json").read_text(encoding="utf-8"))
-    wf = dict(wf, version=3)
+    wf = dict(example_forms()["maintenance"], version=3)
     rec = _record(wf=wf["id"], ver=3)
     assert _sync(env, rec).status_code == 422                          # fresh data store: workflow unknown
     r = env.client.post(f"{PREFIX}/workflows/restore", headers=H(), json={"definition": wf})
@@ -434,3 +291,43 @@ def test_restore_workflow_version_puts_back_exact_version_and_enables_resync(env
     assert env.client.post(f"{PREFIX}/workflows/restore", headers=H("bob"), json={"definition": dict(wf, version=4)}).status_code == 404
     assert env.client.post(f"{PREFIX}/workflows/restore", headers=H(), json={"definition": {"id": "x", "version": 1}}).status_code == 422
     assert env.client.post(f"{PREFIX}/workflows/restore", json={"definition": wf}).status_code == 401
+
+
+# ----------------------------------------------------------------------------- packs, retired routes, earlier data
+def test_workspace_manifest_is_served_with_its_hash(env):
+    _install(env)
+    r = env.client.get(f"{PREFIX}/packs/ws-starter-equipment-inspection", headers=H())
+    assert r.status_code == 200 and hashlib.sha256(r.content).hexdigest() == r.headers["x-fieldkit-sha256"]
+    assert r.json()["workflows"] == [{"id": "equipment-inspection", "version": 1}]
+
+
+def test_retired_routes_are_gone(env):
+    _install(env)
+    rec = _record()
+    _sync(env, rec)
+    for method, path in (("post", f"/records/{rec['id']}/analyze"), ("post", f"/records/{rec['id']}/questions"),
+                         ("get", "/jobs"), ("get", "/followups"), ("post", "/learning/events"), ("post", "/examples/install"),
+                         ("post", "/workflows"), ("post", "/packs"), ("post", "/packs/from-document")):
+        kw = {"json": {}} if method == "post" else {}
+        assert getattr(env.client, method)(f"{PREFIX}{path}", headers=H(), **kw).status_code in (404, 405), path
+
+
+def test_reports_and_questions_from_earlier_versions_stay_readable_and_private(env):
+    _install(env)
+    rec = _record()
+    _sync(env, rec)
+    env.store.conn.execute("INSERT INTO reports(id, record_id, owner_user_id, version, record_revision, content, created_at) "
+                           "VALUES ('rep_1', ?, 'alice', 1, 1, ?, 1.0)",
+                           (rec["id"], json.dumps({"report_id": "rep_1", "version": 1, "summary": "Older report"})))
+    env.store.conn.execute("INSERT INTO questions(id, owner_user_id, record_id, question, status, answer, attempts, created_at) "
+                           "VALUES ('q_1', 'alice', ?, 'Why?', 'answered', ?, 1, 1.0)", (rec["id"], json.dumps({"answer": "Because."})))
+    env.store.conn.commit()
+    assert env.client.get(f"{PREFIX}/records/{rec['id']}/report", headers=H()).json()["summary"] == "Older report"
+    assert env.client.get(f"{PREFIX}/reports", headers=H()).json()["reports"][0]["record_id"] == rec["id"]
+    assert env.client.get(f"{PREFIX}/records/{rec['id']}/questions", headers=H()).json()["questions"][0]["answer"]["answer"] == "Because."
+    assert env.client.get(f"{PREFIX}/records/{rec['id']}/report", headers=H("bob")).status_code == 404
+
+
+def test_model_catalog_offers_only_ocr_and_translation(env):
+    cat = env.client.get(f"{PREFIX}/models", headers=H()).json()
+    assert sorted({p["capability"] for p in cat["packs"]}) == ["ocr", "translation"]

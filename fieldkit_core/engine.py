@@ -1,6 +1,6 @@
 """Deterministic workflow engine (Python twin of ``app/src/engine.ts``).
 
-Workflows are pure data. Conditions, validation and classification are expressed as a small
+Workflows are pure data. Conditions (when a question is shown or required) and validation are a small
 JSON AST and evaluated here; nothing an LLM produces is ever executed as code. Behaviour is
 pinned by the shared vectors in ``tests/vectors`` that the TypeScript engine also runs.
 """
@@ -286,66 +286,3 @@ def clean_answers(workflow: dict, answers: dict[str, Any]) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- classification
-def _answer_text(value: Any) -> str:
-    if isinstance(value, list):
-        return " ".join(_answer_text(v) for v in value)
-    if isinstance(value, dict):
-        return " ".join(str(v) for k, v in value.items() if k in ("text", "transcript", "ocr_text"))
-    return "" if value is None else str(value)
-
-
-def _walk_tree(node: Any, answers: dict[str, Any], depth: int = 0) -> dict | None:
-    if not isinstance(node, dict) or depth > 32:
-        return None
-    if "result" in node:
-        return node["result"]
-    branch = node.get("then") if evaluate(node.get("if"), answers) else node.get("else")
-    return _walk_tree(branch, answers, depth + 1)
-
-
-def classify(workflow: dict, answers: dict[str, Any], lang: str = "en") -> list[dict[str, Any]]:
-    """Run the workflow's own classification config. Every finding is labelled ``source: local``."""
-    cls = workflow.get("classification") or {}
-    answers = clean_answers(workflow, answers)  # stale answers on hidden branches never classify
-    findings: list[dict[str, Any]] = []
-    for rule in cls.get("rules", []):
-        if evaluate(rule.get("when"), answers):
-            findings.append({"kind": "rule", "id": rule["id"], "label": text(rule.get("label"), lang),
-                             "severity": rule.get("severity", "info"),
-                             "detail": text(rule.get("finding", ""), lang)})
-    for kw in cls.get("keywords", []):
-        hay = " ".join(_answer_text(answers.get(f)) for f in kw.get("fields", [])).lower()
-        hits = sorted({k for k in kw.get("keywords", []) if k.lower() in hay})
-        if len(hits) >= kw.get("min_hits", 1):
-            findings.append({"kind": "keyword", "id": kw["id"], "label": text(kw.get("label"), lang),
-                             "severity": kw.get("severity", "info"), "detail": ", ".join(hits),
-                             "matched": hits})
-    for score in cls.get("scores", []):
-        total = sum(item.get("points", 0) for item in score.get("items", []) if evaluate(item.get("when"), answers))
-        band = None
-        for b in sorted(score.get("bands", []), key=lambda b: b["min"]):
-            if total >= b["min"]:
-                band = b
-        findings.append({"kind": "score", "id": score["id"], "label": text(score.get("label"), lang),
-                         "severity": (band or {}).get("severity", "info"), "score": total,
-                         "detail": text((band or {}).get("label", ""), lang)})
-    for tree in cls.get("decision_trees", []):
-        res = _walk_tree(tree.get("root"), answers)
-        if res:
-            findings.append({"kind": "decision_tree", "id": tree["id"], "label": text(tree.get("label"), lang),
-                             "severity": res.get("severity", "info"), "detail": text(res.get("label", ""), lang)})
-    for f in findings:
-        f["source"] = "local"
-    return findings
-
-
-def summarize(workflow: dict, answers: dict[str, Any], lang: str = "en") -> dict[str, Any]:
-    """Everything the offline Results page shows, computed locally."""
-    state = compute_state(workflow, answers)
-    asked = [f for f in workflow["fields"] if f["id"] in state["visible"] and f["type"] not in INPUTLESS]
-    return {
-        "validation": {"complete": state["complete"], "errors": state["errors"], "messages": state["messages"]},
-        "questions_answered": sum(1 for f in asked if not _is_empty(answers.get(f["id"]))),
-        "questions_visible": len(asked),
-        "findings": classify(workflow, answers, lang),
-    }

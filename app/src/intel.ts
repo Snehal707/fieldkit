@@ -1,11 +1,10 @@
-// On-device intelligence: sentence translation, speech-to-text (Transformers.js + ONNX Runtime Web),
-// OCR (tesseract.js) and text-to-speech (local voices only). Heavy libraries load lazily.
+// Optional on-device tools for collecting observations: sentence translation (Transformers.js + ONNX Runtime Web) and
+// reading text from photos (OCR, tesseract.js). Heavy libraries load lazily.
 //
 // Model and WASM files come from their pinned upstream hosts the first time a pack is installed and
 // are cached on the device (Transformers.js Cache API store, tesseract IndexedDB + service worker
 // upstream cache). After installation no network request is needed; FieldKit never calls a remote
-// translation, OCR or speech service.
-import { collapseRepeats, isSilent, prepareSpeech, whisperOptions } from "./audio_prep";
+// translation or OCR service.
 import { TESSDATA, TESSERACT_CORE } from "./config";
 import { db, type InstalledModel } from "./db";
 import { OCR_PARAMS, runOcr } from "./ocr_prep";
@@ -101,6 +100,23 @@ export async function removeModel(id: string): Promise<void> {
   // Cached weights stay in the runtime cache until the user clears storage; we report usage instead of guessing.
 }
 
+/** Speech-to-text and "question understanding" packs were removed in 0.3: forget them and free their cached files.
+ *  Runs once per start; translation and OCR packs are untouched. */
+export async function freeRetiredModels(): Promise<number> {
+  const d = await db();
+  const retired = (await d.getAll("models")).filter((m) => !["translation", "ocr"].includes(m.capability));
+  for (const m of retired) {
+    await d.delete("models", m.id);
+    const name = String(m.manifest?.model ?? "");
+    if (!name || typeof caches === "undefined") continue;
+    for (const key of await caches.keys()) {
+      const c = await caches.open(key);
+      for (const req of await c.keys()) if (req.url.includes(name)) await c.delete(req);
+    }
+  }
+  return retired.length;
+}
+
 // ------------------------------------------------------------------ translation
 export async function installTranslation(manifest: any, onProgress?: Progress): Promise<InstalledModel> {
   const pipe = await pipelineFor(manifest, onProgress);
@@ -150,81 +166,6 @@ export async function translate(textIn: string, from: string, to: string): Promi
 
 export async function translationPairs(): Promise<[string, string][]> {
   return (await installedModels()).filter((m) => m.capability === "translation").map((m) => m.manifest.direction as [string, string]);
-}
-
-// ------------------------------------------------------------------ speech to text
-export async function installStt(manifest: any, onProgress?: Progress): Promise<InstalledModel> {
-  const pipe = await pipelineFor(manifest, onProgress);
-  const silence = new Float32Array(16000);
-  await pipe(silence, { language: "english", task: "transcribe" });
-  const v = await verifyCachedFiles(manifest);
-  return markInstalled(manifest, v.ok, v.detail);
-}
-
-export async function decodeTo16k(blob: Blob): Promise<Float32Array> {
-  const buf = await blob.arrayBuffer();
-  const Ctx: typeof AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
-  const ctx = new Ctx();
-  const audio = await ctx.decodeAudioData(buf.slice(0));
-  await ctx.close();
-  const off = new OfflineAudioContext(1, Math.ceil(audio.duration * 16000), 16000);
-  const src = off.createBufferSource();
-  src.buffer = audio;
-  src.connect(off.destination);
-  src.start();
-  const rendered = await off.startRendering();
-  return rendered.getChannelData(0);
-}
-
-/** The speech pack to use for a language: the smallest installed pack that supports it. */
-export function sttPackFor(models: InstalledModel[], lang: string): InstalledModel | undefined {
-  // Measured, not declared: Whisper tiny romanises or translates Hindi, so it is English-only here even for a v1
-  // pack whose stored manifest (installed before 0.2.4) still lists "hi".
-  const langs = (x: InstalledModel): string[] => (x.manifest.model === "Xenova/whisper-tiny" ? ["en"] : x.manifest.languages ?? ["en"]);
-  return models.filter((x) => x.capability === "stt" && langs(x).includes(lang))
-    .sort((a, b) => (a.manifest.download_size ?? 0) - (b.manifest.download_size ?? 0))[0];
-}
-
-export async function transcribe(blob: Blob, lang: string): Promise<{ text: string; engine: string }> {
-  const models = await installedModels();
-  const stt = models.filter((x) => x.capability === "stt");
-  if (!stt.length) throw new Error("No offline speech-to-text pack installed");
-  const m = sttPackFor(models, lang);
-  if (!m) {
-    // Whisper tiny cannot write Hindi (it romanises or translates it); say so instead of returning garbage.
-    throw new Error(lang === "hi" ? "Hindi speech needs the “Speech to text — Hindi and English (Whisper small)” pack. Install it in Offline Packs."
-      : `No installed speech pack supports “${lang}”.`);
-  }
-  const pipe = await pipelineFor(m.manifest);
-  const raw = await decodeTo16k(blob);
-  if (isSilent(raw)) throw new Error("No speech was detected in this recording.");
-  const audio = prepareSpeech(raw);
-  const language = { en: "english", hi: "hindi" }[lang] ?? "english";
-  const out = await pipe(audio, whisperOptions(audio.length, language));
-  const text = collapseRepeats((Array.isArray(out) ? out[0].text : out.text).trim());
-  return { text, engine: `${m.manifest.model} (on device)` };
-}
-
-// ------------------------------------------------------------------ understanding (sentence embeddings)
-export async function installEmbedding(manifest: any, onProgress?: Progress): Promise<InstalledModel> {
-  const pipe = await pipelineFor(manifest, onProgress);
-  const out = await pipe(["pump vibration", "पंप कंपन"], { pooling: "mean", normalize: true });
-  if (!out?.dims || out.dims[1] < 64) throw new Error("Understanding self-test produced no vectors");
-  const v = await verifyCachedFiles(manifest);
-  return markInstalled(manifest, v.ok, v.detail);
-}
-
-/** Meaning vectors for texts (English, Hindi and other languages the model knows). null if the pack isn't installed. */
-export async function embed(texts: string[]): Promise<number[][] | null> {
-  const m = (await installedModels()).find((x) => x.capability === "embedding");
-  if (!m || !texts.length) return m ? [] : null;
-  const pipe = await pipelineFor(m.manifest);
-  const out = await pipe(texts, { pooling: "mean", normalize: true });
-  return out.tolist() as number[][];
-}
-
-export async function embeddingModelId(): Promise<string | null> {
-  return (await installedModels()).find((x) => x.capability === "embedding")?.manifest.model ?? null;
 }
 
 // ------------------------------------------------------------------ OCR
@@ -308,43 +249,13 @@ export async function ocrLanguages(): Promise<string[]> {
   return (await installedModels()).filter((m) => m.capability === "ocr").map((m) => m.manifest.lang_code);
 }
 
-// ------------------------------------------------------------------ text to speech (local voices only)
-export function localVoices(lang?: string): SpeechSynthesisVoice[] {
-  if (typeof speechSynthesis === "undefined") return [];
-  return speechSynthesis.getVoices().filter((v) => v.localService && (!lang || v.lang.toLowerCase().startsWith(lang.toLowerCase())));
-}
-
-export function voicesReady(): Promise<void> {
-  if (typeof speechSynthesis === "undefined" || speechSynthesis.getVoices().length) return Promise.resolve();
-  return new Promise((r) => {
-    speechSynthesis.addEventListener("voiceschanged", () => r(), { once: true });
-    setTimeout(r, 1500);
-  });
-}
-
-export function speak(textIn: string, lang: string): { ok: boolean; voice?: string; reason?: string } {
-  const voices = localVoices(lang);
-  if (!voices.length) return { ok: false, reason: `No on-device voice for "${lang}" on this device. FieldKit does not use network voices.` };
-  const u = new SpeechSynthesisUtterance(textIn);
-  u.voice = voices[0];
-  u.lang = voices[0].lang;
-  speechSynthesis.cancel();
-  speechSynthesis.speak(u);
-  return { ok: true, voice: `${voices[0].name} (${voices[0].lang}, local)` };
-}
-
 // ------------------------------------------------------------------ capabilities
-export interface Caps { mediaRecorder: boolean; tts: boolean; camera: boolean; geolocation: boolean; wasm: boolean; cacheApi: boolean;
-  nativeLocalStt: "available" | "downloadable" | "unavailable" | "unknown" }
+export interface Caps { mediaRecorder: boolean; camera: boolean; geolocation: boolean; wasm: boolean; cacheApi: boolean }
 
 export async function capabilities(): Promise<Caps> {
-  // Deliberately NOT probing SpeechRecognition.available({processLocally}) — calling it crashes the Chromium
-  // renderer (reproduced with Playwright Chromium 156: "Target crashed"). FieldKit never uses the browser's
-  // speech recognition anyway; offline transcription runs on its own Whisper pack.
-  const nativeLocalStt: Caps["nativeLocalStt"] = "unknown";
   return {
-    mediaRecorder: typeof MediaRecorder !== "undefined", tts: typeof speechSynthesis !== "undefined",
+    mediaRecorder: typeof MediaRecorder !== "undefined",
     camera: true /* file input with capture= works on every target browser */, geolocation: "geolocation" in navigator,
-    wasm: typeof WebAssembly === "object", cacheApi: typeof caches !== "undefined", nativeLocalStt,
+    wasm: typeof WebAssembly === "object", cacheApi: typeof caches !== "undefined",
   };
 }

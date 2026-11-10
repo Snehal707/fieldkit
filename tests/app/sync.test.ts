@@ -1,7 +1,7 @@
 // Sync queue state machine against fake-indexeddb and a scripted server.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { _resetDbForTests, db, type LocalRecord } from "../../app/src/db";
-import { enqueueRecord, refreshReports, runSync, clearAuthRequired, getSyncState } from "../../app/src/sync";
+import { downloadEarlierReport, enqueueRecord, runSync, clearAuthRequired, getSyncState } from "../../app/src/sync";
 
 type Handler = (url: string, init: RequestInit) => Response | Promise<Response>;
 let handler: Handler;
@@ -27,9 +27,9 @@ async function addRecord(over: Partial<LocalRecord> = {}): Promise<LocalRecord> 
   const rec: LocalRecord = {
     id: "rec_test_000001", workflow_id: "equipment-inspection", workflow_version: 1, workflow_title: "Equipment inspection",
     device_id: "dev", answers: { condition: "poor" }, created_local_at: "2026-11-08T10:00:00Z", completed_at: "2026-11-08T10:05:00Z",
-    lang: "en", sync_status: "local", server_revision: 0, analysis_status: "not_requested",
+    lang: "en", sync_status: "local", server_revision: 0,
     local_results: { generated_at: "", source: "local", validation: { complete: true, errors: {}, messages: {} },
-      questions_answered: 1, questions_visible: 1, findings: [], references: [], explanations: [] },
+      questions_answered: 1, questions_visible: 1 },
     ...over,
   };
   await (await db()).put("records", rec);
@@ -37,7 +37,7 @@ async function addRecord(over: Partial<LocalRecord> = {}): Promise<LocalRecord> 
 }
 
 const ack = (extra: object = {}) => ({ record_id: "rec_test_000001", revision: 1, received_at: 1, sync_status: "complete",
-  analysis_status: "pending", analysis_job_id: "job_1", attachments_needed: [], ...extra });
+  attachments_needed: [], ...extra });
 
 describe("sync queue", () => {
   it("acknowledged record is marked synced and dequeued", async () => {
@@ -48,7 +48,7 @@ describe("sync queue", () => {
     const r = await (await db()).get("records", "rec_test_000001");
     expect(r!.sync_status).toBe("synced");
     expect(r!.server_revision).toBe(1);
-    expect(r!.analysis_status).toBe("pending");  // synced ≠ analysed
+    expect(calls.some((c) => /analyze|questions|learning/.test(c.url))).toBe(false);   // syncing only uploads
     expect(await (await db()).count("outbox")).toBe(0);
   });
 
@@ -129,9 +129,9 @@ describe("sync queue", () => {
       if (init.method === "PUT") {
         putCount++;
         if (putCount === 1) throw new TypeError("connection dropped");
-        return json(200, { attachment_id: "att_test_0001", status: "stored", sync_status: "complete", analysis_status: "pending" });
+        return json(200, { attachment_id: "att_test_0001", status: "stored", sync_status: "complete" });
       }
-      return json(200, ack({ sync_status: "received", attachments_needed: ["att_test_0001"], analysis_status: "not_requested" }));
+      return json(200, ack({ sync_status: "received", attachments_needed: ["att_test_0001"] }));
     };
     await enqueueRecord("rec_test_000001");
     await runSync();
@@ -145,20 +145,19 @@ describe("sync queue", () => {
     expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);  // record not re-sent
   });
 
-  it("downloads a Hermes report for offline use", async () => {
-    await addRecord({ sync_status: "synced", server_revision: 1, analysis_status: "pending" });
+  it("downloads a report made before 0.3 for offline reading, once", async () => {
+    await addRecord({ sync_status: "synced", server_revision: 1 });
     handler = (url) => url.endsWith("/report")
       ? json(200, { report_id: "rep_1", version: 1, summary: "All good", source: "hermes" })
-      : json(200, { analysis_status: "completed", analysis_job_id: "job_1", report_id: "rep_1", report_version: 1 });
-    expect(await refreshReports()).toBe(1);
-    const stored = await (await db()).get("reports", "rec_test_000001");
-    expect(stored!.report.summary).toBe("All good");
-    const r = await (await db()).get("records", "rec_test_000001");
-    expect(r!.analysis_status).toBe("completed");
-    expect(r!.report_downloaded_at).toBeTruthy();
-    // second refresh does not re-download
-    expect(await refreshReports()).toBe(0);
+      : json(200, { report_id: "rep_1", report_version: 1 });
+    expect(await downloadEarlierReport("rec_test_000001")).toBe(true);
+    expect((await (await db()).get("reports", "rec_test_000001"))!.report.summary).toBe("All good");
+    expect(await downloadEarlierReport("rec_test_000001")).toBe(false);          // not downloaded twice
+    handler = () => json(200, { report_id: null });
+    await addRecord({ id: "rec_noreport_01", sync_status: "synced", server_revision: 1 });
+    expect(await downloadEarlierReport("rec_noreport_01")).toBe(false);
   });
+
 });
 
 describe("upload again records Hermes no longer has", () => {
@@ -180,7 +179,7 @@ describe("upload again records Hermes no longer has", () => {
     await d.put("workflows", { id: "equipment-inspection", version: 1, downloaded_at: "",
       definition: { id: "equipment-inspection", version: 1, title: { en: "Equipment inspection" }, fields: [] } as any });
     handler = (url) => url.endsWith("/workflows/restore") ? json(200, { restored: true, version: 1 }) : url.includes("/attachments/")
-      ? json(200, { attachment_id: "att_photo_0001", status: "stored", record_id: "rec_test_000001", sync_status: "complete", analysis_status: "pending" })
+      ? json(200, { attachment_id: "att_photo_0001", status: "stored", record_id: "rec_test_000001", sync_status: "complete" })
       : json(200, ack({ attachments_needed: ["att_photo_0001"] }));
     expect(await resendRecords(["rec_test_000001", "rec_test_pending", "rec_unknown"])).toBe(1);   // only the confirmed one
     // resendRecords starts the upload itself; wait until the queue is empty and the record is confirmed again.
@@ -232,65 +231,6 @@ describe("audit fixes", () => {
     expect(await retryRecords(["rec_test_000001"])).toBe(0);    // only rejected records are retried this way
   });
 
-  it("one record Hermes doesn't have no longer stops report downloads for the others", async () => {
-    await addRecord({ id: "rec_gone_000001", sync_status: "synced", server_revision: 1, analysis_status: "pending" });
-    await addRecord({ id: "rec_here_000001", sync_status: "synced", server_revision: 1, analysis_status: "pending" });
-    handler = (url) => {
-      if (url.includes("rec_gone_000001")) return json(404, { detail: "Not found" });
-      if (url.endsWith("/records/rec_here_000001/report")) return json(200, { report_id: "rep_1", version: 1, summary: "ok" });
-      return json(200, { id: "rec_here_000001", analysis_status: "completed", report_id: "rep_1", report_version: 1 });
-    };
-    expect(await refreshReports()).toBe(1);
-    expect((await (await db()).get("reports", "rec_here_000001"))?.report_id).toBe("rep_1");
-  });
 });
 
 
-// 0.2.6: questions about one visit wait on the phone until that visit has synced, then go to Hermes; the answer comes
-// back to the same visit and stays readable offline.
-describe("questions about a visit", () => {
-  it("queue offline, send after the record syncs, and store the answer with the visit", async () => {
-    const { askAboutRecord, questionsFor, syncQuestions } = await import("../../app/src/questions");
-    await addRecord({ sync_status: "local" });
-    const q = await askAboutRecord("rec_test_000001", "What do the photos show?", "en");
-    expect(q).toMatchObject({ status: "queued", record_id: "rec_test_000001", question: "What do the photos show?" });
-    handler = () => json(500, {});
-    expect(await syncQuestions()).toBe(0);                                  // record not synced yet: nothing sent
-    expect(calls.filter((c) => c.url.includes("/questions"))).toHaveLength(0);
-    await (await db()).put("records", { ...(await (await db()).get("records", "rec_test_000001"))!, sync_status: "synced" });
-    handler = (url, init) => (init.method === "POST" ? json(200, { id: q.id, status: "queued" })
-      : json(200, { questions: [{ id: q.id, status: "answered", answer: { answer: "Belt guard missing.", confidence: "medium", next_steps: ["Refit"] } }] }));
-    expect(await syncQuestions()).toBe(2);                                  // sent, then answered
-    const post = calls.find((c) => c.method === "POST" && c.url.includes("/records/rec_test_000001/questions"))!;
-    expect(post.body).toMatchObject({ id: q.id, question: "What do the photos show?" });
-    const [got] = await questionsFor("rec_test_000001");
-    expect(got.status).toBe("answered");
-    expect(got.answer?.answer).toBe("Belt guard missing.");
-    await expect(askAboutRecord("rec_test_000001", "   ", "en")).rejects.toThrow();
-  });
-
-  it("a failed question shows the reason, and 'Ask again' resends the same id with retry", async () => {
-    const { askAboutRecord, askAgain, questionsFor, syncQuestions } = await import("../../app/src/questions");
-    await addRecord({ sync_status: "synced", workspace_id: "plant-rounds" });
-    const q = await askAboutRecord("rec_test_000001", "What do the photos show?", "en");
-    expect(q.workspace_id).toBe("plant-rounds");                           // the entry's workspace, not a guess
-    const why = "vision_slot: NotFoundError 404: Not Found; text_only: NotFoundError 404: Not Found";
-    handler = (url, init) => (init.method === "POST" ? json(200, { id: q.id, status: "queued" })
-      : json(200, { questions: [{ id: q.id, status: "failed", error: why }] }));
-    await syncQuestions();
-    let [got] = await questionsFor("rec_test_000001");
-    expect(got.status).toBe("failed");
-    expect(got.error).toBe(why);
-    await askAgain(q.id);                                                   // works offline
-    [got] = await questionsFor("rec_test_000001");
-    expect(got).toMatchObject({ status: "queued", retry: true });
-    calls.length = 0;
-    handler = (url, init) => (init.method === "POST" ? json(200, { id: q.id, status: "queued" })
-      : json(200, { questions: [{ id: q.id, status: "answered", answer: { answer: "Guard missing." } }] }));
-    await syncQuestions();
-    expect(calls.find((c) => c.method === "POST")!.body).toMatchObject({ id: q.id, retry: true });
-    [got] = await questionsFor("rec_test_000001");
-    expect(got.status).toBe("answered");
-    expect(got.retry).toBeUndefined();
-  });
-});

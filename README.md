@@ -1,117 +1,112 @@
 # FieldKit for Hermes Agent
 
-**Observe anywhere. Understand more when connected. Act better next time.**
+**Record offline. Sync when back online. Ask your Hermes agent about what you recorded.**
 
-FieldKit is an offline fieldwork platform powered by Hermes. You record entries on your phone with no signal: forms,
-photos, voice notes, GPS. Your own rules give an instant result on the phone. When you are back online, entries sync,
-and Hermes answers what you ask about them. **Saving and syncing never trigger AI work; Hermes helps only when you ask.**
+FieldKit is an offline observation collection and synchronisation plugin for Hermes. You describe your work to Hermes in a
+chat, and Hermes builds the forms. On your phone you fill in the forms with no signal: text, numbers, choices, photos,
+voice notes, GPS and signatures. When you are back online, the entries and their files upload to Hermes. Then you ask
+Hermes about them.
 
-It works for any kind of work: inspections, research and data collection, client or site visits, surveys, personal
-logs. Hermes builds your workspace from a short interview in chat, and changes it when you ask.
+FieldKit is not an assistant, a research tool or a decision system. It never calls a model. Hermes does any analysis,
+with its own tools, when you ask.
 
 ```text
-Tell Hermes about your work → workspace on your phone → record offline → sync → ask Hermes → answer back on the entry
+Set up by chat → record offline → sync (upload only) → ask your Hermes agent
 ```
 
 ## Quick start
 ```bash
 hermes plugins install Snehal707/fieldkit && hermes plugins enable fieldkit
 ```
-Restart the Hermes dashboard (it serves FieldKit's API). Then, in Hermes (Mobile, chat or dashboard):
+Restart the Hermes dashboard. Then, in Hermes (Mobile, chat or dashboard):
 
 > "Set up FieldKit for my work."
 
-Hermes gives you a link. Open it on your phone, sign in once, tap **Download everything for offline**, and add the app
-to your home screen. To try it without your own work, say "Install the FieldKit examples" (three synthetic starter
-workspaces). Details: [docs/INSTALL.md](docs/INSTALL.md).
+Hermes asks what you record, shows you a summary, and publishes the workspace after you approve. It returns a link. Open
+the link on your phone, sign in once, tap **Download everything for offline**, and add the app to your home screen.
+Details: [docs/INSTALL.md](docs/INSTALL.md).
 
 ## How it works
 
-### 1. Set up a workspace (a few minutes, in chat)
-Hermes asks **what the workspace is for**, then 5–8 questions chosen for that purpose: what each entry records, what
-identifies an entry (participant, asset, client…), and only if your work has them, the decisions you make, your rules,
-who you escalate to, your instruments. It shows a summary to confirm, then builds the workspace from your answers. No
-web research is needed.
-- Your rules are labelled **Your procedure**. Nothing is invented: work without decisions gets no decision scale.
-- FieldKit checks every part Hermes writes and rejects anything inconsistent before it can be published.
-- Optional: checking a rule against an official source. FieldKit re-reads the cited page or PDF and drops any quote it
-  cannot find. Unsourced model knowledge never becomes a rule.
+### 1. Set up by chat
+Hermes asks what the workspace is for, which languages you use (English or Hindi), and what each entry records. A
+workspace has one or more **forms**. Each form has questions of these types: text, multiline text, number, date, time,
+checkbox, single choice, multiple choice, photo, audio (voice note), GPS, signature and instruction.
 
-### 2. Record offline (on the phone)
-- Forms with branching, validation, units, photos (compressed), voice notes, GPS, signatures; drafts save as you type.
-- An instant on-phone result from your rules, decision guides that ask only what is missing, and an **On this phone**
-  summary per workspace (entries, flagged by your rules, unfinished, waiting to sync). All calculated on the phone.
-- **Questions for Hermes:** add them while filling in the form, or later with **Ask Hermes about this visit**
-  (suggested questions or your own). They wait on the phone until the entry syncs.
-- **Workspace Assistant:** explains your procedures and rules and answers from the entries on the phone, with sources.
-  It never makes things up; anything it can't answer about an entry can be sent to Hermes.
-- Optional offline packs: OCR (English, Hindi), English↔Hindi translation, speech-to-text, and "Question
-  understanding" (118 MB) so the assistant understands questions by meaning in English and Hindi.
+- Questions can be required, or shown only when a condition holds. They can have validation rules and units.
+- A form can name the field that identifies what an entry is about (a site, a person, an asset). Earlier entries of the
+  same subject can then be found.
+- Notes and issues are ordinary fields.
+- FieldKit checks every form Hermes writes. It repairs common shape mistakes (for example "select" becomes a single
+  choice) and reports precise errors for conditions.
 
-### 3. Sync
-Entries and files upload when you are online, each checked by SHA-256, with no duplicates; conflicts are shown for you
-to decide. An expired sign-in pauses the queue without losing anything. **Syncing only uploads.**
+### 2. Record offline (phone)
+- Forms with conditions, validation, units, photos (compressed), voice notes, GPS and signatures. Drafts save as you type.
+- Each entry keeps the form version it was made with.
+- Optional tools, installed from **Offline Packs**: **Scan text** (OCR in English or Hindi; also **Extract text** on a
+  photo inside a form) and **Translate** (English ↔ Hindi).
 
-### 4. Ask Hermes
-- **About one entry**, on the phone or in chat ("What do you think about my latest kitchen visit?", "What do the photos
-  show?"): Hermes looks at that entry's answers, photos, voice notes (transcribed only now), your procedures and up to
-  3 earlier entries of the same subject. The answer gives confidence, uncertainty and next steps, and comes back to
-  the same entry, readable offline. It stays about that case; it never becomes a rule.
-- **About many entries or a whole workspace** in chat ("summarise my 50 surveys", "which visits turned into quotes?"):
-  Hermes reads the entries and does what you asked.
-- **Act better next time:** every answer takes earlier entries of the same subject into account.
+### 3. Sync (upload only)
+Entries and files upload when the app is open and the phone is online. Each file is checked by SHA-256, and a resend
+never creates a duplicate. If an entry was changed on two devices, a conflict is shown for you to resolve. An expired
+sign-in pauses the queue without losing anything. **Syncing only uploads. Nothing is processed.**
 
-### 5. Change the workspace by chat
-"Add a question about the door seal", "remove the GPS field", "change our rule", "change the description": Hermes
-changes only what you asked, FieldKit shows a short summary of the changes, and Hermes publishes only after you
-approve. The phone shows **Update available** with the changes. Old entries keep the questions and answers they were
-recorded with, including removed ones. **"Undo my last workspace update"** restores the previous version as a new one.
+### 4. Ask your Hermes agent
+Hermes reads what you synced through FieldKit's tools: entries (filtered by workspace, form, subject or date), one entry
+with its answers and the earlier entries of the same subject, and its photos, voice notes and signatures as local files.
+Hermes looks at photos and listens to voice notes with its own tools, when you ask. For example:
+- "What do the photos from the kitchen visit show?"
+- "Summarise my surveys from last month."
+- "Is this inspection worse than the last one for this pump?"
+
+### 5. Edit and undo by chat
+Ask for a change: "Add a question about the door seal", "remove the GPS field", "change the purpose". Hermes changes only what
+you asked, shows the changes, and asks "Publish these changes?". Each change is a new version, and Hermes publishes only
+after you approve. The phone then shows **Update available** with the changes.
+
+Entries keep the questions and answers they were recorded with, including questions that were later removed.
+**"Undo my last workspace update"** republishes the previous version as a new version.
 
 ## What's in the plugin
 
 | Part | What it is |
 |---|---|
-| **Hermes tools and skills** | 20 tools and two skills (`fieldkit`, `fieldkit-workspace-builder`): interview, build, edit, undo and publish workspaces; answer questions about entries; read entries, sync status and conflicts. |
-| **Phone app (PWA)** | Installable, works fully offline. Home, Workspace, Assistant, Sync, Settings. Served at `/dashboard-plugins/fieldkit/app_dist/index.html`. |
-| **Dashboard tab** | Overview, Records (each entry with its questions and answers), Synchronization, Mobile Access (link and QR code). |
+| **Hermes tools** | 12 tools (see [docs/API.md](docs/API.md)): set up, change, publish and undo workspaces; read entries, attachments, sync status and conflicts; the phone link. |
+| **Skills** | `fieldkit` (find and read entries; Hermes analyses them with its own tools) and `fieldkit-workspace-builder` (set up, change and undo workspaces). |
+| **Session note** | One short note in each new Hermes session that lists your workspaces. |
+| **Phone app (PWA)** | Installable, works offline. Bottom bar: Home, Workspace, Records, Sync, Settings. Served at `/dashboard-plugins/fieldkit/app_dist/index.html`. |
+| **Dashboard tab** | Overview, Records (answers and attachments), Synchronization (devices and conflicts), Mobile Access (link and QR code). |
+| **Setting** | `public_url` only (optional). |
+
+The plugin registers no hooks, runs no background worker and never calls a model.
 
 ## Verification (honest)
 
 Exact commands and results are in [docs/TESTING.md](docs/TESTING.md).
 
-**On the owner's iPhone with the hosted Hermes (version 0.2.4, 2026-11-09, owner-reported):** offline recording, sync,
-photos, voice notes, signatures, OCR, translation, speech-to-text, Saved Records across Safari and the Home Screen app,
-the Hermes Mobile conversation, and the dashboard tab all worked.
-**The 0.2.6 behaviour below, and the three fixes of 2026-11-10 (question photos, workspace on records, standard applicability), have not yet been checked on the iPhone or the hosted Hermes.**
+**Local test only.** Hermes Agent v0.23.0 on a local machine, with real conversations (model `openai/gpt-5.4-mini` via
+Nous), 2026-11-10. This was **not** the hosted Hermes and **not** the owner's iPhone.
+- Unit tests: 88 Python and 100 TypeScript. Typecheck clean. `hermes plugins validate` passed. `hermes plugins doctor --ci`: 12 tools, 0 hooks.
+- Browser end-to-end tests (Playwright): Chromium 27 passed, 2 skipped; WebKit 19 passed, 8 skipped. Two WebKit failures passed on rerun after a fix.
+- Setup by chat, edit and undo by chat, and asking about a synced visit with a photo all worked with the new tools.
+- Copies of two databases from earlier real-Hermes runs opened with 0.3: no row counts changed, and all old entries, reports
+  and workspace versions stayed readable.
 
-**On a local test Hermes v0.23.0 (real conversations via Nous Portal, phone-sized Chromium/WebKit), 0.2.6:**
-
-| Area | Result |
-|---|---|
-| Workspace setup from the interview | Builds in about 2.5 min on average across 5 jobs; a solar business owner, a student research archive and a dairy checker each got a form that matches their work, with decisions only where real (the student and dairy builds were re-checked from the parts Hermes saved, after a provider stall and a memory limit cut the run short) |
-| Syncing never triggers AI work | An entry with no question synced with no model call; with 2 questions, exactly 2 model calls |
-| Questions about an entry | Asked offline (in the form and afterwards), answered after sync in 18–37 s, readable offline; Hermes used the photo, the voice note and the user's rule |
-| Chat about an entry | "What do you think about my latest kitchen visit?" → assessment with uncertainty and a next step (44 s) |
-| Editing by chat | Add a question and remove another → Hermes showed the changes and asked before publishing; the phone got "Update available"; an older entry offline still showed the removed question's answer |
-| Undo | "Undo my last workspace update" → previous version republished as a new one; the phone updated; older entries stayed readable |
-| Tests | 224 Python, 132 TypeScript; Chromium E2E 29 passed / 5 skipped; WebKit E2E passed; `hermes plugins validate` and `doctor` pass (20 tools) |
-
-Earlier versions (0.2.4–0.2.5) were also checked for strict offline use, crash-safe sync, cross-device Saved Records,
-SHA-256 file integrity and access control (every API route checks the signed-in user).
+**Owner's iPhone with the hosted Hermes, version 0.2.4 (2026-11-09, owner-reported):** offline recording, sync, media
+(photos, voice notes and signatures) and Saved Records worked. That collection code is unchanged in 0.3, so this still
+applies to it. The 0.3 changes (workspaces by chat, the phone's new screens and the removed tools) have not yet been
+checked on the iPhone or the hosted Hermes.
 
 ## Known limitations
-- Approval before publishing relies on Hermes asking; FieldKit cannot see whether you replied in between.
-- Answers about entries need Hermes' model; with a rate-limited provider, questions wait as the provider says. Use a
-  paid main model on Hermes (free tiers are rate-limited).
-- Answers come after the entry and its files sync; the answer reaches the phone on a later sync with the app open.
-- With a text-only main model, configure `auxiliary.fieldkit_vision` (a vision model) so Hermes can see photos; otherwise Hermes' vision tool picks a model itself (free ones are rate-limited).
-- Phone languages: English and Hindi. Whisper tiny is English-only; Hindi speech-to-text needs a 250 MB pack.
-- OCR can't read blurred, dark or handwritten text (it says so). The small translation model mistranslates some terms.
-- Saved Records lists the newest 500 entries per account.
+- Hermes must run on one machine with one persistent volume. Data lives in `<HERMES_HOME>/plugin-data/fieldkit/data.db`.
+- After `hermes plugins update fieldkit`, restart the Hermes dashboard **and** any running Hermes gateway. A running gateway keeps the old plugin code loaded.
 - iOS Home Screen apps have storage separate from Safari: sign in once inside the app.
-- Uploads run while the app is open; there is no background upload from a closed app.
-- Run FieldKit's Hermes on one machine with one persistent volume (data lives in
-  `<HERMES_HOME>/plugin-data/fieldkit/data.db`). After updating FieldKit, restart the Hermes gateway and dashboard.
+- Uploads run only while the app is open. There is no background upload from a closed app.
+- Saved Records lists the newest 500 entries per account.
+- Photos and voice notes are analysed only by your Hermes agent, with its own vision and speech-to-text tools. Configure those tools in Hermes. With a text-only main model, configure a vision model (see [docs/INSTALL.md](docs/INSTALL.md)).
+- Approval before publishing relies on Hermes asking. FieldKit cannot see whether you replied in between.
+- OCR cannot read blurred, dark or handwritten text, and the app says so. The small translation model mistranslates some technical terms: check important wording.
+- Phone languages: English and Hindi.
 - Android Chrome is not yet tested.
 
 ## Docs

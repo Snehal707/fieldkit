@@ -12,7 +12,6 @@ test("FieldKit dashboard tab renders every section in the real Hermes dashboard"
   const browser = await engine.launch();
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await signIn(ctx.request);
-  await ctx.request.post(`${BASE}/api/plugins/fieldkit/examples/install`);
   const page = await ctx.newPage();
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
@@ -20,12 +19,13 @@ test("FieldKit dashboard tab renders every section in the real Hermes dashboard"
 
   await page.goto(`${BASE}/fieldkit`);
   await expect(page.getByText("FieldKit status")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/analysis: (automatic|on-demand|deferred)/)).toBeVisible();
+  await expect(page.getByText(/version 0\.3/)).toBeVisible();
+  await expect(page.getByText(/analysis/i)).toHaveCount(0);                     // 0.3: FieldKit runs no analysis
 
-  // 0.2.6: four tabs (workflows, knowledge, reports and model packs are no longer separate tabs).
+  // Four tabs: Overview, Records, Synchronization, Mobile Access.
   const sections: [string, RegExp][] = [
     ["Records", /Synchronised records/],
-    ["Synchronization", /Syncing never triggers AI work/],
+    ["Synchronization", /Open conflicts|No open conflicts/],
     ["Mobile Access", /Open FieldKit on a phone/],
   ];
   for (const [tab, expectText] of sections) {

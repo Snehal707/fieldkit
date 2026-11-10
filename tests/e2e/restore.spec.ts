@@ -13,6 +13,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { signIn } from "./auth";
+import { downloadWorkspace, publishFormAsWorkspace, startEntry } from "./helpers";
 
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
@@ -46,15 +47,10 @@ test("records Hermes lost are detected on the device that made them and can be u
   test.setTimeout(240_000);
   const A = await client();
   // A uniquely named workflow, so removing it below cannot affect any other test.
-  const wf = JSON.parse(readFileSync(resolve(import.meta.dirname, "../../examples/maintenance/workflow.json"), "utf-8"));
-  const pub = await A.ctx.request.post(`${API}/workflows`, { data: { definition: { ...wf, id: WF_ID, title: { en: WF_TITLE } }, publish: true } });
-  expect(pub.ok(), await pub.text()).toBe(true);
-  await A.ctx.request.post(`${API}/examples/install`);
-  await A.page.goto(`${APP}#/packs`);
-  await A.page.locator("li", { hasText: WF_TITLE }).first().getByRole("button").click();
-  await expect(A.page.locator(`text=Downloaded ${WF_TITLE}`)).toBeVisible({ timeout: 30_000 });
-  await A.page.goto(`${APP}#/workflows`);
-  await A.page.locator("li", { hasText: WF_TITLE }).getByRole("button", { name: "Start" }).click();
+  const wf = JSON.parse(readFileSync(resolve(import.meta.dirname, "../fixtures/forms/maintenance.json"), "utf-8"));
+  const wsId = publishFormAsWorkspace({ ...wf, id: WF_ID, title: { en: WF_TITLE } }, `restore-ws-${run}`);
+  await downloadWorkspace(A.page, APP, wsId);
+  await startEntry(A.page, APP, WF_ID, wsId);
   await A.page.locator("#in-asset_id").fill(`RST-${run}`);
   await A.page.locator("#in-asset_id").blur();
   await A.page.locator("#in-inspection_date").fill("2026-11-09");

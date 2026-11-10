@@ -18,7 +18,6 @@ test("Sign in returns to FieldKit and first-run download makes it offline-ready"
   const ctx = await engine.launchPersistentContext(mkdtempSync(join(tmpdir(), "fieldkit-login-")), { viewport: { width: 390, height: 844 } });
   // One-time: install the app shell while signed in, make sure examples are published, then lose the session.
   await signIn(ctx.request, USER, PASS);
-  await ctx.request.post(`${BASE}/api/plugins/fieldkit/examples/install`);
   const page = await ctx.newPage();
   await page.goto(APP);
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);
@@ -52,10 +51,10 @@ test("Sign in returns to FieldKit and first-run download makes it offline-ready"
   await expect(page.locator("text=Signed in as")).toBeVisible({ timeout: 15_000 });
 
   // First run: one tap downloads everything published → offline ready.
-  const dl = page.getByRole("button", { name: /Download all \d+ workflow/ });
+  const dl = page.getByRole("button", { name: /Download all \d+ workspace/ });
   await expect(dl).toBeVisible({ timeout: 20_000 });
   await dl.click();
   await expect(page.locator("text=Ready to work offline")).toBeVisible({ timeout: 60_000 });
-  await expect(page.locator(".tile", { hasText: "All forms" })).toContainText("3 on this phone");
+  await expect(page.locator("#home-readiness")).toContainText(/Forms downloaded\s*[1-9]\d* on this device/);
   await ctx.close();
 });

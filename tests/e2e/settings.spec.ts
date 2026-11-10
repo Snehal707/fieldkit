@@ -84,21 +84,10 @@ for (const mode of ["protected", "declined", "unsupported"] as const) {
   });
 }
 
-test("voices: compact summary, expandable grouped list, on-device only; install card is honest", async () => {
+test("the install card is honest; no read-aloud or speech settings remain", async () => {
   test.skip(!PASS, "set FIELDKIT_E2E_PASS");
   const { ctx, page } = await open("declined");
-  const card = page.locator("#voices-card");
-  const summary = card.locator("p").first();
-  await expect(summary).toContainText("41 on-device voices in 12 languages");
-  await expect(summary).toContainText("Hindi: available");
-  expect((await summary.innerText()).length).toBeLessThan(160);                    // compact, not a code dump
-  const details = card.locator("details");
-  await expect(details).not.toHaveAttribute("open", "");
-  await expect(card.locator("li").first()).toBeHidden();                           // collapsed by default
-  await details.locator("summary").click();
-  await expect(card.locator("li", { hasText: "Hindi" })).toBeVisible();
-  await expect(card.locator("li", { hasText: "(en-US)" })).toHaveCount(1);         // grouped, not repeated
-  await expect(card).not.toContainText("Network voice");                           // network voices never listed
+  await expect(page.locator("#voices-card")).toHaveCount(0);
   const install = await page.locator("#install-card").innerText();
   expect(install).toContain("isn't guaranteed");
   expect(install).toContain("doesn't make storage permanent");

@@ -1,54 +1,11 @@
-// Regression cases from real-iPhone offline testing (0.2.4): speech, OCR, translation and attachment previews.
+// Regression cases from real-iPhone offline testing (0.2.4): OCR, translation, voice recording and attachment previews.
 import { beforeEach, describe, expect, it } from "vitest";
-import { collapseRepeats, isSilent, prepareSpeech, whisperOptions } from "../../app/src/audio_prep";
 import { _resetDbForTests, db, type Attachment, type InstalledModel } from "../../app/src/db";
-import { ocrVerdict, sttPackFor } from "../../app/src/intel";
+import { ocrVerdict } from "../../app/src/intel";
 import { attachmentUrl, memoryBlob, pickRecorderMime, updateAttachment } from "../../app/src/media";
 import { keepWords, pageLines } from "../../app/src/ocr_prep";
 import { protectTerms, restoreTerms, splitSentences, termPairs, tidyOutput } from "../../app/src/translate_prep";
 import { sha256Hex } from "../../app/src/util";
-
-describe("speech preparation (Whisper)", () => {
-  const rate = 16000;
-  const tone = (s: number, amp: number) => Float32Array.from({ length: s * rate }, (_, i) => amp * Math.sin(i / 8));
-  it("trims the silence around a quiet phone recording and normalises its level", () => {
-    const speech = tone(1, 0.05);
-    const x = new Float32Array(rate * 4);                          // 1.5 s silence, 1 s speech, 1.5 s silence
-    for (let i = 0; i < x.length; i++) x[i] = 0.0005 * Math.sin(i * 1.7);
-    x.set(speech, rate * 1.5);
-    const y = prepareSpeech(x);
-    expect(y.length / rate).toBeGreaterThan(1.2);
-    expect(y.length / rate).toBeLessThan(1.8);                     // 1 s + 2 x 0.3 s padding
-    expect(Math.max(...Array.from(y, Math.abs))).toBeCloseTo(0.9, 1);
-  });
-  it("never amplifies more than 30x and reports silence instead of transcribing it", () => {
-    expect(Math.max(...Array.from(prepareSpeech(tone(1, 0.001)), Math.abs))).toBeLessThanOrEqual(0.031);
-    expect(isSilent(new Float32Array(rate))).toBe(true);
-    expect(isSilent(tone(1, 0.05))).toBe(false);
-  });
-  it("guards against Whisper loops and caps the output length by duration", () => {
-    const o = whisperOptions(rate * 5, "hindi");
-    expect(o).toMatchObject({ language: "hindi", task: "transcribe", no_repeat_ngram_size: 4, max_new_tokens: 116 });
-    expect(collapseRepeats("5th year, 5th year, 5th year, 5th year, done")).toBe("5th year, done");
-    expect(collapseRepeats("The pump is fine.")).toBe("The pump is fine.");
-  });
-});
-
-describe("speech pack choice", () => {
-  const model = (id: string, model: string, languages: string[], size: number, version = 1) =>
-    ({ id, capability: "stt", version, title: id, installed_at: "", verified: true, verify_detail: "", size,
-      manifest: { model, languages, download_size: size } }) as unknown as InstalledModel;
-  const tinyV1 = model("stt-whisper-tiny", "Xenova/whisper-tiny", ["en", "hi"], 41e6);   // as stored by 0.2.3 installs
-  const small = model("stt-whisper-small", "Xenova/whisper-small", ["hi", "en"], 249e6);
-  it("never uses Whisper tiny for Hindi, even an old pack that claims it (it romanises Hindi)", () => {
-    expect(sttPackFor([tinyV1], "hi")).toBeUndefined();
-    expect(sttPackFor([tinyV1, small], "hi")?.id).toBe("stt-whisper-small");
-  });
-  it("uses the smaller pack for English when both are installed", () => {
-    expect(sttPackFor([small, tinyV1], "en")?.id).toBe("stt-whisper-tiny");
-    expect(sttPackFor([small], "en")?.id).toBe("stt-whisper-small");
-  });
-});
 
 describe("OCR result filtering and verdict", () => {
   const page = { blocks: [{ paragraphs: [{ lines: [

@@ -9,6 +9,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { signIn } from "./auth";
+import { downloadWorkspace, startEntry } from "./helpers";
 
 // FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
@@ -43,19 +44,15 @@ function recordTraffic(ctx: BrowserContext) {
 async function setup(profile: string) {
   const ctx = await engine.launchPersistentContext(profile, { viewport: { width: 390, height: 844 } });
   await signIn(ctx.request);
-  expect((await ctx.request.post(`${API}/examples/install`)).ok()).toBe(true);
   const page = await ctx.newPage();
   await page.goto(APP);
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);
-  await page.goto(`${APP}#/packs`);
-  await page.locator("li", { hasText: "Equipment inspection" }).first().getByRole("button").click();
-  await expect(page.locator("text=Downloaded Equipment inspection")).toBeVisible({ timeout: 30_000 });
+  await downloadWorkspace(page, APP);
   await ctx.close();
 }
 
 async function completeInspection(page: Page, asset: string): Promise<string> {
-  await page.goto(`${APP}#/workflows`);
-  await page.getByRole("button", { name: "Start" }).click();
+  await startEntry(page, APP);
   await page.locator("#in-asset_id").fill(asset);
   await page.locator("#in-asset_id").blur();
   await page.locator("#in-inspection_date").fill("2026-11-09");
@@ -90,8 +87,7 @@ test("A: browser offline (page + service worker) → stays pending, survives res
   let page = await ctx.newPage();
   await page.goto(APP);
   // An inspection blocked by validation is a DRAFT: it must say so, never "all confirmed".
-  await page.goto(`${APP}#/workflows`);
-  await page.getByRole("button", { name: "Start" }).click();
+  await startEntry(page, APP);
   await page.locator("#in-asset_id").fill("bad tag");
   await page.locator("#in-asset_id").blur();
   await page.getByRole("button", { name: "Complete workflow" }).click();

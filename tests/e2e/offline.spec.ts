@@ -6,6 +6,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { signIn } from "./auth";
+import { downloadWorkspace, startEntry } from "./helpers";
 
 // FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
@@ -32,15 +33,11 @@ test("install online, then work fully offline after a cold restart, then sync", 
   // ---------- 1. online setup
   let ctx = await launch(false);
   await login(ctx);
-  await ctx.request.post(`${API}/examples/install`);
   const baseline = (await (await ctx.request.get(`${API}/records?limit=500`)).json()).records.length;
   let page = await ctx.newPage();
   await page.goto(APP);
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);
-  await page.goto(`${APP}#/packs`);
-  const row = page.locator("li", { hasText: "Equipment inspection" }).first();
-  await row.getByRole("button").click();
-  await expect(page.locator("text=Downloaded Equipment inspection")).toBeVisible({ timeout: 30_000 });
+  await downloadWorkspace(page, APP);
   await page.goto(`${APP}#/`);
   await expect(page.locator("text=Ready to work offline")).toBeVisible({ timeout: 15_000 });
   await ctx.close();  // full browser shutdown
@@ -52,25 +49,8 @@ test("install online, then work fully offline after a cold restart, then sync", 
   await expect(page.locator("text=Ready to work offline")).toBeVisible({ timeout: 20_000 });
   await expect(page.locator("header .pill", { hasText: "offline" })).toBeVisible();
 
-  // offline knowledge Q&A + dictionary
-  await page.goto(`${APP}#/assistant`);
-  // 0.2.5 chat assistant; without the understanding model it runs in basic (word) mode, still grounded and cited.
-  await expect(page.locator("#assistant-mode")).toContainText("Basic search", { timeout: 20_000 });
-  await page.getByPlaceholder(/Ask a question/).fill("Explain common reasons for equipment vibration");
-  await page.getByRole("button", { name: "Ask", exact: true }).click();
-  const a1 = page.locator("#chat .msg.bot").last();
-  await expect(a1).toContainText("Common reasons for equipment vibration");
-  await expect(a1.locator(".citations")).toContainText("Demo maintenance guide");
-  await page.getByPlaceholder(/Ask a question/).fill("What is the capital of Peru?");
-  await page.getByRole("button", { name: "Ask", exact: true }).click();
-  await expect(page.locator("#chat .msg.bot").last()).toHaveAttribute("data-kind", "not_covered");
-  await page.goto(`${APP}#/dictionary`);
-  await page.getByPlaceholder(/Search a word/).fill("bearing");
-  await expect(page.locator("text=hi: बेयरिंग")).toBeVisible();
-
   // complete the workflow offline
-  await page.goto(`${APP}#/workflows`);
-  await page.getByRole("button", { name: "Start" }).click();
+  await startEntry(page, APP);
   await page.locator("#in-asset_id").fill("PMP-0042");
   await page.locator("#in-asset_id").blur();
   await page.locator("#in-inspection_date").fill("2026-11-08");
@@ -82,17 +62,15 @@ test("install online, then work fully offline after a cold restart, then sync", 
   await page.locator("#f-guard_ok label", { hasText: "No" }).click();
   await page.locator("#f-location button", { hasText: "Capture location" }).click();
   await expect(page.locator("#f-location", { hasText: "18.5204" })).toBeVisible({ timeout: 15_000 });
-  await page.getByRole("button", { name: "Explain / help" }).first().click();
   await page.getByRole("button", { name: "Complete workflow" }).click();
 
   // offline Results page
   await expect(page.locator("text=Saved locally. Pending synchronization.")).toBeVisible({ timeout: 15_000 });
   await expect(page.locator("header .pill", { hasText: "1 awaiting confirmation" })).toBeVisible();  // never "0 queued" offline
   await expect(page.locator("header .pill", { hasText: "device offline" })).toBeVisible();
-  await expect(page.locator("text=Safety guard problem")).toBeVisible();
-  await expect(page.locator("text=Vibration above alarm level")).toBeVisible();
-  await expect(page.locator(".tag-local")).toBeVisible();
-  await expect(page.locator("#ask-hermes")).toBeVisible();          // 0.2.6: ask about the visit; no automatic report
+  await expect(page.locator("#result-media, dl.kv").first()).toBeVisible();
+  await expect(page.locator("text=PMP-0042")).toBeVisible();                     // the saved answers, offline
+  await expect(page.locator("text=Safety guard problem")).toHaveCount(0);        // 0.3: forms no longer classify
   const recordUrl = page.url();
   const recordId = recordUrl.split("#/results/")[1];
   await ctx.close();
@@ -102,7 +80,7 @@ test("install online, then work fully offline after a cold restart, then sync", 
   page = await ctx.newPage();
   await page.goto(recordUrl);
   await expect(page.locator("text=Saved locally. Pending synchronization.")).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator("text=Safety guard problem")).toBeVisible();
+  await expect(page.locator("text=PMP-0042")).toBeVisible();
   await ctx.close();
 
   // ---------- 4. back online but the Hermes session is gone → nothing lost, sign-in requested
@@ -121,7 +99,7 @@ test("install online, then work fully offline after a cold restart, then sync", 
   await expect(page.locator("text=Saved to Hermes — confirmed")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("header .pill", { hasText: "all confirmed" })).toBeVisible({ timeout: 15_000 });
   await expect(page.locator("header .pill", { hasText: "Hermes reachable" })).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator("text=Hermes analysis:")).toBeVisible();
+  await expect(page.locator("text=Ask your Hermes agent about this entry")).toBeVisible();
   // re-run sync: still exactly one server record (idempotent)
   await page.goto(`${APP}#/sync`);
   await page.getByRole("button", { name: /Sync now/ }).click();
@@ -131,7 +109,7 @@ test("install online, then work fully offline after a cold restart, then sync", 
   expect(full.sync_status).toBe("complete");
   expect(full.revision).toBe(1);
   expect(full.answers.vibration_level).toBe(9.2);
-  expect(full.local_results.findings.map((f: any) => f.id)).toContain("guard_missing");
+  expect(full.workspace_id).toBe("starter-equipment-inspection");                   // the entry knows its workspace
   expect(full.answers.location.lat).toBeCloseTo(18.5204, 3);
   // Evidence trail: the server receipt time is after the offline completion time.
   expect(full.received_at * 1000).toBeGreaterThan(Date.parse(full.completed_at));

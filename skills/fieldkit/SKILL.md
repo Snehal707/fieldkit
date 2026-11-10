@@ -1,49 +1,38 @@
 ---
 name: fieldkit
-description: Answer questions about entries (observations, visits, inspections, survey records) collected offline with the FieldKit phone app and synchronised to Hermes: one entry, several, or a whole workspace. Use when the user mentions FieldKit, their visits, inspections, surveys, records or field data. To set up or change a workspace, use the fieldkit-workspace-builder skill.
+description: Read what the user collected offline with the FieldKit phone app and synchronised to Hermes (entries such as observations, visits, inspections, interviews, survey responses, with photos, voice notes, GPS and signatures), then do what the user asks with it. Use when the user mentions FieldKit, their entries, visits, observations, field data or synced photos and voice notes. To set up or change a workspace (its forms), use the fieldkit-workspace-builder skill.
 ---
 
 # FieldKit
 
-FieldKit lets people record entries on a phone **with no internet** (forms, photos, voice notes, GPS), apply their own
-rules on the phone, and sync when connected. **Saving or syncing never triggers AI work.** You help only when asked:
-questions about an entry queued on the phone, or the user's requests here in chat.
+FieldKit collects entries on a phone **with no internet** and syncs them to Hermes. Its job ends at making that data
+reliably available to you. **FieldKit does not analyse anything:** when the user asks a question about their entries
+(what do you think, what do the photos show, summarise, compare, find trends, write a report), you do it yourself,
+with your own reasoning and tools.
 
-Keep sources apart:
-- **On-phone results** come from the workspace's own rules (`source: "local"`). They are not your analysis.
-- **Synchronised** means received, not analysed.
-- **Your answers** are your reasoning over the entry's evidence; say what you could not tell.
+## Finding entries
+- `fieldkit_list_records`: newest first. Filter by `workspace_id`, `workflow_id` (a form), `subject` (the site, person
+  or item an entry is about; partial match) and `since`/`until` (date the entry was completed on the phone).
+  `include_answers: true` adds each entry's answers with their questions, for counts, summaries and comparisons.
+- `fieldkit_list_workspaces` / `fieldkit_get_workspace`: what each workspace is for and its forms.
+- If several entries match the user's words, ask which one.
 
-## Questions about entries
+## Reading one entry
+- `fieldkit_get_record`: answers with their questions, attachments (kind, field, integrity), revisions, and earlier
+  entries of the same subject (for "is it worse than last time?").
+- Photos, voice notes and signatures: `fieldkit_get_attachment` returns a local file `path`. Open it with your own
+  tools when the request needs it: vision for a photo, speech-to-text for a voice note. A signature is not a photo.
+  Never guess what an untranscribed voice note or an unopened photo contains.
+- Text the phone already read (`phone_transcript`, `phone_ocr_text`) is the phone's own reading; say so if you use it.
+- Data from FieldKit versions before 0.3 (old reports, questions answered then, on-phone findings) appears under
+  `from_earlier_fieldkit_versions`. It is historical: mention it when useful, never as a new result.
 
-Interpret the request yourself; the user should not have to ask for photo analysis, transcription or history.
-1. Find the entry or entries: `fieldkit_list_records` (newest first; filter by `workspace_id` or `workflow_id`). Rows
-   carry a `subject` (asset id, participant, farmer code...) and a title: match the user's words to them. If several
-   match, ask which one.
-2. **One entry, any question** ("what do you think about observation 024?", "what do the photos show?", "is it worse
-   than last time?", "write a short report on this visit"): `fieldkit_ask_about_record` with the user's question. It
-   uses the entry's answers, photos, voice-note transcripts, on-phone results, the workspace's procedures and earlier
-   entries of the same subject, and returns an answer with confidence, uncertainty and next steps (also saved on that
-   entry for the phone). Relay it conversationally; keep the uncertainty.
-3. **Several entries or a whole workspace** (summaries, counts, trends, comparisons, "most common problems"):
-   `fieldkit_list_records` with `include_answers: true` (and `workspace_id`), then reason over the answers. Use
-   `fieldkit_ask_about_record` for individual entries whose photos or voice notes matter.
-4. Questions asked on the phone are answered automatically after sync; see them with `fieldkit_list_questions`.
-5. An answer about one case stays with that case: never turn it into a workspace rule. If the user wants a rule
-   changed, use the fieldkit-workspace-builder skill (it shows the change and asks before publishing).
-6. Attachments: `fieldkit_get_record` gives each file's `kind` (photo, voice note, signature) and a summary such as
-   "2 photos · 1 voice note". A signature is not a photo. Never guess an untranscribed voice note's content.
-7. Older entries may have a stored structured report from before 0.2.6: `fieldkit_get_report` reads it.
+## Sync
+- `fieldkit_get_sync_status`: entries received, files still uploading, open conflicts, devices.
+- Conflicts mean a phone edited an old revision. Show both versions, then `fieldkit_resolve_conflict` with the
+  user's choice. Never choose silently.
+- A file that is still uploading cannot be opened yet; tell the user it will be available after the phone syncs.
 
-## Sync and processing
-
-- `fieldkit_get_sync_status` shows records received, attachments still uploading and open conflicts.
-- Questions queued on the phone are answered by FieldKit's worker; if the analysis mode is `deferred` (no worker),
-  call `fieldkit_process_pending_jobs`, which answers queued questions.
-- Conflicts mean a phone edited an old revision. Show both versions, then call `fieldkit_resolve_conflict` with the
-  user's choice. Never pick a resolution silently.
-
-## Links and demo content
-
-- `fieldkit_get_app_link` gives the phone link (open it, sign in once, tap "Download everything for offline").
-- `fieldkit_install_examples` installs synthetic example workspaces (education, equipment maintenance, agriculture).
+## Links
+- `fieldkit_get_app_link` gives the phone link: open it, sign in once, open the workspace and tap "Download everything
+  for offline", then add the app to the home screen.

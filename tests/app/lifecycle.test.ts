@@ -8,7 +8,7 @@ import type { Workflow } from "../../app/src/engine";
 import { completeDraft } from "../../app/src/results";
 import { clearAuthRequired, getSyncState, refreshPending, runSync } from "../../app/src/sync";
 
-const wf: Workflow = JSON.parse(readFileSync(resolve(__dirname, "../../examples/maintenance/workflow.json"), "utf-8"));
+const wf: Workflow = JSON.parse(readFileSync(resolve(__dirname, "../fixtures/forms/maintenance.json"), "utf-8"));
 type Handler = (url: string, init: RequestInit) => Response | Promise<Response>;
 let handler: Handler;
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });

@@ -5,30 +5,23 @@ import { registerDevice } from "./device";
 import { isStandalone } from "./storage";
 import { refreshPending, onSyncState, restoreAuthFlag, startAutoSync, registerBackgroundSync, clearAuthRequired, getSyncState } from "./sync";
 import { clear, h, isOnline, toast } from "./util";
+import { freeRetiredModels } from "./intel";
 import {
-  authBanner, homeView, recordsView, remoteView, reportsView, resultsView, runView, syncView, workflowLinkView, workflowsView, whoAmI, type View,
+  authBanner, homeView, recordsView, remoteView, resultsView, runView, syncView, workflowLinkView, whoAmI, type View,
 } from "./views_core";
-import { diagnosticsView, dictionaryView, knowledgeView, ocrView, packsView, settingsView, translateView } from "./views_tools";
-import { assistantView } from "./views_assistant";
+import { diagnosticsView, ocrView, packsView, settingsView, translateView } from "./views_tools";
 import { workspacesView, workspaceView } from "./views_workspace";
 
 const routes: [RegExp, View, string][] = [
   [/^#?\/?$/, homeView, "Home"],
-  [/^#\/workflows$/, workflowsView, "My Workflows"],
   [/^#\/workspaces/, workspacesView, "Workspaces"],
   [/^#\/workspace\/(?<id>[^/?]+)/, workspaceView, "Workspace"],
   [/^#\/workflow\/(?<id>[^/?]+)/, workflowLinkView, "Workflow"],
-  [/^#\/run\/(?<id>[^/?]+)/, runView, "Workflow"],
-  [/^#\/results\/(?<id>[^/?]+)/, resultsView, "Results"],
+  [/^#\/run\/(?<id>[^/?]+)/, runView, "New entry"],
+  [/^#\/results\/(?<id>[^/?]+)/, resultsView, "Entry"],
   [/^#\/records/, recordsView, "Saved Records"],
   [/^#\/remote\/(?<id>[^/?]+)/, remoteView, "From another device"],
   [/^#\/sync/, syncView, "Pending Sync"],
-  [/^#\/reports/, reportsView, "Reports"],
-  [/^#\/assistant/, assistantView, "Workspace Assistant"],
-  [/^#\/guide\/(?<ws>[^/?]+)\/(?<gid>[^/?]+)/, assistantView, "Decision guide"],
-  [/^#\/knowledge\/(?<key>[^?]+)/, knowledgeView, "Knowledge"],
-  [/^#\/knowledge/, knowledgeView, "Knowledge"],
-  [/^#\/dictionary/, dictionaryView, "Dictionary"],
   [/^#\/translate/, translateView, "Translate"],
   [/^#\/ocr/, ocrView, "Scan text"],
   [/^#\/packs/, packsView, "Offline Packs"],
@@ -41,7 +34,7 @@ const title = h("h1", null, "FieldKit");
 const net = h("a", { class: "pill", href: "#/diagnostics", style: "color:inherit;text-decoration:none" });
 const queue = h("span", { class: "pill" });
 const main = h("main");
-const navItems: [string, string, string][] = [["#/", "⌂", "Home"], ["#/workspaces", "☑", "Workspace"], ["#/assistant", "?", "Assistant"], ["#/sync", "⇅", "Sync"], ["#/settings", "⚙", "Settings"]];
+const navItems: [string, string, string][] = [["#/", "⌂", "Home"], ["#/workspaces", "☑", "Workspace"], ["#/records", "≡", "Records"], ["#/sync", "⇅", "Sync"], ["#/settings", "⚙", "Settings"]];
 const nav = h("nav", { class: "bottom" }, ...navItems.map(([href, icon, label]) => h("a", { href }, h("span", null, icon), label)));
 const authSlot = h("div", { style: "max-width:720px;margin:0 auto;padding:0 1rem" });
 // Update notice: one compact, opaque line directly under the header, IN the page flow. Not position:fixed —
@@ -194,5 +187,6 @@ if (RUNNING_FROM_LEGACY_PATH) {
   }
   startAutoSync();
   void registerBackgroundSync();
+  void freeRetiredModels().catch(() => undefined);   // 0.3 removed speech-to-text and question-understanding packs
   if (!isOnline()) toast("Offline mode — everything you need is on this device.");
 })();

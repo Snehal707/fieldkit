@@ -24,7 +24,6 @@ test.beforeAll(async () => {
   ctx = await engine.launchPersistentContext(mkdtempSync(join(tmpdir(), "fk-errors-")), { viewport: { width: 390, height: 844 } });
   await signIn(ctx.request);
   // Make sure the account has at least one record on Hermes (synthetic, from another "device").
-  await ctx.request.post(`${BASE}/api/plugins/fieldkit/examples/install`);
   const synced = await ctx.request.post(`${API}/sync/records`, { data: { idempotency_key: `idk_err_${Date.now()}`, device_id: "dev_errtest0001",
     record: { id: `rec_err${Date.now()}`, workflow_id: "equipment-inspection", workflow_version: 1, base_revision: 0,
       answers: { asset_id: "ERR-0001" }, created_local_at: new Date().toISOString(), completed_at: new Date().toISOString() } } });

@@ -1,9 +1,9 @@
 // On-device translation accuracy (OPUS-MT via Transformers.js in Node, same ONNX files as the PWA).
 // chrF (character 6-gram F-score, beta=2) against tests/eval/translation_set.json, for the general sentences and
 // for the dictionary-term sentences. Mode "fieldkit" runs the app's own pipeline from app/src/translate_prep.ts
-// (dictionary terminology from examples/*/dictionary.json, Hindi punctuation, per-sentence fallback).
+// (terminology from tests/eval/translation_terms.json, Hindi punctuation, per-sentence fallback).
 // Usage: node tests/eval/translation_eval.mjs <cacheDir> '[{"dir":"en-hi","dtype":"q8","mode":"plain|fieldkit"}]'
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { termPairs, protectTerms, restoreTerms, tidyOutput } from "../../app/src/translate_prep.ts";
 const T = await import("@huggingface/transformers");
@@ -11,7 +11,7 @@ T.env.cacheDir = process.argv[2];
 const configs = JSON.parse(process.argv[3]);
 const root = resolve(import.meta.dirname, "../..");
 const data = JSON.parse(readFileSync(join(root, "tests/eval/translation_set.json"), "utf8"));
-const entries = readdirSync(join(root, "examples")).flatMap((d) => JSON.parse(readFileSync(join(root, "examples", d, "dictionary.json"), "utf8")).entries);
+const entries = JSON.parse(readFileSync(join(root, "tests", "eval", "translation_terms.json"), "utf8")).entries;
 const REV = { "en-hi": "7aad72006a1588a9c3485ed6203aed99eebbc872", "hi-en": "99853100ed9d932987a6816e8cf7b1b6742a6116" };
 function ngrams(s, n) { const m = new Map(); const t = [...s.replace(/\s+/g, " ").trim()]; for (let i = 0; i + n <= t.length; i++) { const g = t.slice(i, i + n).join(""); m.set(g, (m.get(g) ?? 0) + 1); } return m; }
 export function chrf(hyp, ref, N = 6, beta = 2) {

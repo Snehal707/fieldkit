@@ -30,8 +30,8 @@ test("installed models flip to Reinstall immediately, persist, and work offline"
   const profile = process.env.FIELDKIT_E2E_PROFILE ?? mkdtempSync(join(tmpdir(), "fieldkit-ui-"));
   let { ctx, page } = await signedIn(profile);
   await page.goto(`${APP}#/packs`);
-  const titles = ["Hindi → English translation", "Speech to text", "OCR — Hindi (Devanagari)"];
-  const ids = { "Hindi → English translation": "translate-hi-en", "Speech to text": "stt-whisper-tiny", "OCR — Hindi (Devanagari)": "ocr-hin" } as Record<string, string>;
+  const titles = ["Hindi → English translation", "OCR — Hindi (Devanagari)"];
+  const ids = { "Hindi → English translation": "translate-hi-en", "OCR — Hindi (Devanagari)": "ocr-hin" } as Record<string, string>;
   for (const t of titles) {
     const btn = page.locator(`button[data-model="${ids[t]}"]`);
     await expect(btn).toBeVisible({ timeout: 20_000 });
@@ -67,10 +67,11 @@ test("update notice after a real service-worker update is compact, opaque and ne
   const original = readFileSync(swPath, "utf-8");
   const { ctx, page } = await signedIn(mkdtempSync(join(tmpdir(), "fieldkit-upd-")), { viewport: { width: 320, height: 568 } });  // iPhone SE size
   try {
-    // Any always-present text input will do (the Assistant hides its box when no knowledge pack is installed).
-    await page.goto(`${APP}#/dictionary`);
-    const input = page.getByPlaceholder(/Search a word/);
+    // Any always-present text input will do.
+    await page.goto(`${APP}#/settings`);
+    const input = page.getByLabel("Device name");
     await input.focus();                                                // keyboard-open situation
+    await page.evaluate(() => window.scrollTo(0, 0));                    // the bar sits under the header, at the top
     appendFileSync(swPath, `\n// e2e update ${Date.now()}\n`);          // a genuinely new service worker
     await page.evaluate(async () => { const r = await navigator.serviceWorker.getRegistration(); await r?.update(); });
     const bar = page.locator(".update-bar");

@@ -1,0 +1,251 @@
+{
+  "id": "crop-health-survey",
+  "version": 2,
+  "status": "published",
+  "title": {
+    "en": "Crop health survey",
+    "hi": "फसल स्वास्थ्य सर्वेक्षण"
+  },
+  "description": {
+    "en": "Record plot conditions, leaf symptoms and photographs for follow-up.",
+    "hi": "आगे की कार्रवाई के लिए खेत की स्थिति, पत्ती के लक्षण और तस्वीरें दर्ज करें।"
+  },
+  "domain": "agriculture",
+  "languages": [
+    "en",
+    "hi"
+  ],
+  "default_language": "en",
+  "fields": [
+    {
+      "id": "plot_id",
+      "type": "text",
+      "label": {
+        "en": "Plot ID",
+        "hi": "भूखंड आईडी"
+      },
+      "required": true
+    },
+    {
+      "id": "crop",
+      "type": "single_choice",
+      "label": {
+        "en": "Crop",
+        "hi": "फसल"
+      },
+      "required": true,
+      "options": [
+        {
+          "value": "rice",
+          "label": {
+            "en": "Rice",
+            "hi": "धान"
+          }
+        },
+        {
+          "value": "wheat",
+          "label": {
+            "en": "Wheat",
+            "hi": "गेहूँ"
+          }
+        },
+        {
+          "value": "tomato",
+          "label": {
+            "en": "Tomato",
+            "hi": "टमाटर"
+          }
+        },
+        {
+          "value": "other",
+          "label": {
+            "en": "Other",
+            "hi": "अन्य"
+          }
+        }
+      ]
+    },
+    {
+      "id": "growth_stage",
+      "type": "single_choice",
+      "label": {
+        "en": "Growth stage",
+        "hi": "वृद्धि अवस्था"
+      },
+      "options": [
+        {
+          "value": "seedling",
+          "label": {
+            "en": "Seedling",
+            "hi": "अंकुर"
+          }
+        },
+        {
+          "value": "vegetative",
+          "label": {
+            "en": "Vegetative",
+            "hi": "वानस्पतिक"
+          }
+        },
+        {
+          "value": "flowering",
+          "label": {
+            "en": "Flowering",
+            "hi": "फूल आना"
+          }
+        },
+        {
+          "value": "maturity",
+          "label": {
+            "en": "Maturity",
+            "hi": "परिपक्वता"
+          }
+        }
+      ]
+    },
+    {
+      "id": "leaf_color",
+      "type": "single_choice",
+      "label": {
+        "en": "Leaf colour",
+        "hi": "पत्ती का रंग"
+      },
+      "required": true,
+      "options": [
+        {
+          "value": "green",
+          "label": {
+            "en": "Normal green",
+            "hi": "सामान्य हरा"
+          }
+        },
+        {
+          "value": "yellow",
+          "label": {
+            "en": "Yellowing",
+            "hi": "पीला पड़ना"
+          }
+        },
+        {
+          "value": "brown_spots",
+          "label": {
+            "en": "Brown spots",
+            "hi": "भूरे धब्बे"
+          }
+        },
+        {
+          "value": "purple",
+          "label": {
+            "en": "Purplish",
+            "hi": "बैंगनी"
+          }
+        }
+      ],
+      "explain_topic": "leaf discoloration",
+      "knowledge_query": "causes of leaf discoloration"
+    },
+    {
+      "id": "yellow_pattern",
+      "type": "single_choice",
+      "label": {
+        "en": "Where is the yellowing?",
+        "hi": "पीलापन कहाँ है?"
+      },
+      "visible_if": {
+        "op": "eq",
+        "field": "leaf_color",
+        "value": "yellow"
+      },
+      "required_if": {
+        "op": "eq",
+        "field": "leaf_color",
+        "value": "yellow"
+      },
+      "options": [
+        {
+          "value": "old_leaves",
+          "label": {
+            "en": "Older (lower) leaves first",
+            "hi": "पहले पुरानी (निचली) पत्तियाँ"
+          }
+        },
+        {
+          "value": "young_leaves",
+          "label": {
+            "en": "Young (upper) leaves first",
+            "hi": "पहले नई (ऊपरी) पत्तियाँ"
+          }
+        },
+        {
+          "value": "whole_plant",
+          "label": {
+            "en": "Whole plant",
+            "hi": "पूरा पौधा"
+          }
+        }
+      ]
+    },
+    {
+      "id": "affected_pct",
+      "type": "number",
+      "label": {
+        "en": "Plants affected",
+        "hi": "प्रभावित पौधे"
+      },
+      "unit": "%",
+      "validation": {
+        "min": 0,
+        "max": 100
+      }
+    },
+    {
+      "id": "standing_water",
+      "type": "checkbox",
+      "label": {
+        "en": "Standing water in the plot",
+        "hi": "खेत में रुका हुआ पानी"
+      }
+    },
+    {
+      "id": "last_irrigation",
+      "type": "date",
+      "label": {
+        "en": "Last irrigation",
+        "hi": "अंतिम सिंचाई"
+      }
+    },
+    {
+      "id": "observations",
+      "type": "multiline",
+      "label": {
+        "en": "Observations",
+        "hi": "अवलोकन"
+      }
+    },
+    {
+      "id": "leaf_photos",
+      "type": "photo",
+      "label": {
+        "en": "Leaf photographs",
+        "hi": "पत्ती की तस्वीरें"
+      },
+      "validation": {
+        "max_items": 4
+      },
+      "required_if": {
+        "op": "neq",
+        "field": "leaf_color",
+        "value": "green"
+      }
+    },
+    {
+      "id": "plot_location",
+      "type": "gps",
+      "label": {
+        "en": "Plot location",
+        "hi": "भूखंड स्थान"
+      },
+      "required": true
+    }
+  ]
+}

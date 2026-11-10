@@ -24,7 +24,6 @@ from typing import Any, Iterator, Optional
 PLUGIN_NAME = "fieldkit"
 ALL = object()  # sentinel: instance-owner scope (Hermes tools)
 
-ANALYSIS_STATES = ("not_requested", "pending", "processing", "completed", "failed", "requires_review")
 SYNC_STATES = ("received", "complete")  # received = record stored, attachments outstanding
 
 MIGRATIONS: list[str] = [
@@ -135,9 +134,6 @@ MIGRATIONS: list[str] = [
 ]
 
 
-# Saving or syncing a record never triggers AI work (0.2.6): Hermes analyses only what a user asks, a queued
-# question about a visit, or a request in the Hermes chat. Test-only hook for the legacy job-queue tests.
-_AUTO_REVIEW_FOR_TESTS = False
 
 
 def preview(text: str, n: int) -> str:
@@ -445,28 +441,6 @@ class Store:
             self.audit(c, owner, "pack.delete", pid)
 
     # ------------------------------------------------------------------ workspaces
-    def save_workspace_brief(self, owner: Any, brief: dict, brief_id: Optional[str] = None, confirmed: bool = False) -> dict:
-        owner_id = "owner" if owner is ALL else owner
-        now = _now()
-        bid = brief_id or _id("brf")
-        with self.tx() as c:
-            row = c.execute("SELECT owner_user_id FROM workspace_briefs WHERE id=?", (bid,)).fetchone()
-            if row and owner is not ALL and row["owner_user_id"] != owner:
-                raise NotFound(bid)
-            c.execute("INSERT INTO workspace_briefs(id, owner_user_id, brief, confirmed, created_at, updated_at) VALUES (?,?,?,?,?,?) "
-                      "ON CONFLICT(id) DO UPDATE SET brief=excluded.brief, confirmed=excluded.confirmed, updated_at=excluded.updated_at",
-                      (bid, row["owner_user_id"] if row else owner_id, _j(brief), int(confirmed), now, now))
-            self.audit(c, owner, "workspace.brief", bid, {"confirmed": confirmed})
-        return {"brief_id": bid, "confirmed": confirmed, "brief": brief}
-
-    def get_workspace_brief(self, owner: Any, bid: str) -> dict:
-        clause, args = self._owner_clause(owner)
-        rows = self._q(f"SELECT * FROM workspace_briefs WHERE id=? AND {clause}", (bid, *args))
-        if not rows:
-            raise NotFound(bid)
-        r = dict(rows[0])
-        return {"brief_id": r["id"], "confirmed": bool(r["confirmed"]), "brief": _uj(r["brief"])}
-
     def save_workspace_draft(self, owner: Any, bundle: dict, validation: dict, brief_id: Optional[str] = None,
                              changelog: Optional[list] = None, starter: bool = False) -> dict:
         wid = bundle["id"]
@@ -517,62 +491,12 @@ class Store:
             c.execute("UPDATE workspaces SET published_version=?, updated_at=? WHERE id=?", (version, now, wid))
             self.audit(c, ALL, "workspace.publish", wid, {"version": version, "pack": manifest_pack})
 
-    # ------------------------------------------------------------------ workspace builds (parts saved as Hermes adds them)
-    def save_workspace_build(self, owner: Any, wid: str, brief_id: str, header: dict, parts: dict) -> None:
-        owner_id = "owner" if owner is ALL else owner
-        now = _now()
-        with self.tx() as c:
-            c.execute("INSERT INTO workspace_builds(workspace_id, owner_user_id, brief_id, header, parts, created_at, updated_at) "
-                      "VALUES (?,?,?,?,?,?,?) ON CONFLICT(workspace_id) DO UPDATE SET brief_id=excluded.brief_id, "
-                      "header=excluded.header, parts=excluded.parts, updated_at=excluded.updated_at",
-                      (wid, owner_id, brief_id, _j(header), _j(parts), now, now))
-
-    def get_workspace_build(self, wid: str) -> Optional[dict]:
-        rows = self._q("SELECT * FROM workspace_builds WHERE workspace_id=?", (wid,))
-        if not rows:
-            return None
-        r = dict(rows[0])
-        return {"workspace_id": wid, "brief_id": r["brief_id"], "header": _uj(r["header"]), "parts": _uj(r["parts"]),
-                "created_at": r["created_at"], "updated_at": r["updated_at"]}
-
-    def list_workspace_builds(self) -> list[dict]:
-        return [self.get_workspace_build(r["workspace_id"]) for r in
-                self._q("SELECT workspace_id FROM workspace_builds ORDER BY updated_at DESC")]
-
-    def delete_workspace_build(self, wid: str) -> None:
-        with self.tx() as c:
-            c.execute("DELETE FROM workspace_builds WHERE workspace_id=?", (wid,))
-
     # ------------------------------------------------------------------ questions about one observation (0.2.6)
     def _question_dict(self, r: sqlite3.Row) -> dict:
         d = dict(r)
         d["attachment_ids"] = _uj(d.get("attachment_ids")) or []
         d["answer"] = _uj(d.get("answer")) if d.get("answer") else None
         return d
-
-    def save_question(self, owner: str, record_id: str, q: dict) -> dict:
-        """Queue a question about one of the owner's records (idempotent on the phone's id)."""
-        with self.tx() as c:
-            rec = c.execute("SELECT owner_user_id, workspace_id FROM records WHERE id=?", (record_id,)).fetchone()
-            if not rec or (owner is not ALL and rec["owner_user_id"] != owner):
-                raise NotFound(record_id)
-            row = c.execute("SELECT * FROM questions WHERE id=?", (q["id"],)).fetchone()
-            if row:
-                if row["record_id"] != record_id or (owner is not ALL and row["owner_user_id"] != owner):
-                    raise Conflict({"error": "question id already used"})
-                if q.get("retry") and row["status"] == "failed":     # "Ask again" after a failure: a fresh set of attempts
-                    c.execute("UPDATE questions SET status='queued', attempts=0, error=NULL, next_run_at=? WHERE id=?",
-                              (_now(), q["id"]))
-                    self.audit(c, owner, "question.retried", record_id, {"question": q["id"], "previous_error": row["error"]})
-                    row = c.execute("SELECT * FROM questions WHERE id=?", (q["id"],)).fetchone()
-                return self._question_dict(row)
-            now = _now()
-            c.execute("INSERT INTO questions(id, owner_user_id, record_id, workspace_id, question, lang, attachment_ids, status, "
-                      "attempts, next_run_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                      (q["id"], rec["owner_user_id"], record_id, rec["workspace_id"], q["question"], q.get("lang") or "en",
-                       _j(q.get("attachment_ids") or []), "queued", 0, now, now))
-            self.audit(c, owner, "question.queued", record_id, {"question": q["id"]})
-            return self._question_dict(c.execute("SELECT * FROM questions WHERE id=?", (q["id"],)).fetchone())
 
     def get_question(self, owner: Any, qid: str) -> dict:
         clause, args = self._owner_clause(owner)
@@ -593,68 +517,10 @@ class Store:
         sql += " ORDER BY created_at DESC LIMIT ?"
         return [self._question_dict(r) for r in self._q(sql, (*args, max(1, min(limit, 500))))]
 
-    #: A question waits for its visit's photos and voice notes to finish uploading (the phone sends questions once the
-    #: record is received, files may still be on their way); after this long it is answered with what arrived.
-    QUESTION_FILE_WAIT_S = 30 * 60
-
-    def claim_questions(self, limit: int = 2) -> list[dict]:
-        now = _now()
-        with self.tx() as c:
-            rows = c.execute(
-                "SELECT q.* FROM questions q WHERE q.status='queued' AND COALESCE(q.next_run_at,0)<=? AND ("
-                " q.created_at < ? OR NOT EXISTS (SELECT 1 FROM attachments a WHERE a.record_id=q.record_id AND a.status!='stored'))"
-                " ORDER BY q.created_at LIMIT ?", (now, now - self.QUESTION_FILE_WAIT_S, limit)).fetchall()
-            out = []
-            for r in rows:
-                c.execute("UPDATE questions SET status='answering', attempts=attempts+1 WHERE id=? AND status='queued'", (r["id"],))
-                out.append(dict(self._question_dict(r), attempts=r["attempts"] + 1))
-            return out
-
-    def answer_question(self, qid: str, answer: dict) -> dict:
-        with self.tx() as c:
-            c.execute("UPDATE questions SET status='answered', answer=?, error=NULL, answered_at=? WHERE id=?", (_j(answer), _now(), qid))
-            self.audit(c, ALL, "question.answered", qid, {"model": answer.get("model")})
-        return answer
-
-    def defer_question(self, q: dict, note: str, delay_s: float) -> None:
-        with self.tx() as c:
-            c.execute("UPDATE questions SET status='queued', attempts=MAX(0, attempts-1), error=?, next_run_at=? WHERE id=?",
-                      (note[:500], _now() + delay_s, q["id"]))
-
-    def fail_question(self, q: dict, error: str, max_attempts: int = 3) -> str:
-        final = q.get("attempts", 1) >= max_attempts
-        with self.tx() as c:
-            c.execute("UPDATE questions SET status=?, error=?, next_run_at=? WHERE id=?",
-                      ("failed" if final else "queued", error[:500], _now() + min(3600, 30 * 2 ** (q.get("attempts", 1) - 1)), q["id"]))
-        return "failed" if final else "queued"
-
-    def photo_description(self, attachment_id: str) -> Optional[str]:
-        rows = self._q("SELECT description FROM photo_descriptions WHERE attachment_id=?", (attachment_id,))
-        return rows[0]["description"] if rows else None
-
-    def save_photo_description(self, attachment_id: str, description: str) -> None:
-        with self.tx() as c:
-            c.execute("INSERT OR REPLACE INTO photo_descriptions(attachment_id, description, created_at) VALUES (?,?,?)",
-                      (attachment_id, description[:3000], _now()))
-
-    def recover_stale_questions(self) -> None:
-        """At worker start nothing is being answered: questions left 'answering' by a stopped process go back to the queue."""
-        with self.tx() as c:
-            c.execute("UPDATE questions SET status='queued' WHERE status='answering'")
-
-    def get_source_page(self, url: str) -> Optional[dict]:
-        rows = self._q("SELECT * FROM source_pages WHERE url=?", (url,))
-        return dict(rows[0]) if rows else None
-
-    def save_source_page(self, url: str, status: str, content: Optional[str], error: Optional[str]) -> None:
-        with self.tx() as c:
-            c.execute("INSERT INTO source_pages(url, status, content, error, fetched_at) VALUES (?,?,?,?,?) ON CONFLICT(url) "
-                      "DO UPDATE SET status=excluded.status, content=excluded.content, error=excluded.error, "
-                      "fetched_at=excluded.fetched_at", (url, status, content, error, _now()))
 
     # ------------------------------------------------------------------ sync
     def sync_record(self, owner: str, idempotency_key: str, device_id: str, rec: dict,
-                    auto_analyze: bool, attachments_dir: Optional[Path] = None) -> dict:
+                    attachments_dir: Optional[Path] = None) -> dict:
         """Durably receive one record revision. Idempotent per (owner, idempotency_key).
 
         Optimistic concurrency: ``base_revision`` must equal the server revision (0 for new).
@@ -676,8 +542,7 @@ class Store:
         ws_id, ws_note = self.resolve_record_workspace(rec.get("workflow_id"), rec.get("workspace_id"))
         rec = dict(rec, workspace_id=ws_id)
         with self.tx() as c:
-            resp = self._sync_tx(c, owner, idempotency_key, device_id, rec, rid, answers, base, local_results, chash, now,
-                                 auto_analyze)
+            resp = self._sync_tx(c, owner, idempotency_key, device_id, rec, rid, answers, base, local_results, chash, now)
             if ws_note and "__conflict__" not in resp:
                 resp = dict(resp, workspace_note=ws_note)
             if "__conflict__" in resp:
@@ -686,8 +551,7 @@ class Store:
             raise Conflict(conflict)
         return resp
 
-    def _sync_tx(self, c, owner, idempotency_key, device_id, rec, rid, answers, base, local_results, chash, now,
-                 auto_analyze) -> dict:
+    def _sync_tx(self, c, owner, idempotency_key, device_id, rec, rid, answers, base, local_results, chash, now) -> dict:
         prior = c.execute("SELECT response FROM sync_ops WHERE owner_user_id=? AND idempotency_key=?",
                           (owner, idempotency_key)).fetchone()
         if prior:
@@ -735,7 +599,7 @@ class Store:
                   "VALUES (?,?,?,?,?,?)", (rid, revision, _j(answers), _j(local_results), device_id, now))
         for a in att_meta:
             self._declare_attachment(c, owner, rid, a)
-        self._maybe_complete(c, rid, auto_analyze)
+        self._mark_complete_if_files_stored(c, rid)
         self.audit(c, owner, "sync.record", rid, {"revision": revision, "device": device_id})
         resp = self._sync_response(c, rid)
         self._remember(c, owner, idempotency_key, rid, revision, resp)
@@ -759,32 +623,17 @@ class Store:
                   "VALUES (?,?,?,?,?,?,?,?,?)",
                   (aid, rid, owner, a.get("field_id"), a.get("mime"), int(a.get("size") or 0), sha.lower(), "pending", _now()))
 
-    def _maybe_complete(self, c, rid: str, auto_analyze: bool) -> None:
+    def _mark_complete_if_files_stored(self, c, rid: str) -> None:
+        """A record is 'complete' once every declared file is stored. Syncing never starts any processing."""
         pending = c.execute("SELECT COUNT(*) FROM attachments WHERE record_id=? AND status!='stored'", (rid,)).fetchone()[0]
-        if pending:
-            return
-        row = c.execute("SELECT revision, sync_status, workflow_id FROM records WHERE id=?", (rid,)).fetchone()
-        c.execute("UPDATE records SET sync_status='complete', updated_at=? WHERE id=?", (_now(), rid))
-        if auto_analyze and _AUTO_REVIEW_FOR_TESTS:
-            self._enqueue(c, rid, row["revision"])
-
-    def _enqueue(self, c, rid: str, revision: int) -> str:
-        existing = c.execute("SELECT id FROM jobs WHERE kind='analyze' AND record_id=? AND revision=?", (rid, revision)).fetchone()
-        if existing:
-            return existing["id"]
-        jid = _id("job")
-        now = _now()
-        c.execute("INSERT INTO jobs(id, kind, record_id, revision, status, next_run_at, created_at, updated_at) "
-                  "VALUES (?,?,?,?,?,?,?,?)", (jid, "analyze", rid, revision, "pending", now, now, now))
-        c.execute("UPDATE records SET analysis_status='pending', analysis_job_id=? WHERE id=?", (jid, rid))
-        return jid
+        if not pending:
+            c.execute("UPDATE records SET sync_status='complete', updated_at=? WHERE id=?", (_now(), rid))
 
     def _sync_response(self, c, rid: str) -> dict:
         row = c.execute("SELECT * FROM records WHERE id=?", (rid,)).fetchone()
         need = [r["id"] for r in c.execute("SELECT id FROM attachments WHERE record_id=? AND status!='stored'", (rid,))]
         return {"record_id": rid, "revision": row["revision"], "received_at": row["received_at"],
-                "sync_status": row["sync_status"], "analysis_status": row["analysis_status"],
-                "analysis_job_id": row["analysis_job_id"], "attachments_needed": need, "workspace_id": row["workspace_id"]}
+                "sync_status": row["sync_status"], "attachments_needed": need, "workspace_id": row["workspace_id"]}
 
     # ------------------------------------------------------------------ record ↔ workspace (0.2.6 fix)
     def workspaces_with_workflow(self, workflow_id: Any) -> list[str]:
@@ -845,7 +694,7 @@ class Store:
                     out["repaired"] += 1
         return out
 
-    def store_attachment(self, owner: str, aid: str, body: bytes, mime: str, base_dir: Path, auto_analyze: bool) -> dict:
+    def store_attachment(self, owner: str, aid: str, body: bytes, mime: str, base_dir: Path) -> dict:
         sha = hashlib.sha256(body).hexdigest()
         with self.tx() as c:
             row = c.execute("SELECT * FROM attachments WHERE id=? AND owner_user_id=?", (aid, owner)).fetchone()
@@ -865,14 +714,9 @@ class Store:
             os.replace(tmp, path)
             c.execute("UPDATE attachments SET status='stored', path=?, mime=?, size=?, stored_at=? WHERE id=?",
                       (str(path), mime, len(body), _now(), aid))
-            self._maybe_complete(c, row["record_id"], auto_analyze)
+            self._mark_complete_if_files_stored(c, row["record_id"])
             self.audit(c, owner, "sync.attachment", aid, {"record": row["record_id"], "size": len(body)})
             return {"attachment_id": aid, "status": "stored", **self._sync_response(c, row["record_id"])}
-
-    def set_attachment_transcript(self, aid: str, transcript: Optional[str], source: Optional[str], error: Optional[str]) -> None:
-        with self.tx() as c:
-            c.execute("UPDATE attachments SET transcript=?, transcript_source=?, transcript_error=?, transcribed_at=? WHERE id=?",
-                      (transcript, source, error, _now(), aid))
 
     def get_attachment(self, owner: Any, aid: str) -> dict:
         clause, args = self._owner_clause(owner)
@@ -896,16 +740,20 @@ class Store:
             d.pop("local_results", None)
         return d
 
-    def list_records(self, owner: Any, workflow_id: Optional[str] = None, limit: int = 50,
-                     analysis_status: Optional[str] = None, full: bool = False) -> list[dict]:
+    def list_records(self, owner: Any, workflow_id: Optional[str] = None, limit: int = 50, full: bool = False,
+                     since: Optional[str] = None, until: Optional[str] = None) -> list[dict]:
+        """Newest first. ``since``/``until`` filter on when the entry was completed on the phone (ISO date/time)."""
         clause, args = self._owner_clause(owner)
         sql = f"SELECT * FROM records WHERE {clause}"
         if workflow_id:
             sql += " AND workflow_id=?"
             args = (*args, workflow_id)
-        if analysis_status:
-            sql += " AND analysis_status=?"
-            args = (*args, analysis_status)
+        if since:
+            sql += " AND COALESCE(completed_at, created_local_at, '') >= ?"
+            args = (*args, since)
+        if until:
+            sql += " AND COALESCE(completed_at, created_local_at, '') <= ?"
+            args = (*args, until)
         sql += " ORDER BY received_at DESC LIMIT ?"
         return [self._record_dict(r, full) for r in self._q(sql, (*args, max(1, min(limit, 500))))]
 
@@ -915,163 +763,6 @@ class Store:
         if not rows:
             raise NotFound(rid)
         return self._record_dict(rows[0])
-
-    def request_analysis(self, owner: Any, rid: str) -> dict:
-        with self.tx() as c:
-            clause, args = self._owner_clause(owner)
-            row = c.execute(f"SELECT * FROM records WHERE id=? AND {clause}", (rid, *args)).fetchone()
-            if not row:
-                raise NotFound(rid)
-            if row["sync_status"] != "complete":
-                raise Invalid("record attachments are still uploading")
-            job = c.execute("SELECT * FROM jobs WHERE kind='analyze' AND record_id=? AND revision=?",
-                            (rid, row["revision"])).fetchone()
-            if job and job["status"] in ("failed", "completed"):
-                # explicit re-request: reset the same durable job (keeps uniqueness)
-                c.execute("UPDATE jobs SET status='pending', attempts=0, next_run_at=?, last_error=NULL, updated_at=? WHERE id=?",
-                          (_now(), _now(), job["id"]))
-                c.execute("UPDATE records SET analysis_status='pending', analysis_job_id=? WHERE id=?", (job["id"], rid))
-                jid = job["id"]
-            else:
-                jid = self._enqueue(c, rid, row["revision"])
-            self.audit(c, owner, "analysis.request", rid, {"job": jid})
-            return {"record_id": rid, "job_id": jid, "analysis_status": "pending"}
-
-    # ------------------------------------------------------------------ jobs
-    def claim_jobs(self, limit: int = 2) -> list[dict]:
-        now = _now()
-        with self.tx() as c:
-            rows = c.execute("SELECT * FROM jobs WHERE status='pending' AND next_run_at<=? ORDER BY next_run_at LIMIT ?",
-                             (now, limit)).fetchall()
-            out = []
-            for r in rows:
-                c.execute("UPDATE jobs SET status='processing', attempts=attempts+1, updated_at=? WHERE id=? AND status='pending'",
-                          (now, r["id"]))
-                c.execute("UPDATE records SET analysis_status='processing' WHERE id=? AND analysis_job_id=?", (r["record_id"], r["id"]))
-                out.append(dict(r, attempts=r["attempts"] + 1))
-            return out
-
-    def recover_stale_jobs(self, older_than_s: float = 900) -> int:
-        """Jobs left 'processing' by a crashed process go back to pending."""
-        with self.tx() as c:
-            cutoff = _now() - older_than_s
-            n = c.execute("UPDATE jobs SET status='pending', updated_at=? WHERE status='processing' AND updated_at<?",
-                          (_now(), cutoff)).rowcount
-            return n
-
-    def defer_job(self, job: dict, note: str, delay_s: float) -> None:
-        """Provider asked us to wait (rate limit): back to pending after delay_s, the attempt is not counted."""
-        with self.tx() as c:
-            c.execute("UPDATE jobs SET status='pending', attempts=MAX(0, attempts-1), last_error=?, next_run_at=?, updated_at=? "
-                      "WHERE id=?", (note[:2000], _now() + delay_s, _now(), job["id"]))
-            c.execute("UPDATE records SET analysis_status='pending' WHERE id=? AND analysis_job_id=?", (job["record_id"], job["id"]))
-            self.audit(c, ALL, "analysis.deferred", job["record_id"], {"job": job["id"], "delay_s": int(delay_s)})
-
-    def fail_job(self, job: dict, error: str) -> str:
-        with self.tx() as c:
-            final = job["attempts"] >= job["max_attempts"]
-            status = "failed" if final else "pending"
-            delay = min(3600, 30 * (2 ** (job["attempts"] - 1)))
-            c.execute("UPDATE jobs SET status=?, last_error=?, next_run_at=?, updated_at=? WHERE id=?",
-                      (status, error[:2000], _now() + delay, _now(), job["id"]))
-            c.execute("UPDATE records SET analysis_status=? WHERE id=? AND analysis_job_id=?",
-                      ("failed" if final else "pending", job["record_id"], job["id"]))
-            self.audit(c, ALL, "analysis.error", job["record_id"], {"job": job["id"], "final": final, "error": error[:300]})
-            return status
-
-    def complete_job(self, job: dict, report: dict, requires_review: bool, provider: str, model: str,
-                     generated_by: str) -> dict:
-        with self.tx() as c:
-            rec = c.execute("SELECT owner_user_id, revision FROM records WHERE id=?", (job["record_id"],)).fetchone()
-            res = self._insert_report(c, job["record_id"], rec["owner_user_id"], job["revision"], report, provider, model,
-                                      generated_by, requires_review)
-            c.execute("UPDATE jobs SET status='completed', updated_at=?, last_error=NULL WHERE id=?", (_now(), job["id"]))
-            return res
-
-    def _insert_report(self, c, rid, owner, revision, report, provider, model, generated_by, requires_review) -> dict:
-        v = (c.execute("SELECT MAX(version) FROM reports WHERE record_id=?", (rid,)).fetchone()[0] or 0) + 1
-        rep_id = _id("rep")
-        report = dict(report, report_id=rep_id, version=v, record_id=rid, record_revision=revision,
-                      generated_at=_now(), generated_by=generated_by, provider=provider, model=model)
-        c.execute("INSERT INTO reports(id, record_id, owner_user_id, version, record_revision, content, provider, model, "
-                  "generated_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                  (rep_id, rid, owner, v, revision, _j(report), provider, model, generated_by, _now()))
-        c.execute("UPDATE records SET report_id=?, report_version=?, analysis_status=? WHERE id=?",
-                  (rep_id, v, "requires_review" if requires_review else "completed", rid))
-        for f in report.get("followups", []) or []:
-            c.execute("INSERT INTO followups(id, record_id, report_id, owner_user_id, title, detail, due_date, status, source, "
-                      "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                      (_id("fu"), rid, rep_id, owner, str(f.get("title", ""))[:300], str(f.get("detail", ""))[:2000],
-                       f.get("due_date"), "open", "report", _now(), _now()))
-        self.audit(c, ALL, "report.create", rid, {"report": rep_id, "version": v})
-        return report
-
-    def save_report_direct(self, rid: str, report: dict, requires_review: bool, generated_by: str) -> dict:
-        """Persist a report written by the Hermes agent itself (fieldkit_save_report)."""
-        with self.tx() as c:
-            rec = c.execute("SELECT owner_user_id, revision, analysis_job_id FROM records WHERE id=?", (rid,)).fetchone()
-            if not rec:
-                raise NotFound(rid)
-            res = self._insert_report(c, rid, rec["owner_user_id"], rec["revision"], report, "hermes-agent", "", generated_by,
-                                      requires_review)
-            if rec["analysis_job_id"]:
-                c.execute("UPDATE jobs SET status='completed', updated_at=? WHERE id=? AND status!='completed'",
-                          (_now(), rec["analysis_job_id"]))
-            return res
-
-    def report_for_revision(self, rid: str, revision: int) -> Optional[str]:
-        rows = self._q("SELECT id FROM reports WHERE record_id=? AND record_revision=? ORDER BY version DESC LIMIT 1",
-                       (rid, revision))
-        return rows[0]["id"] if rows else None
-
-    def finish_job_without_report(self, job: dict) -> None:
-        """Mark a claimed job completed because its revision already has a report (no duplicate report)."""
-        with self.tx() as c:
-            c.execute("UPDATE jobs SET status='completed', last_error=NULL, updated_at=? WHERE id=?", (_now(), job["id"]))
-            rec = c.execute("SELECT analysis_status, report_id FROM records WHERE id=?", (job["record_id"],)).fetchone()
-            if rec and rec["analysis_status"] in ("pending", "processing") and rec["report_id"]:
-                content = c.execute("SELECT content FROM reports WHERE id=?", (rec["report_id"],)).fetchone()
-                review = bool(_uj(content["content"]).get("requires_review")) if content else False
-                c.execute("UPDATE records SET analysis_status=? WHERE id=?",
-                          ("requires_review" if review else "completed", job["record_id"]))
-
-    def requeue_failed_jobs(self, limit: int = 50) -> int:
-        """Give permanently failed analysis jobs one fresh set of attempts (e.g. after a plugin fix).
-        Jobs whose revision already has a report are completed instead, so nothing is duplicated."""
-        with self.tx() as c:
-            rows = c.execute("SELECT * FROM jobs WHERE kind='analyze' AND status='failed' ORDER BY updated_at LIMIT ?",
-                             (limit,)).fetchall()
-            n = 0
-            for j in rows:
-                has = c.execute("SELECT 1 FROM reports WHERE record_id=? AND record_revision=?",
-                                (j["record_id"], j["revision"])).fetchone()
-                if has:
-                    c.execute("UPDATE jobs SET status='completed', updated_at=? WHERE id=?", (_now(), j["id"]))
-                    continue
-                c.execute("UPDATE jobs SET status='pending', attempts=0, next_run_at=?, last_error=NULL, updated_at=? "
-                          "WHERE id=?", (_now(), _now(), j["id"]))
-                c.execute("UPDATE records SET analysis_status='pending' WHERE id=? AND analysis_job_id=?",
-                          (j["record_id"], j["id"]))
-                n += 1
-            if n:
-                self.audit(c, ALL, "analysis.requeue_failed", "", {"count": n})
-            return n
-
-    def job_counts(self) -> dict:
-        return {r["status"]: r["n"] for r in self._q("SELECT status, COUNT(*) n FROM jobs GROUP BY status")}
-
-    def list_jobs(self, limit: int = 50, owner: Any = ALL) -> list[dict]:
-        """Analysis jobs, newest first. A user sees only jobs for their own records (ALL = instance owner)."""
-        if owner is ALL:
-            return [dict(r) for r in self._q("SELECT * FROM jobs ORDER BY updated_at DESC LIMIT ?", (limit,))]
-        return [dict(r) for r in self._q(
-            "SELECT j.* FROM jobs j JOIN records r ON r.id = j.record_id WHERE r.owner_user_id=? "
-            "ORDER BY j.updated_at DESC LIMIT ?", (owner, limit))]
-
-    def job_counts_for(self, owner: str) -> dict:
-        return {r["status"]: r["n"] for r in self._q(
-            "SELECT j.status, COUNT(*) n FROM jobs j JOIN records r ON r.id = j.record_id WHERE r.owner_user_id=? "
-            "GROUP BY j.status", (owner,))}
 
     # ------------------------------------------------------------------ reports & followups
     def get_report(self, owner: Any, report_id: Optional[str] = None, record_id: Optional[str] = None) -> dict:
@@ -1110,53 +801,13 @@ class Store:
                        (*ids, *args))
         return {r["id"]: (r["workflow_id"], r["workflow_version"], _uj(r["answers"])) for r in rows}
 
-    def create_followup(self, owner: Any, title: str, detail: str = "", record_id: Optional[str] = None,
-                        due_date: Optional[str] = None, source: str = "user") -> dict:
-        with self.tx() as c:
-            rec_owner = None
-            if record_id:
-                clause, args = self._owner_clause(owner)
-                r = c.execute(f"SELECT owner_user_id FROM records WHERE id=? AND {clause}", (record_id, *args)).fetchone()
-                if not r:
-                    raise NotFound(record_id)
-                rec_owner = r["owner_user_id"]
-            own = rec_owner or ("owner" if owner is ALL else owner)
-            fid = _id("fu")
-            c.execute("INSERT INTO followups(id, record_id, owner_user_id, title, detail, due_date, status, source, created_at, "
-                      "updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                      (fid, record_id, own, title[:300], detail[:2000], due_date, "open", source, _now(), _now()))
-            self.audit(c, owner, "followup.create", fid, {"record": record_id})
-        return {"id": fid, "title": title, "record_id": record_id, "due_date": due_date, "status": "open"}
-
-    def list_followups(self, owner: Any, record_id: Optional[str] = None, status: Optional[str] = None) -> list[dict]:
-        clause, args = self._owner_clause(owner)
-        sql = f"SELECT * FROM followups WHERE {clause}"
-        if record_id:
-            sql += " AND record_id=?"
-            args = (*args, record_id)
-        if status:
-            sql += " AND status=?"
-            args = (*args, status)
-        return [dict(r) for r in self._q(sql + " ORDER BY created_at DESC LIMIT 200", args)]
-
-    def update_followup(self, owner: Any, fid: str, status: str) -> dict:
-        if status not in ("open", "done"):
-            raise Invalid("status must be open|done")
-        with self.tx() as c:
-            clause, args = self._owner_clause(owner)
-            if not c.execute(f"UPDATE followups SET status=?, updated_at=? WHERE id=? AND {clause}",
-                             (status, _now(), fid, *args)).rowcount:
-                raise NotFound(fid)
-        return {"id": fid, "status": status}
-
     # ------------------------------------------------------------------ conflicts
     def list_conflicts(self, owner: Any, status: str = "open") -> list[dict]:
         clause, args = self._owner_clause(owner)
         return [dict(r, client_payload=_uj(r["client_payload"])) for r in
                 self._q(f"SELECT * FROM conflicts WHERE status=? AND {clause} ORDER BY created_at DESC", (status, *args))]
 
-    def resolve_conflict(self, owner: Any, cid: str, resolution: str, auto_analyze: bool,
-                         merged_answers: Optional[dict] = None) -> dict:
+    def resolve_conflict(self, owner: Any, cid: str, resolution: str, merged_answers: Optional[dict] = None) -> dict:
         """keep_server: discard client copy. use_client / merge: write a new revision on top of the server's."""
         if resolution not in ("keep_server", "use_client", "merge"):
             raise Invalid("resolution must be keep_server|use_client|merge")
@@ -1178,8 +829,6 @@ class Store:
                 c.execute("INSERT INTO record_revisions(record_id, revision, answers, local_results, device_id, created_at) "
                           "VALUES (?,?,?,?,?,?)", (rec["id"], new_rev, _j(answers), _j(payload.get("local_results") or {}),
                                                    _uj(cf["client_payload"]).get("device_id"), _now()))
-                if auto_analyze:
-                    self._enqueue(c, rec["id"], new_rev)
             c.execute("UPDATE conflicts SET status='resolved', resolution=?, resolved_at=? WHERE id=?", (resolution, _now(), cid))
             self.audit(c, owner, "sync.conflict.resolve", cid, {"resolution": resolution, "revision": new_rev})
         return {"conflict_id": cid, "resolution": resolution, "record_id": cf["record_id"], "revision": new_rev}
@@ -1189,15 +838,13 @@ class Store:
         clause, args = self._owner_clause(owner)
         rec = {r["sync_status"]: r["n"] for r in self._q(
             f"SELECT sync_status, COUNT(*) n FROM records WHERE {clause} GROUP BY sync_status", args)}
-        ana = {r["analysis_status"]: r["n"] for r in self._q(
-            f"SELECT analysis_status, COUNT(*) n FROM records WHERE {clause} GROUP BY analysis_status", args)}
         att = self._q(f"SELECT COUNT(*) n FROM attachments WHERE status!='stored' AND {clause}", args)[0]["n"]
         conf = self._q(f"SELECT COUNT(*) n FROM conflicts WHERE status='open' AND {clause}", args)[0]["n"]
         last = self._q(f"SELECT MAX(received_at) t FROM records WHERE {clause}", args)[0]["t"]
         devices = [dict(r) for r in self._q(
             f"SELECT id, label, last_seen FROM devices WHERE {clause} ORDER BY last_seen DESC LIMIT 20", args)]
-        return {"records_by_sync_status": rec, "records_by_analysis_status": ana, "attachments_outstanding": att,
-                "open_conflicts": conf, "last_received_at": last, "devices": devices, "jobs": self.job_counts()}
+        return {"records_by_sync_status": rec, "attachments_outstanding": att,
+                "open_conflicts": conf, "last_received_at": last, "devices": devices}
 
     def audit_log(self, limit: int = 100) -> list[dict]:
         return [dict(r, detail=_uj(r["detail"])) for r in
@@ -1219,6 +866,10 @@ def get_store() -> Store:
     with _store_lock:
         if _store is None:
             _store = Store()
+            try:   # records synced without their workspace (before 0.2.6's fix): fill in only unambiguous ones
+                _store.repair_record_workspaces()
+            except Exception:  # pragma: no cover - never block opening the store
+                pass
         return _store
 
 

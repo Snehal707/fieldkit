@@ -1,0 +1,291 @@
+{
+  "id": "equipment-inspection",
+  "version": 2,
+  "status": "published",
+  "title": {
+    "en": "Equipment inspection",
+    "hi": "उपकरण निरीक्षण"
+  },
+  "description": {
+    "en": "Routine inspection of rotating equipment with troubleshooting guidance and photographs.",
+    "hi": "समस्या निवारण मार्गदर्शन और तस्वीरों के साथ घूमने वाले उपकरणों का नियमित निरीक्षण।"
+  },
+  "domain": "maintenance",
+  "languages": [
+    "en",
+    "hi"
+  ],
+  "default_language": "en",
+  "fields": [
+    {
+      "id": "intro",
+      "type": "instruction",
+      "label": {
+        "en": "Isolate and lock out the machine before touching moving parts.",
+        "hi": "चलते हुए हिस्सों को छूने से पहले मशीन को अलग करें और लॉक आउट करें।"
+      }
+    },
+    {
+      "id": "asset_id",
+      "type": "text",
+      "label": {
+        "en": "Asset tag",
+        "hi": "एसेट टैग"
+      },
+      "required": true,
+      "validation": {
+        "pattern": "[A-Z]{2,4}-[0-9]{3,6}"
+      },
+      "placeholder": "PMP-0042",
+      "help": {
+        "en": "Format: letters, dash, digits (e.g. PMP-0042).",
+        "hi": "प्रारूप: अक्षर, डैश, अंक (जैसे PMP-0042)।"
+      }
+    },
+    {
+      "id": "inspection_date",
+      "type": "date",
+      "label": {
+        "en": "Inspection date",
+        "hi": "निरीक्षण तिथि"
+      },
+      "required": true
+    },
+    {
+      "id": "running_hours",
+      "type": "number",
+      "label": {
+        "en": "Running hours",
+        "hi": "चलने के घंटे"
+      },
+      "unit": "h",
+      "validation": {
+        "min": 0,
+        "max": 200000,
+        "integer": true
+      }
+    },
+    {
+      "id": "condition",
+      "type": "single_choice",
+      "label": {
+        "en": "Overall condition",
+        "hi": "समग्र स्थिति"
+      },
+      "required": true,
+      "options": [
+        {
+          "value": "good",
+          "label": {
+            "en": "Good",
+            "hi": "अच्छी"
+          }
+        },
+        {
+          "value": "fair",
+          "label": {
+            "en": "Fair",
+            "hi": "ठीक"
+          }
+        },
+        {
+          "value": "poor",
+          "label": {
+            "en": "Poor",
+            "hi": "खराब"
+          }
+        }
+      ]
+    },
+    {
+      "id": "symptoms",
+      "type": "multi_choice",
+      "label": {
+        "en": "Observed symptoms",
+        "hi": "देखे गए लक्षण"
+      },
+      "options": [
+        {
+          "value": "vibration",
+          "label": {
+            "en": "Abnormal vibration",
+            "hi": "असामान्य कंपन"
+          }
+        },
+        {
+          "value": "noise",
+          "label": {
+            "en": "Unusual noise",
+            "hi": "असामान्य आवाज़"
+          }
+        },
+        {
+          "value": "heat",
+          "label": {
+            "en": "Overheating",
+            "hi": "अधिक गर्म होना"
+          }
+        },
+        {
+          "value": "leak",
+          "label": {
+            "en": "Fluid leak",
+            "hi": "तरल रिसाव"
+          }
+        }
+      ]
+    },
+    {
+      "id": "vibration_level",
+      "type": "number",
+      "label": {
+        "en": "Vibration velocity",
+        "hi": "कंपन वेग"
+      },
+      "unit": "mm/s",
+      "visible_if": {
+        "op": "contains",
+        "field": "symptoms",
+        "value": "vibration"
+      },
+      "required_if": {
+        "op": "contains",
+        "field": "symptoms",
+        "value": "vibration"
+      },
+      "validation": {
+        "min": 0,
+        "max": 100
+      },
+      "explain_topic": "vibration",
+      "knowledge_query": "causes of equipment vibration"
+    },
+    {
+      "id": "bearing_temp",
+      "type": "number",
+      "label": {
+        "en": "Bearing temperature",
+        "hi": "बेयरिंग तापमान"
+      },
+      "unit": "°C",
+      "visible_if": {
+        "op": "contains",
+        "field": "symptoms",
+        "value": "heat"
+      },
+      "validation": {
+        "min": -40,
+        "max": 250
+      },
+      "knowledge_query": "bearing overheating"
+    },
+    {
+      "id": "leak_fluid",
+      "type": "single_choice",
+      "label": {
+        "en": "Leaking fluid",
+        "hi": "रिसने वाला तरल"
+      },
+      "visible_if": {
+        "op": "contains",
+        "field": "symptoms",
+        "value": "leak"
+      },
+      "options": [
+        {
+          "value": "oil",
+          "label": {
+            "en": "Oil",
+            "hi": "तेल"
+          }
+        },
+        {
+          "value": "water",
+          "label": {
+            "en": "Water / coolant",
+            "hi": "पानी / कूलेंट"
+          }
+        },
+        {
+          "value": "unknown",
+          "label": {
+            "en": "Unknown",
+            "hi": "अज्ञात"
+          }
+        }
+      ]
+    },
+    {
+      "id": "guard_ok",
+      "type": "checkbox",
+      "label": {
+        "en": "Safety guards are fitted and intact",
+        "hi": "सुरक्षा गार्ड लगे हुए और सही हैं"
+      },
+      "required": true
+    },
+    {
+      "id": "notes",
+      "type": "multiline",
+      "label": {
+        "en": "Notes",
+        "hi": "टिप्पणियाँ"
+      },
+      "validation": {
+        "max_length": 4000
+      },
+      "required_if": {
+        "op": "eq",
+        "field": "condition",
+        "value": "poor"
+      },
+      "help": {
+        "en": "Describe what you saw, heard or measured.",
+        "hi": "आपने जो देखा, सुना या मापा उसका वर्णन करें।"
+      }
+    },
+    {
+      "id": "photos",
+      "type": "photo",
+      "label": {
+        "en": "Photographs",
+        "hi": "तस्वीरें"
+      },
+      "validation": {
+        "max_items": 6
+      },
+      "required_if": {
+        "op": "eq",
+        "field": "condition",
+        "value": "poor"
+      }
+    },
+    {
+      "id": "voice_note",
+      "type": "audio",
+      "label": {
+        "en": "Voice note",
+        "hi": "वॉइस नोट"
+      }
+    },
+    {
+      "id": "location",
+      "type": "gps",
+      "label": {
+        "en": "Location",
+        "hi": "स्थान"
+      },
+      "validation": {
+        "max_accuracy_m": 100
+      }
+    },
+    {
+      "id": "inspector_sign",
+      "type": "signature",
+      "label": {
+        "en": "Inspector signature",
+        "hi": "निरीक्षक के हस्ताक्षर"
+      }
+    }
+  ]
+}

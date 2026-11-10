@@ -1,69 +1,17 @@
-// Offline Assistant, Knowledge, Dictionary, Translate, OCR, Offline Packs and Settings.
+// Translate, Scan text (OCR), Offline Packs, Settings and Connection diagnostics.
 import { api, AuthRequired } from "./api";
 import { APP_VERSION, PUBLIC_APP_URL, RUNNING_FROM_LEGACY_PATH, signIn } from "./config";
 import { db, deleteRecord, deviceId, getSetting, setSetting, type InstalledModel } from "./db";
 import { text } from "./engine";
 import {
-  capabilities, installedModels, installEmbedding, installOcr, installStt, installTranslation, localVoices, ocr, ocrLanguages, removeModel,
-  speak, transcribe, translate, translationPairs, voicesReady,
+  capabilities, installedModels, installOcr, installTranslation, ocr, ocrLanguages, removeModel, translate, translationPairs,
 } from "./intel";
-import { KnowledgeIndex, lookup } from "./knowledge";
-import { VoiceRecorder } from "./media";
-import {
-  fetchCatalog, installedPacks, installedWorkflows, installPack, installWorkflow, removePack, removeWorkflow,
-  storageInfo, updatesAvailable,
-} from "./packs";
+import { fetchCatalog, installedWorkflows, removeWorkflow, storageInfo } from "./packs";
 import { enqueueRecord, getSyncState, runSync } from "./sync";
 import { clear, fmtBytes, fmtTime, h, isOnline, toast } from "./util";
 import { go, lang, readiness, signInBanner, whoAmI, type View } from "./views_core";
 import { currentDeviceLabel, describeLoadProblem, registerDevice } from "./device";
-import { languageLabel, requestOutcome, requestProtection, storageMessage, storageState, summarizeVoices } from "./storage";
-
-// ------------------------------------------------------------------ knowledge
-export const knowledgeView: View = async (main, p) => {
-  const l = await lang();
-  const packs = await installedPacks("knowledge");
-  if (p.key) {
-    const [pid, eid] = decodeURIComponent(p.key).split("::");
-    const pack = packs.find((x) => x.id === pid);
-    const e = pack?.content.entries.find((x: any) => x.id === eid);
-    if (!e) { main.append(h("div", { class: "banner warn" }, "Topic not found in installed packs.")); return; }
-    main.append(h("div", { class: "card" }, h("h2", null, text(e.title, l)), h("div", { class: "muted" }, `${e.type} · ${text(pack!.content.title, l)}`),
-      h("p", { style: "white-space:pre-wrap" }, text(e.text, l)), h("div", { class: "muted" }, `Source: ${e.source || text(pack!.content.source?.title, l)}`),
-      h("button", { onclick: () => { const r = speak(text(e.text, l), l); if (!r.ok) toast(r.reason!, "error"); } }, "🔊 Read aloud"),
-      (e.related ?? []).length ? h("div", null, h("h3", null, "Related"), ...(e.related as string[]).map((r) => {
-        const re = pack!.content.entries.find((x: any) => x.id === r);
-        return re ? h("a", { class: "btn", href: `#/knowledge/${encodeURIComponent(`${pid}::${r}`)}` }, text(re.title, l)) : null;
-      })) : null));
-    return;
-  }
-  main.append(h("div", { class: "card" }, h("h2", null, "Knowledge"),
-    packs.length ? null : h("p", { class: "muted" }, "No knowledge packs installed."),
-    ...packs.map((pk) => h("div", null, h("h3", null, text(pk.content.title, l)), h("ul", { class: "clean" },
-      ...pk.content.entries.map((e: any) => h("li", null, h("a", { href: `#/knowledge/${encodeURIComponent(`${pk.id}::${e.id}`)}` }, text(e.title, l)),
-        h("span", { class: "muted" }, ` · ${e.type}`))))))));
-};
-
-// ------------------------------------------------------------------ dictionary
-export const dictionaryView: View = async (main) => {
-  const packs = await installedPacks("dictionary");
-  const out = h("div");
-  const q = h("input", { placeholder: "Search a word (English or हिंदी)", oninput: () => render() }) as HTMLInputElement;
-  const render = () => {
-    clear(out);
-    const hits = lookup(packs, q.value);
-    if (q.value && !hits.length) out.append(h("p", { class: "muted" }, "Not found in installed dictionaries."));
-    for (const d of hits) {
-      out.append(h("div", { class: "card" }, h("h2", null, d.term, h("span", { class: "muted" }, ` · ${d.lang}`)), h("p", null, d.definition),
-        Object.keys(d.translations).length ? h("div", null, "Translations: ", Object.entries(d.translations).map(([k, v]) => `${k}: ${v}`).join(" · ")) : null,
-        d.synonyms.length ? h("div", { class: "muted" }, `Synonyms: ${d.synonyms.join(", ")}`) : null,
-        d.examples.length ? h("ul", null, ...d.examples.map((x) => h("li", null, x))) : null,
-        d.related.length ? h("div", { class: "row" }, "Related: ", ...d.related.map((r) => h("button", { onclick: () => { q.value = r; render(); } }, r))) : null,
-        h("div", { class: "muted" }, `Source: ${d.source}${d.match !== "exact" ? ` · ${d.match} match` : ""}`)));
-    }
-  };
-  main.append(h("div", { class: "card" }, h("h2", null, "Dictionary"), h("p", { class: "muted" }, `${packs.length} dictionary pack(s) on this device · works offline`), q), out);
-};
+import { languageLabel, requestOutcome, requestProtection, storageMessage, storageState } from "./storage";
 
 // ------------------------------------------------------------------ translate
 export const translateView: View = async (main) => {
@@ -85,33 +33,13 @@ export const translateView: View = async (main) => {
       const r = await translate(src.value, f, t);
       out.append(h("div", { class: "card", id: "translation-out" }, h("p", { style: "font-size:1.1rem;white-space:pre-wrap" }, r.text),
         r.terms.length ? h("div", { class: "muted", "data-terms": String(r.terms.length) }, `Dictionary terms used: ${r.terms.map((x) => `${x.source} → ${x.target}`).join(", ")}`) : null,
-        h("div", { class: "muted" }, `Translated on this device with ${r.model} in ${r.ms} ms — no network used. A small offline model: check important wording.`),
-        h("button", { onclick: () => { const s = speak(r.text, t); if (!s.ok) toast(s.reason!, "error"); } }, "🔊 Read aloud")));
+        h("div", { class: "muted" }, `Translated on this device with ${r.model} in ${r.ms} ms — no network used. A small offline model: check important wording.`)));
     } catch (e) { out.append(h("div", { class: "banner bad" }, (e as Error).message)); }
     btn.disabled = false; btn.textContent = "Translate";
   } }, "Translate");
   main.append(h("div", { class: "card" }, h("h2", null, "Translate (offline)"), sel, h("div", { style: "height:.5rem" }), src,
-    h("div", { class: "row", style: "margin-top:.5rem" }, btn, sttButton(src, () => sel.value.split(">")[0]))), out);
+    h("div", { class: "row", style: "margin-top:.5rem" }, btn)), out);
 };
-
-/** Dictation button. `speechLang` is the language being spoken (for Translate: the source language, not the app's). */
-function sttButton(target: HTMLTextAreaElement, speechLang: () => string | Promise<string> = lang) {
-  const wrap = h("span");
-  void installedModels().then((ms) => {
-    if (!ms.some((m) => m.capability === "stt")) return;
-    const rec = new VoiceRecorder();
-    let on = false;
-    const b = h("button", { onclick: async () => {
-      if (!on) { try { await rec.start(); on = true; b.textContent = "■ Stop"; } catch (e) { toast((e as Error).message, "error"); } return; }
-      on = false; b.textContent = "Transcribing…";
-      const { blob } = await rec.stop();
-      try { target.value = (await transcribe(blob, await speechLang())).text; } catch (e) { toast((e as Error).message, "error"); }
-      b.textContent = "🎙 Speak";
-    } }, "🎙 Speak");
-    wrap.append(b);
-  });
-  return wrap;
-}
 
 // ------------------------------------------------------------------ OCR
 export const ocrView: View = async (main) => {
@@ -147,19 +75,15 @@ export const ocrView: View = async (main) => {
 
 // ------------------------------------------------------------------ packs
 export const packsView: View = async (main) => {
-  const [wfs, packs, models] = await Promise.all([installedWorkflows(), installedPacks(), installedModels()]);
+  const [wfs, models] = await Promise.all([installedWorkflows(), installedModels()]);
   const l = await lang();
   const onDevice = h("div");
   main.append(h("div", { class: "card" }, h("h2", null, "On this device"),
-    h("h3", null, "Workflows"), wfs.length ? h("ul", { class: "clean" }, ...wfs.map((w) => h("li", { class: "row" },
+    h("h3", null, "Forms"), wfs.length ? h("ul", { class: "clean" }, ...wfs.map((w) => h("li", { class: "row" },
       h("span", { class: "grow" }, `${text(w.definition.title, l)} · v${w.version}`),
       h("button", { class: "danger", onclick: async () => { try { await removeWorkflow(w.id); go(`#/packs?r=${Date.now()}`); } catch (e) { toast((e as Error).message, "error"); } } }, "Remove"))))
-      : h("p", { class: "muted" }, "None"),
-    h("h3", null, "Knowledge, dictionaries"), packs.length ? h("ul", { class: "clean" }, ...packs.filter((p) => (p.kind as string) !== "workspace").map((p) => h("li", { class: "row" },
-      h("span", { class: "grow" }, `${p.title} · ${p.kind} v${p.version} · ${fmtBytes(p.size)}`, h("div", { class: "muted" }, `sha256 ${p.sha256.slice(0, 12)}… verified`)),
-      h("button", { class: "danger", onclick: async () => { await removePack(p.id); go(`#/packs?r=${Date.now()}`); } }, "Remove"))))
-      : h("p", { class: "muted" }, "None"),
-    h("h3", null, "On-device models"), onDevice));
+      : h("p", { class: "muted" }, "None. Forms come with your workspace (Workspace tab)."),
+    h("h3", null, "Offline OCR and translation"), onDevice));
   const paintOnDevice = (list: typeof models) => {
     clear(onDevice);
     onDevice.append(list.length ? h("ul", { class: "clean" }, ...list.map((m) => h("li", { class: "row", "data-on-device": m.id },
@@ -172,36 +96,18 @@ export const packsView: View = async (main) => {
   document.addEventListener("fieldkit:model-installed", onInstalled);
   window.addEventListener("hashchange", () => document.removeEventListener("fieldkit:model-installed", onInstalled), { once: true });
 
-  const avail = h("div", { class: "card" }, h("h2", null, "Available from Hermes"));
+  const avail = h("div", { class: "card" }, h("h2", null, "Optional offline packs"),
+    h("p", { class: "muted" }, "Read text from a photo (OCR) and translate sentences without internet. Downloaded once from their pinned "
+      + "upstream sources; use Wi-Fi."));
   main.append(avail);
-  if (!isOnline()) { avail.append(h("p", { class: "muted" }, "Connect to the internet to download workflows and packs.")); return; }
+  if (!isOnline()) { avail.append(h("p", { class: "muted" }, "Connect to the internet to download packs.")); return; }
   let cat;
   try { cat = await fetchCatalog(); } catch (e) {
     if (e instanceof AuthRequired) { avail.append(await signInBanner()); return; }
     avail.append(h("p", { class: "muted" }, describeLoadProblem(e, isOnline()).message.replace("your records", "the catalog")),
       h("button", { onclick: () => go(`#/packs?r=${Date.now()}`) }, "Try again")); return;
   }
-  const upd = updatesAvailable(cat, wfs, packs);
-  if (upd.workflows.length || upd.packs.length) avail.append(h("div", { class: "banner warn" }, `Updates available: ${[...upd.workflows, ...upd.packs].join(", ")}`));
-  avail.append(h("h3", null, "Workflows"), h("ul", { class: "clean" }, ...cat.workflows.map((w: any) => {
-    const have = wfs.find((x) => x.id === w.id);
-    const b = h("button", { class: have && !upd.workflows.includes(w.id) ? "" : "primary", onclick: async () => {
-      b.disabled = true; b.textContent = "Downloading…";
-      try { const r = await installWorkflow(w.id); toast(`Downloaded ${w.title} (+${r.packs.length} packs)`, "ok"); if (r.failed.length) toast(`Failed: ${r.failed.join(", ")}`, "error"); }
-      catch (e) { toast((e as Error).message, "error"); }
-      go(`#/packs?r=${Date.now()}`);
-    } }, have ? (upd.workflows.includes(w.id) ? "Update" : "Re-download") : "Download for offline");
-    return h("li", { class: "row" }, h("span", { class: "grow" }, h("strong", null, w.title), h("div", { class: "muted" }, `${w.domain || "general"} · v${w.published_version}`)), b);
-  })));
-  avail.append(h("h3", null, "Knowledge & dictionary packs"), h("ul", { class: "clean" }, ...cat.packs.filter((p: any) => p.kind !== "model" && p.kind !== "workspace").map((p: any) => {
-    const have = packs.find((x) => x.id === p.id);
-    const b = h("button", { onclick: async () => { try { await installPack(p.id); toast("Installed", "ok"); } catch (e) { toast((e as Error).message, "error"); } go(`#/packs?r=${Date.now()}`); } },
-      have ? (upd.packs.includes(p.id) ? "Update" : "Re-download") : "Install");
-    return h("li", { class: "row" }, h("span", { class: "grow" }, `${p.title} · ${p.kind} v${p.version} · ${fmtBytes(p.size)}`), b);
-  })));
-  avail.append(h("h3", null, "On-device models (downloaded from pinned upstream sources)"),
-    h("p", { class: "muted" }, "Large one-time downloads. Use Wi-Fi. After installation they work with no connection."),
-    h("ul", { class: "clean" }, ...cat.models.packs.map((m: any) => modelRow(m, models.find((x) => x.id === m.id)))));
+  avail.append(h("ul", { class: "clean" }, ...cat.models.packs.map((m: any) => modelRow(m, models.find((x) => x.id === m.id)))));
 };
 
 function modelRow(m: any, have: InstalledModel | undefined) {
@@ -221,8 +127,7 @@ function modelRow(m: any, have: InstalledModel | undefined) {
       status.textContent = p.status ? `${p.status}${p.file ? ` ${p.file}` : ""}` : status.textContent;
     };
     try {
-      const fn = m.capability === "translation" ? installTranslation : m.capability === "stt" ? installStt
-        : m.capability === "embedding" ? installEmbedding : installOcr;
+      const fn = m.capability === "translation" ? installTranslation : installOcr;
       const r = await fn(m, onProgress);
       status.textContent = `Installed and self-tested on this device · ${r.verify_detail}`;
       // The label used to be computed only when the screen was drawn, so a model installed while the
@@ -244,10 +149,9 @@ function modelRow(m: any, have: InstalledModel | undefined) {
 // ------------------------------------------------------------------ settings
 export const settingsView: View = async (main) => {
   const [l, dev, st, me, caps, checks] = await Promise.all([lang(), deviceId(), storageInfo(), isOnline() ? whoAmI() : Promise.resolve(null), capabilities(), readiness()]);
-  await voicesReady();
   const d = await db();
   main.append(h("div", { class: "card" }, h("h2", null, "Settings"),
-    h("label", { class: "q" }, "Workflow language"),
+    h("label", { class: "q" }, "Form language"),
     h("select", { onchange: async (e: Event) => { await setSetting("lang", (e.target as HTMLSelectElement).value); toast("Saved"); } },
       ...[["en", "English"], ["hi", "हिंदी"]].map(([v, n]) => h("option", { value: v, selected: v === l }, n))),
     h("dl", { class: "kv", style: "margin-top:.8rem" },
@@ -320,21 +224,8 @@ export const settingsView: View = async (main) => {
     h("ul", null,
       h("li", null, "Opens full-screen from its own icon, and starts offline from the Home Screen."),
       h("li", null, "On iPhone, the browser is more likely to protect its storage when it's used as a Home Screen app — but this isn't guaranteed."),
-      h("li", null, "On iPhone the installed app keeps its own data, separate from Safari: sign in once inside it, and download workflows and packs there.")),
+      h("li", null, "On iPhone the installed app keeps its own data, separate from Safari: sign in once inside it, and download your workspace there.")),
     h("p", { class: "muted" }, "Installing doesn't make storage permanent. Records stay on the device until they sync, so sync regularly and use Export for an extra backup.")));
-
-  // ---- Read-aloud voices: compact summary + expandable list (only on-device voices are ever used)
-  const vs = summarizeVoices(localVoices(), l);
-  const want = ["en", "hi"].map((code) => ({ code, has: vs.languages.some((x) => x.code.toLowerCase().startsWith(code)) }));
-  main.append(h("div", { class: "card", id: "voices-card" }, h("h2", null, "Read-aloud voices"),
-    h("p", null, vs.total
-      ? `${vs.total} on-device voice${vs.total === 1 ? "" : "s"} in ${vs.languages.length} language${vs.languages.length === 1 ? "" : "s"}. `
-        + want.map((w) => `${languageLabel(w.code, l)}: ${w.has ? "available" : "not on this device"}`).join(" · ")
-      : "No on-device voices found. Read-aloud is unavailable; FieldKit never uses online voices."),
-    vs.total ? h("details", null, h("summary", null, "Show all voices"),
-      h("ul", { class: "clean" }, ...vs.languages.map((g) => h("li", null, h("strong", null, g.label), h("span", { class: "muted" }, ` (${g.code})`),
-        h("div", { class: "muted" }, g.voices.join(", ")))))) : null,
-    h("p", { class: "muted" }, "Voice notes are transcribed offline by FieldKit's own Speech to text pack (install it in Offline Packs).")));
 
   main.append(h("div", { class: "card" }, h("h2", null, "Backup & recovery"),
     h("p", { class: "muted" }, "Export everything on this device (records, media, reports, drafts) to a file you can keep or move to another device."),
@@ -424,7 +315,6 @@ async function importData(file: File): Promise<{ records: number; attachments: n
   return { records, attachments, queued: toQueue.length };
 }
 
-export async function storedLang(): Promise<string> { return getSetting("lang", "en"); }
 
 // ------------------------------------------------------------------ connection diagnostics
 export const diagnosticsView: View = async (main) => {

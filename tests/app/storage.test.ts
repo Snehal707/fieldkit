@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { requestOutcome, storageMessage, summarizeVoices } from "../../app/src/storage";
+import { languageLabel, requestOutcome, storageMessage } from "../../app/src/storage";
 
 describe("storage messages", () => {
   it("distinguishes the three states and never uses an error tone", () => {
@@ -29,18 +29,9 @@ describe("storage messages", () => {
   });
 });
 
-describe("voice summary", () => {
-  it("groups, dedupes and counts only on-device voices", () => {
-    const voices = [
-      { name: "Samantha", lang: "en-US", localService: true }, { name: "Samantha", lang: "en-US", localService: true },
-      { name: "Daniel", lang: "en-GB", localService: true }, { name: "Lekha", lang: "hi-IN", localService: true },
-      { name: "Cloud Voice", lang: "en-US", localService: false },
-    ];
-    const s = summarizeVoices(voices);
-    expect(s.total).toBe(4);
-    expect(s.languages.map((l) => l.code)).toEqual(expect.arrayContaining(["en-US", "en-GB", "hi-IN"]));
-    expect(s.languages.find((l) => l.code === "en-US")!.voices).toEqual(["Samantha"]);
-    expect(s.languages.find((l) => l.code === "hi-IN")!.label).toMatch(/Hindi/);
-    expect(s.languages.flatMap((l) => l.voices)).not.toContain("Cloud Voice");
+describe("language names", () => {
+  it("shows readable names for language codes", () => {
+    expect(languageLabel("hi")).toMatch(/Hindi/);
+    expect(languageLabel("en-GB")).toMatch(/English/);
   });
 });

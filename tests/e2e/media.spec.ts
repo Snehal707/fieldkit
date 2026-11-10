@@ -1,7 +1,7 @@
 // Regression for the real-iPhone findings (0.2.4), against a real Hermes:
 //  - Results showed a broken photo thumbnail and an audio playback error;
-//  - signatures must reach Hermes linked to the right inspection, intact, and be viewable in the report;
-//  - voice notes must be considered by the analysis, and attachment counts must be right (a signature is not a photo).
+//  - signatures must reach Hermes linked to the right entry, intact, and be viewable from another device;
+//  - Hermes' tools must hand over every file (right kind, intact), and counts must be right (a signature is not a photo).
 // The photo is an iPhone-style JPEG stored in sensor orientation with EXIF orientation 6.
 // Voice notes need a fake microphone, which only Chromium has; WebKit runs the photo + signature parts.
 import { chromium, webkit, expect, test, type BrowserContext, type Page } from "@playwright/test";
@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import sharp from "sharp";
 import { signIn } from "./auth";
+import { downloadWorkspace, startEntry } from "./helpers";
 
 const isWebkit = process.env.FIELDKIT_E2E_BROWSER === "webkit";
 const engine = isWebkit ? webkit : chromium;
@@ -31,7 +32,6 @@ async function client(): Promise<{ ctx: BrowserContext; page: Page }> {
     ...(isWebkit ? {} : { permissions: ["microphone"], args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"] }),
   });
   await signIn(ctx.request);
-  await ctx.request.post(`${API}/examples/install`);
   const page = await ctx.newPage();
   page.on("dialog", (d) => d.accept());
   await page.goto(APP);
@@ -51,15 +51,12 @@ async function iphonePhoto(): Promise<string> {
 
 test.beforeEach(() => { test.skip(!PASS || !DATA_DIR, "set FIELDKIT_E2E_PASS and FIELDKIT_E2E_DATA_DIR"); });
 
-test("photo, voice note and signature: playable on Results, intact on Hermes, evidence in the report", async () => {
+test("photo, voice note and signature: playable on the entry, intact on Hermes, readable by Hermes' tools", async () => {
   test.setTimeout(240_000);
   const A = await client();
   const { page } = A;
-  await page.goto(`${APP}#/packs`);
-  await page.locator("li", { hasText: "Equipment inspection" }).first().getByRole("button").click();
-  await expect(page.locator("text=Downloaded Equipment inspection")).toBeVisible({ timeout: 30_000 });
-  await page.goto(`${APP}#/workflows`);
-  await page.locator("li", { hasText: "Equipment inspection" }).getByRole("button", { name: "Start" }).click();
+  await downloadWorkspace(page, APP);
+  await startEntry(page, APP);
   await page.locator("#in-asset_id").fill(`MED-${run}`);
   await page.locator("#in-asset_id").blur();
   await page.locator("#in-inspection_date").fill("2026-11-09");
@@ -134,8 +131,7 @@ test("photo, voice note and signature: playable on Results, intact on Hermes, ev
     expect(sha(body)).toBe(a.sha256);
   }
   {
-    // 0.2.6: an upload triggers no AI processing. Hermes transcribes a voice note only when someone asks about its
-    // visit (a question, the Hermes chat or a requested report); tests/python covers that path.
+    // An upload never triggers processing: no transcription on Hermes.
     await new Promise((done) => setTimeout(done, 5_000));
     const r2 = await (await A.ctx.request.get(`${API}/records/${id}`)).json();
     const v2 = r2.attachments.find((x: any) => x.kind === "audio");
@@ -160,42 +156,25 @@ test("photo, voice note and signature: playable on Results, intact on Hermes, ev
   await expect(restored).toHaveAttribute("data-media-state", "ok", { timeout: 20_000 });
   await expect(restored).toContainText("restored from Hermes (verified)");
 
-  // Real analysis pipeline on the uploaded files (LLM round-trip stubbed; Hermes' own speech-to-text as configured here).
+  // Hermes' own tools get every file as a readable copy (for its vision / speech-to-text), right kind, intact.
   const out = execFileSync(PY, ["-c", `
 import json, os, sys
-sys.path.insert(0, ${JSON.stringify(ROOT)}); sys.path.insert(0, ${JSON.stringify(join(ROOT, "tests", "python"))})
+sys.path.insert(0, ${JSON.stringify(ROOT)})
 os.environ["FIELDKIT_DATA_DIR"] = ${JSON.stringify(DATA_DIR)}
-from hermes_stub import GOOD_REPORT, Recorder, make_llm
-from fieldkit_core import analysis, db
-s = db.Store(path=os.path.join(${JSON.stringify(DATA_DIR)}, "data.db"))
-report, review, provider, model = analysis.analyze_record(s, make_llm(Recorder({"default": GOOD_REPORT})), ${JSON.stringify(id)})
-s.save_report_direct(${JSON.stringify(id)}, report, review, generated_by="e2e-real-analysis")
-print(json.dumps({"images": report["images"]["attached"], "att": report["attachments"]["summary"], "voice": report["attachments"]["voice_notes"],
-  "missing": [m for m in report["missing_information"] if "voice" in m]}))
+from fieldkit_core import db, tools
+db.set_store(db.Store(path=os.path.join(${JSON.stringify(DATA_DIR)}, "data.db")))
+rec = json.loads(tools.handler_for("fieldkit_get_record")({"record_id": ${JSON.stringify(id)}}))
+files = [json.loads(tools.handler_for("fieldkit_get_attachment")({"attachment_id": a["id"]})) for a in rec["record"]["attachments"]]
+print(json.dumps({"summary": rec["record"]["attachment_summary"], "files": [[f["kind"], f["integrity"], f["path"].rsplit(".", 1)[-1], os.path.getsize(f["path"])] for f in files]}))
 `]).toString();
-  const res = JSON.parse(out.trim().split("\n").pop()!);
-  console.log("analysis:", JSON.stringify(res));
-  expect(res.images).toBe(1);                                                // the signature is not counted as a photo
-  expect(res.att).toBe(summary);
-  if (!isWebkit) {
-    expect(res.voice.attached).toBe(1);
-    // Either Hermes transcribed it, or the report says why not — never silently ignored.
-    expect(res.voice.transcribed === 1 || res.missing.some((m: string) => m.includes("could not be transcribed"))).toBe(true);
+  const res = JSON.parse(out.trim().split(/\r?\n/).pop()!);
+  console.log("hermes tools:", JSON.stringify(res));
+  expect(res.summary).toBe(summary);
+  for (const [kind, integrity, ext, size] of res.files) {
+    expect(integrity).toBe("intact");
+    expect(size).toBeGreaterThan(0);
+    expect(kind === "audio" ? ["webm", "m4a", "ogg"] : ["jpg", "png", "webp"]).toContain(ext);
   }
-
-  // The phone downloads the report: evidence with the signature (intact, viewable) and the voice-note status.
-  await page.goto(`${APP}#/results/${id}?r=${Date.now()}`);
-  await page.goto(`${APP}#/sync`);   // 0.2.6: an existing report arrives with sync (no "Download report" button without one)
-  await page.getByRole("button", { name: /Sync now/ }).click().catch(() => undefined);
-  await page.waitForTimeout(4000);
-  await page.goto(`${APP}#/results/${id}?r=${Date.now()}`);
-  const ev = page.locator("#report-evidence");
-  await expect(ev).toBeVisible({ timeout: 20_000 });
-  await expect(ev.locator("[data-summary]")).toHaveText(summary);
-  await expect(ev.locator(`[data-signature="${sig.id}"]`)).toHaveAttribute("data-integrity", "intact");
-  await ev.getByRole("button", { name: "Show signature" }).click();
-  await expect(ev.locator(`.media[data-attachment-id="${sig.id}"][data-media-state="ok"] img`)).toHaveCount(1, { timeout: 15_000 });
-  if (!isWebkit) await expect(ev.locator("[data-voice-transcribed]")).toBeVisible();
   await A.ctx.close();
 
   // Another install on the same account can open the record and validate the signature from Hermes.
@@ -207,51 +186,4 @@ print(json.dumps({"images": report["images"]["attached"], "att": report["attachm
   await expect(remoteSig.locator("img")).toHaveCount(1, { timeout: 15_000 });
   await expect(remoteSig).toHaveAttribute("data-media-state", "ok");
   await B.ctx.close();
-});
-
-// Real speech through Hermes' own speech-to-text (whatever provider this Hermes is configured with). Set
-// FIELDKIT_E2E_SPEECH_WAV to a 16 kHz WAV of an English sentence (tests/eval/tts.ps1 makes synthetic ones) and
-// FIELDKIT_E2E_SPEECH_TEXT to the sentence.
-test("a spoken voice note is transcribed by Hermes on upload and reaches the analysis", async () => {
-  const wavPath = process.env.FIELDKIT_E2E_SPEECH_WAV ?? "";
-  const expected = (process.env.FIELDKIT_E2E_SPEECH_TEXT ?? "").toLowerCase().replace(/[^a-z ]/g, "");
-  test.skip(!wavPath || !expected, "set FIELDKIT_E2E_SPEECH_WAV and FIELDKIT_E2E_SPEECH_TEXT");
-  const { readFileSync } = await import("node:fs");
-  const r = await (await import("@playwright/test")).request.newContext();
-  await signIn(r);
-  const wav = readFileSync(wavPath);
-  const rid = `rec_speech${run}abc`, aid = `att_speech${run}abc`;
-  const sync = await r.post(`${API}/sync/records`, { data: { idempotency_key: `idk_speech_${run}`, device_id: "dev_speech0001", record: {
-    id: rid, workflow_id: "equipment-inspection", workflow_version: 1, base_revision: 0,
-    answers: { asset_id: `SPK-${run}`, voice_note: [{ attachment_id: aid, recorded_at: new Date().toISOString() }] },
-    created_local_at: new Date().toISOString(), completed_at: new Date().toISOString(),
-    attachments: [{ id: aid, field_id: "voice_note", mime: "audio/wav", size: wav.length, sha256: sha(wav) }] } } });
-  expect(sync.ok(), await sync.text()).toBe(true);
-  expect((await r.put(`${API}/attachments/${aid}`, { data: wav, headers: { "content-type": "audio/wav" } })).ok()).toBe(true);
-  let got: any = null;
-  await expect.poll(async () => {
-    got = (await (await r.get(`${API}/records/${rid}`)).json()).attachments.find((x: any) => x.id === aid);
-    return got.transcript || got.transcript_error || null;
-  }, { timeout: 180_000, intervals: [2_000] }).not.toBeNull();
-  console.log("Hermes transcript:", got.transcript ?? `(none: ${got.transcript_error})`);
-  expect(got.transcript_error ?? null).toBeNull();
-  expect(got.transcript_source).toBe("hermes");
-  const words = expected.split(" ").filter((w) => w.length > 3);
-  const heard = got.transcript.toLowerCase();
-  expect(words.filter((w) => heard.includes(w)).length / words.length).toBeGreaterThan(0.7);
-  const out = execFileSync(PY, ["-c", `
-import json, os, sys
-sys.path.insert(0, ${JSON.stringify(ROOT)}); sys.path.insert(0, ${JSON.stringify(join(ROOT, "tests", "python"))})
-os.environ["FIELDKIT_DATA_DIR"] = ${JSON.stringify(DATA_DIR)}
-from hermes_stub import GOOD_REPORT, Recorder, make_llm
-from fieldkit_core import analysis, db
-s = db.Store(path=os.path.join(${JSON.stringify(DATA_DIR)}, "data.db"))
-rec = Recorder({"default": GOOD_REPORT})
-report, *_ = analysis.analyze_record(s, make_llm(rec), ${JSON.stringify(rid)})
-print(json.dumps({"voice": report["attachments"]["voice_notes"], "in_prompt": ${JSON.stringify(got.transcript)} in json.dumps(rec.calls[0]["messages"], ensure_ascii=False, default=str)}))
-`]).toString();
-  const res = JSON.parse(out.trim().split("\n").pop()!);
-  expect(res.voice).toEqual({ attached: 1, transcribed: 1, from_device: 0, from_hermes: 1 });
-  expect(res.in_prompt).toBe(true);
-  await r.dispose();
 });

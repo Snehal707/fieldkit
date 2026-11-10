@@ -1,17 +1,15 @@
-// Core screens: Home, My Workflows, workflow runner, Results, Saved Records, Pending Sync, Reports.
+// Core screens: Home, form runner, entry view, Saved Records, entries from other devices, Pending Sync.
 import { api, AuthRequired, HttpError, Offline } from "./api";
 import { APP_VERSION, signIn } from "./config";
 import { db, definitionFor, deleteRecord, deviceId, getSetting, setSetting, type Attachment, type Draft, type LocalRecord, type RemoteCopy, type StoredReport } from "./db";
 import { describeLoadProblem, missingOnServer, unifiedRecords, type Availability, type LoadProblem, type ServerLike } from "./device";
 import { computeState, ERROR_TEXT, text, type Field, type Workflow } from "./engine";
-import { installedModels, ocr, ocrLanguages, speak, transcribe, voicesReady } from "./intel";
-import { KnowledgeIndex } from "./knowledge";
+import { installedModels, ocr, ocrLanguages } from "./intel";
 import { attachmentUrl, captureGps, compressPhoto, getAttachment, hermesMediaUrl, saveAttachment, signaturePad, updateAttachment, VoiceRecorder } from "./media";
 import { installedPacks, installedWorkflows, installWorkflow, shellCached, storageInfo } from "./packs";
 import { completeDraft } from "./results";
-import { getSyncState, refreshPending, refreshReports, requestAnalysis, resendRecords, resolveConflict, retryRecords, runSync } from "./sync";
-import { rememberWorkspaceForWorkflow, workspaceForEntry } from "./workspace";
-import { askAboutRecord, askAgain, questionsFor, SUGGESTED_QUESTIONS, syncQuestions } from "./questions";
+import { downloadEarlierReport, getSyncState, refreshPending, resendRecords, resolveConflict, retryRecords, runSync } from "./sync";
+import { availableWorkspaces, installWorkspace, workspaceForEntry } from "./workspace";
 import { clear, fmtBytes, fmtTime, h, isOnline, nowIso, toast, uuid } from "./util";
 
 export type View = (main: HTMLElement, params: Record<string, string>) => Promise<void> | void;
@@ -22,10 +20,6 @@ const STATUS_TEXT: Record<string, string> = {
   local: "Saved locally — pending synchronization", pending: "Saved locally — pending synchronization",
   syncing: "Uploading…", received: "Received by Hermes — files still uploading", synced: "Saved to Hermes",
   conflict: "Conflict — needs your decision", error: "Hermes didn't accept it — try again",
-};
-const ANALYSIS_TEXT: Record<string, string> = {
-  not_requested: "No AI analysis (ask Hermes about this visit above)", pending: "Pending", processing: "Processing", completed: "Completed",
-  failed: "Failed", requires_review: "Completed — requires human review",
 };
 
 export function sevBadge(sev: string) { return h("span", { class: `badge sev-${sev}` }, sev); }
@@ -86,19 +80,14 @@ export interface Check { label: string; ok: boolean | null; detail?: string }
 
 export async function readiness(): Promise<Check[]> {
   const wfs = await installedWorkflows();
-  const packs = await installedPacks();
   const models = await installedModels();
   const st = await storageInfo();
-  const needed = new Set(wfs.flatMap((w) => [...(w.definition.knowledge_packs ?? []), ...(w.definition.dictionary_packs ?? [])]));
-  const missing = [...needed].filter((p) => !packs.some((x) => x.id === p));
   const sw = !!navigator.serviceWorker?.controller;
   return [
     { label: "App installed for offline opening", ok: sw && (await shellCached()), detail: sw ? "service worker active" : "open once online to install" },
-    { label: "Workflows downloaded", ok: wfs.length > 0, detail: `${wfs.length} on this device` },
-    { label: "Knowledge & dictionary packs for those workflows", ok: wfs.length ? missing.length === 0 : null, detail: missing.length ? `missing: ${missing.join(", ")}` : `${packs.length} installed` },
+    { label: "Forms downloaded", ok: wfs.length > 0, detail: `${wfs.length} on this device` },
     { label: "Offline translation", ok: models.some((m) => m.capability === "translation") || null, detail: models.filter((m) => m.capability === "translation").map((m) => m.manifest.direction.join("→")).join(", ") || "optional — install in Offline Packs" },
     { label: "Offline OCR", ok: models.some((m) => m.capability === "ocr") || null, detail: models.filter((m) => m.capability === "ocr").map((m) => m.manifest.lang_code).join(", ") || "optional" },
-    { label: "Offline speech-to-text", ok: models.some((m) => m.capability === "stt") || null, detail: models.some((m) => m.capability === "stt") ? "Whisper tiny on device" : "optional" },
     { label: "Storage protection", ok: st.persisted ? true : null,
       detail: st.persisted ? "the browser won't clear FieldKit data automatically" : "standard storage (normal on iPhone) — records are kept until they sync; see Settings" },
   ];
@@ -120,7 +109,6 @@ export const homeView: View = async (main) => {
   const pending = records.filter((r) => r.sync_status !== "synced").length;
   const sync = getSyncState();
   const acct = await accountRecordsSummary(!sync.auth_required);
-  const copiesWithReports = (await accountCopies()).filter((c) => c.report).length;
   const wfTitles = new Map((await installedWorkflows()).map((w) => [w.id, text(w.definition.title, "en")]));
   if (!(await installedWorkflows()).length) main.append(getStartedCard(sync.auth_required));
   // Workspaces built by Hermes for this user's job (0.2.5).
@@ -128,26 +116,24 @@ export const homeView: View = async (main) => {
   const own = wsPacks.filter((p) => !p.content?.starter);
   main.append(h("div", { class: "card", id: "home-workspaces" }, h("h2", null, "Your workspace"),
     own.length ? h("ul", { class: "clean" }, ...own.map((p) => h("li", null, h("a", { href: `#/workspace/${p.content.workspace_id}` },
-      h("strong", null, text(p.content.title, "en")), h("div", { class: "muted" }, [p.content.profile?.role, p.content.profile?.region, p.content.profile?.country].filter(Boolean).join(" · "))))))
-      : h("p", { class: "muted" }, "Ask Hermes: “Set up FieldKit for my work.” It asks about your job and the rules you use, and builds your workspace in a few minutes."),
+      h("strong", null, text(p.content.title, "en")), h("div", { class: "muted" }, String(p.content.profile?.purpose ?? ""))))))
+      : h("p", { class: "muted" }, "Ask Hermes: “Set up FieldKit for my work.” It asks what you record and builds your forms in a few minutes."),
     own.length ? h("div", { class: "row" }, ...own.flatMap((p) => (p.content.workflows ?? []).slice(0, 3).map((w: any) =>
       h("a", { class: "btn primary", href: `#/workflow/${encodeURIComponent(w.id)}?ws=${encodeURIComponent(p.content.workspace_id)}` }, `Record: ${wfTitles.get(w.id) ?? w.id}`)))) : null,
     h("a", { class: "btn", href: "#/workspaces" }, own.length ? "All workspaces" : "Browse workspaces")));
   main.append(
     h("div", { class: `banner ${ready ? "hermes" : "warn"}` },
       h("strong", null, ready ? "Ready to work offline" : "Not ready for offline use yet"),
-      h("div", { class: "muted" }, ready ? "Workflows, packs and the app itself are stored on this device." : "Connect once, sign in, and download workflows in Offline Packs.")),
+      h("div", { class: "muted" }, ready ? "Your forms and the app itself are stored on this device." : "Connect once, sign in, and download your workspace.")),
     h(ready ? "details" : "div", { class: "card", id: "home-readiness" },
       ready ? h("summary", null, h("strong", null, "Offline readiness"), h("span", { class: "muted" }, " · all set")) : h("h2", null, "Offline readiness"),
       ...checks.map(checkRow),
       h("div", { class: "row", style: "margin-top:.5rem" }, h("a", { class: "btn", href: "#/packs" }, "Offline Packs"))),
     h("div", { class: "grid" },
       recordsTile(acct),
-      tile("#/sync", "Pending Sync", pending ? `${pending} awaiting confirmation` : "All confirmed"),
-      tile("#/assistant", "Workspace Assistant", "Your procedures and visits"),
-      tile("#/workflows", "All forms", `${(await installedWorkflows()).length} on this phone`)),
+      tile("#/sync", "Pending Sync", pending ? `${pending} awaiting confirmation` : "All confirmed")),
     h("details", { class: "card", id: "home-tools" }, h("summary", null, h("strong", null, "Tools"),
-      h("span", { class: "muted" }, " · translate, scan text")),
+      h("span", { class: "muted" }, " · translate, scan text (optional offline packs)")),
       h("div", { class: "grid" },
         tile("#/translate", "Translate", "Sentence translation"),
         tile("#/ocr", "Scan text (OCR)", "From camera or photo"))));
@@ -174,28 +160,28 @@ function getStartedCard(authRequired: boolean): HTMLElement {
   card.append(body);
   void (async () => {
     try {
-      const { workflows } = await api<{ workflows: any[] }>("workflows");
+      const workspaces = await availableWorkspaces();
       clear(body);
-      if (!workflows.length) {
-        body.append(h("p", null, "Your Hermes has no published FieldKit workflows yet."),
-          h("p", { class: "muted" }, "In Hermes Mobile, say “Install the FieldKit examples”, or ask Hermes to create and publish a workflow. Then come back here."),
+      if (!workspaces.length) {
+        body.append(h("p", null, "Your Hermes has no FieldKit workspace yet."),
+          h("p", { class: "muted" }, "In Hermes, say “Set up FieldKit for my work”. Then come back here."),
           h("button", { onclick: () => go(`#/?r=${Date.now()}`) }, "Check again"));
         return;
       }
-      const btn = h("button", { class: "primary" }, `Download all ${workflows.length} workflow(s) for offline use`) as HTMLButtonElement;
+      const btn = h("button", { class: "primary" }, `Download all ${workspaces.length} workspace(s) for offline use`) as HTMLButtonElement;
       btn.onclick = async () => {
         btn.disabled = true;
         const failed: string[] = [];
-        for (const [i, w] of workflows.entries()) {
-          btn.textContent = `Downloading ${i + 1} of ${workflows.length}…`;
-          try { await installWorkflow(w.id); } catch { failed.push(w.title || w.id); }
+        for (const [i, w] of workspaces.entries()) {
+          btn.textContent = `Downloading ${i + 1} of ${workspaces.length}…`;
+          try { const r = await installWorkspace(w.id); failed.push(...r.failed); } catch { failed.push(w.title || w.id); }
         }
-        toast(failed.length ? `Some downloads failed: ${failed.join(", ")}` : "Workflows and packs saved on this device.", failed.length ? "error" : "ok");
+        toast(failed.length ? `Some downloads failed: ${failed.join(", ")}` : "Your forms are saved on this device.", failed.length ? "error" : "ok");
         go(`#/?r=${Date.now()}`);
       };
-      body.append(h("p", null, `${workflows.length} published workflow(s) available: ${workflows.map((w) => w.title || w.id).join(", ")}.`),
-        h("div", { class: "row" }, btn, h("a", { class: "btn", href: "#/packs" }, "Choose individually")),
-        h("p", { class: "muted" }, "Translation, OCR and speech models are optional larger downloads in Offline Packs."));
+      body.append(h("p", null, `${workspaces.length} workspace(s) available: ${workspaces.map((w) => w.title || w.id).join(", ")}.`),
+        h("div", { class: "row" }, btn, h("a", { class: "btn", href: "#/workspaces" }, "Choose individually")),
+        h("p", { class: "muted" }, "Offline OCR and translation are optional downloads in Offline Packs."));
     } catch (e) {
       clear(body);
       if (e instanceof AuthRequired) {
@@ -267,17 +253,6 @@ export function authBanner(firstTime = false) {
 }
 
 // ------------------------------------------------------------------ workflows
-export const workflowsView: View = async (main) => {
-  const wfs = await installedWorkflows();
-  const l = await lang();
-  main.append(h("div", { class: "card" }, h("h2", null, "My Workflows"),
-    wfs.length ? h("ul", { class: "clean" }, ...wfs.map((w) => h("li", { class: "row" },
-      h("div", { class: "grow" }, h("strong", null, text(w.definition.title, l)), h("div", { class: "muted" },
-        `${w.definition.domain || "general"} · v${w.version} · ${w.definition.fields.length} questions · downloaded ${fmtTime(w.downloaded_at)}`)),
-      h("button", { class: "primary", onclick: () => startWorkflow(w.id) }, "Start"))))
-      : h("p", { class: "muted" }, "No workflows on this device yet. Open Offline Packs while online to download them.")));
-};
-
 export const workflowLinkView: View = async (main, p) => {
   // Deep link from Hermes (…/app/#/workflow/<id>): download if needed, then offer to start. "?ws=" names the workspace
   // the user started from (workspace page, home), so the entry is filed under it.
@@ -321,7 +296,6 @@ async function startWorkflow(id: string, startedFrom?: string | null) {
 export const runView: View = async (main, p) => {
   const d = await db();
   const draft = await d.get("drafts", p.id);
-  if (draft) void rememberWorkspaceForWorkflow(draft.workflow_id);
   if (!draft) {
     const rec = await d.get("records", p.id);
     if (rec) return go(`#/results/${rec.id}`);
@@ -332,8 +306,6 @@ export const runView: View = async (main, p) => {
   if (!stored) { main.append(h("div", { class: "banner bad" }, "This workflow is no longer on the device.")); return; }
   const wf = stored.definition;
   const l = draft.lang;
-  const packs = await installedPacks("knowledge");
-  const idx = new KnowledgeIndex(packs);
   let showErrors = false;
   const touched = new Set<string>();
   const form = h("div");
@@ -355,29 +327,10 @@ export const runView: View = async (main, p) => {
       if (!vis.has(f.id)) continue;
       form.append(fieldView(f, st, vis));
     }
-    form.append(questionsBox(),
+    form.append(
       h("div", { class: "row" },
       h("button", { class: "primary", onclick: finish }, "Complete workflow"),
       h("span", { class: "muted" }, `Draft saved on this device · ${Object.keys(st.errors).length} item(s) to fix`)));
-  };
-
-  /** Optional questions for Hermes, written while collecting; saved with the visit and sent after it syncs. */
-  const questionsBox = () => {
-    const qs = draft.questions ?? [];
-    const qin = h("input", { id: "draft-question", placeholder: l === "hi" ? "हर्मीस से प्रश्न (वैकल्पिक)…" : "Question for Hermes (optional)…", maxlength: "1000" }) as HTMLInputElement;
-    const add = async () => {
-      const t = qin.value.trim();
-      if (!t) return;
-      draft.questions = [...(draft.questions ?? []), t];
-      await save();
-      render();
-    };
-    return h("div", { class: "field card", id: "draft-questions" },
-      h("label", { class: "q", for: "draft-question" }, "Questions for Hermes (optional)"),
-      h("div", { class: "help" }, "Ask about this visit, e.g. what the photos show. Saved with the visit; Hermes answers after it syncs."),
-      qs.length ? h("ul", { class: "clean" }, ...qs.map((q, i) => h("li", { class: "row" }, h("span", { class: "grow" }, q),
-        h("button", { onclick: async () => { draft.questions = qs.filter((_, j) => j !== i); await save(); render(); } }, "Remove")))) : null,
-      h("div", { class: "row" }, h("div", { class: "grow" }, qin), h("button", { onclick: add }, "Add question")));
   };
 
   const fieldView = (f: Field, st: ReturnType<typeof computeState>, _vis: Set<string>) => {
@@ -386,30 +339,15 @@ export const runView: View = async (main, p) => {
     const msgs = st.messages[f.id] ?? [];
     const box = h("div", { class: "field card", id: `f-${f.id}` });
     if (f.type === "instruction") {
-      box.append(h("div", { class: "banner hermes" }, text(f.label, l)),
-        h("button", { onclick: () => { const r = speak(text(f.label, l), l); if (!r.ok) toast(r.reason!, "error"); } }, "🔊 Read aloud"));
+      box.append(h("div", { class: "banner hermes" }, text(f.label, l)));
       return box;
     }
     box.append(h("label", { class: "q", for: `in-${f.id}` }, text(f.label, l), f.unit ? ` (${f.unit})` : "", req ? h("span", { class: "req" }, " *") : null));
     box.append(input(f));
     if (f.help) box.append(h("div", { class: "help" }, text(f.help, l)));
-    if (f.knowledge_query || f.explain_topic) box.append(explainButton(f));
     for (const e of errs) if (ERROR_TEXT[e]) box.append(h("div", { class: "err" }, ERROR_TEXT[e]));
     if (errs.includes("rule")) for (const m of msgs) box.append(h("div", { class: "err" }, m));
     return box;
-  };
-
-  const explainButton = (f: Field) => {
-    const out = h("div");
-    const ask = (q: string) => {
-      clear(out);
-      const a = idx.ask(q, { packs, lang: l, domainPacks: wf.knowledge_packs });
-      if (!a.supported) { out.append(h("div", { class: "banner warn" }, a.note ?? "Not covered by installed packs.")); return; }
-      out.append(h("div", { class: "banner local" }, h("strong", null, a.entry!.title), h("p", null, a.excerpt ?? ""),
-        h("div", { class: "muted" }, `Source: ${a.entry!.source} · from downloaded knowledge (offline)`),
-        a.followups.length ? h("div", { class: "row", style: "margin-top:.4rem" }, ...a.followups.map((fq) => h("button", { onclick: () => ask(fq) }, fq))) : null));
-    };
-    return h("div", null, h("button", { onclick: () => ask(f.knowledge_query || f.explain_topic || text(f.label, "en")) }, "💡 Explain / help"), out);
   };
 
   const input = (f: Field): HTMLElement => {
@@ -419,8 +357,7 @@ export const runView: View = async (main, p) => {
     switch (f.type) {
       case "text": return h("input", { id, value: (v as string) ?? "", placeholder: ph, oninput: (e: Event) => set(f.id, (e.target as HTMLInputElement).value, false), onchange: () => render() });
       case "multiline": {
-        const ta = h("textarea", { id, placeholder: ph, oninput: (e: Event) => set(f.id, (e.target as HTMLTextAreaElement).value, false), onchange: () => render() }, (v as string) ?? "");
-        return h("div", null, ta, dictation(f, ta));
+        return h("textarea", { id, placeholder: ph, oninput: (e: Event) => set(f.id, (e.target as HTMLTextAreaElement).value, false), onchange: () => render() }, (v as string) ?? "");
       }
       case "number": return h("input", { id, type: "number", inputmode: "decimal", step: "any", value: v ?? "",
         oninput: (e: Event) => { const s = (e.target as HTMLInputElement).value; set(f.id, s === "" ? undefined : Number(s), false); }, onchange: () => render() });
@@ -445,25 +382,6 @@ export const runView: View = async (main, p) => {
       case "signature": return signatureInput(f);
     }
     return h("div", { class: "err" }, `Unsupported field type ${f.type}`);
-  };
-
-  const dictation = (f: Field, ta: HTMLTextAreaElement) => {
-    const wrap = h("div", { class: "row", style: "margin-top:.4rem" });
-    void installedModels().then((ms) => {
-      if (!ms.some((m) => m.capability === "stt")) return;
-      const rec = new VoiceRecorder();
-      let on = false;
-      const btn = h("button", { onclick: async () => {
-        if (!on) { try { await rec.start(); on = true; btn.textContent = "■ Stop dictation"; } catch (e) { toast((e as Error).message, "error"); } return; }
-        on = false; btn.textContent = "Transcribing on device…"; btn.disabled = true;
-        const { blob } = await rec.stop();
-        try { const r = await transcribe(blob, l); ta.value = (ta.value ? ta.value + " " : "") + r.text; await set(f.id, ta.value); }
-        catch (e) { toast((e as Error).message, "error"); }
-        btn.disabled = false; btn.textContent = "🎙 Dictate (offline)";
-      } }, "🎙 Dictate (offline)");
-      wrap.append(btn);
-    });
-    return wrap;
   };
 
   const mediaItems = (f: Field) => (Array.isArray(draft.answers[f.id]) ? draft.answers[f.id] : draft.answers[f.id] ? [draft.answers[f.id]] : []) as any[];
@@ -516,21 +434,10 @@ export const runView: View = async (main, p) => {
     for (const it of items) {
       void getAttachment(it.attachment_id).then((a) => {
         if (!a) return;
-        const tBtn = h("button", { onclick: async () => {
-          tBtn.disabled = true;
-          tBtn.textContent = "Transcribing on device…";
-          try {
-            const r = await transcribe(a.blob, l);
-            it.transcript = r.text;
-            it.transcript_source = "device";
-            await updateAttachment(a.id, { meta: { transcript: r.text, transcript_engine: r.engine } });
-            await set(f.id, items);
-          } catch (e) { toast((e as Error).message, "error"); tBtn.disabled = false; tBtn.textContent = "Transcribe (offline)"; }
-        } }, "Transcribe (offline)");
         list.append(h("div", { class: "card" }, mediaPreview(a, "audio"),
           h("div", { class: "muted" }, `${a.meta?.duration_s ?? "?"} s · ${fmtBytes(a.size)}`),
           it.transcript !== undefined ? h("div", null, h("label", { class: "q" }, "Transcript (you can correct it)"),
-            h("textarea", { "data-transcript": a.id, oninput: async (e: Event) => { it.transcript = (e.target as HTMLTextAreaElement).value; await set(f.id, items, false); } }, it.transcript)) : tBtn,
+            h("textarea", { "data-transcript": a.id, oninput: async (e: Event) => { it.transcript = (e.target as HTMLTextAreaElement).value; await set(f.id, items, false); } }, it.transcript)) : null,
           h("button", { class: "danger", onclick: async () => { await d.delete("attachments", a.id); await set(f.id, items.filter((x) => x.attachment_id !== a.id)); } }, "Remove")));
       });
     }
@@ -588,7 +495,7 @@ export const runView: View = async (main, p) => {
       clear(notice);
       const bad = wf.fields.filter((f) => st.errors[f.id]).map((f) => text(f.label, l));
       notice.append(h("div", { class: "banner bad", role: "alert" }, h("strong", null, "Not submitted yet"),
-        h("div", null, `This inspection is still a draft and has not been saved for upload. Fix ${bad.length} answer(s): ${bad.join(", ")}.`)));
+        h("div", null, `This entry is still a draft and has not been saved for upload. Fix ${bad.length} answer(s): ${bad.join(", ")}.`)));
       render();
       const first = Object.keys(st.errors)[0];
       document.getElementById(`f-${first}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -598,9 +505,8 @@ export const runView: View = async (main, p) => {
     let rec;
     try {
       rec = await completeDraft(draft, wf);
-      for (const q of draft.questions ?? []) await askAboutRecord(rec.id, q, l);   // exact text, linked to this visit
     } catch (e) {
-      notice.append(h("div", { class: "banner bad", role: "alert" }, h("strong", null, "Could not save this inspection"),
+      notice.append(h("div", { class: "banner bad", role: "alert" }, h("strong", null, "Could not save this entry"),
         h("div", null, `${(e as Error).message}. Your answers are still in the draft — nothing was lost.`)));
       render();
       return;
@@ -613,14 +519,12 @@ export const runView: View = async (main, p) => {
   main.append(h("div", { class: "card" }, h("h2", null, text(wf.title, l)), h("div", { class: "muted" }, text(wf.description, l)),
     h("div", { class: "muted" }, "Everything you enter is saved on this device as you go — no connection needed.")), form);
   render();
-  void voicesReady();
 };
 
 // ------------------------------------------------------------------ results
 export const resultsView: View = async (main, p) => {
   const d = await db();
   const rec = await d.get("records", p.id);
-  if (rec) void rememberWorkspaceForWorkflow(rec.workflow_id);
   if (!rec) {
     // Removed from this device (or made elsewhere): it may still be in the account on Hermes.
     main.append(h("div", { class: "banner warn" }, h("strong", null, "This record isn't stored on this device"),
@@ -648,7 +552,7 @@ export const resultsView: View = async (main, p) => {
   if (!synced) {
     main.append(h("div", { class: `banner ${rec.sync_status === "conflict" || rec.sync_status === "error" ? "bad" : "local"}` },
       h("strong", null, rec.sync_status === "conflict" ? "Conflict — needs your decision" : rec.sync_status === "error" ? "Hermes didn't accept this record" : "Saved locally. Pending synchronization."),
-      h("div", { class: "muted" }, rec.sync_status === "error" ? `${rec.sync_error ?? ""} It's safe on this device.` : "Hermes has not confirmed this record yet. The findings below were generated on this device."),
+      h("div", { class: "muted" }, rec.sync_status === "error" ? `${rec.sync_error ?? ""} It's safe on this device.` : "Hermes has not confirmed this entry yet. It is safe on this device."),
       rec.sync_status === "error" ? retryButton(rec.id, `#/results/${rec.id}`) : null,
       rec.sync_status === "pending" || rec.sync_status === "syncing" ? h("div", { class: "muted" }, (() => {
         const st = getSyncState();
@@ -661,25 +565,8 @@ export const resultsView: View = async (main, p) => {
     main.append(h("div", { class: "banner hermes" },
       h("strong", null, rec.sync_status === "synced" ? "Saved to Hermes — confirmed" : "Received by Hermes — files still uploading"),
       h("div", { class: "muted" }, `Confirmed by Hermes ${fmtTime(rec.server_ack?.received_at)}`),
-      h("div", null, "Hermes analysis: ", h("strong", null, ANALYSIS_TEXT[rec.analysis_status] ?? rec.analysis_status))));
+      h("div", { class: "muted" }, "Ask your Hermes agent about this entry in chat: it can read the answers, photos and voice notes.")));
   }
-
-  // Local results
-  const local = h("div", { class: "card" }, h("h2", null, h("span", { class: "tag-local" }, "Local findings"), " · generated on this device"),
-    h("p", { class: "muted" }, "Rule-based results from the workflow's own classification. This is not Hermes analysis."));
-  if (!lr.findings.length) local.append(h("p", { class: "muted" }, "No findings were triggered."));
-  local.append(h("ul", { class: "clean" }, ...lr.findings.map((f) => h("li", null, sevBadge(f.severity), " ", h("strong", null, f.label),
-    f.score !== undefined ? ` — score ${f.score}` : "", f.detail ? h("div", { class: "muted" }, f.detail) : null))));
-  if (lr.explanations.length) {
-    local.append(h("h3", null, "Explanations from downloaded knowledge"),
-      ...lr.explanations.map((e) => h("div", { class: "banner local" }, h("strong", null, e.title), h("p", null, e.text), h("div", { class: "muted" }, `Source: ${e.source}`))));
-  }
-  if (lr.references.length) {
-    local.append(h("h3", null, "Relevant references"), h("ul", { class: "clean" }, ...lr.references.map((r) => h("li", null,
-      h("a", { href: `#/knowledge/${encodeURIComponent(`${r.pack_id}::${r.entry_id}`)}` }, r.title), h("div", { class: "muted" }, r.source)))));
-  }
-  main.append(local);
-  main.append(await askHermesCard(rec, l));
 
   // Saved responses + media
   const resp = h("div", { class: "card" }, h("h2", null, "Saved responses"));
@@ -732,80 +619,34 @@ export const resultsView: View = async (main, p) => {
   }
   main.append(resp);
 
-  // An older Hermes report (before 0.2.6, or requested in chat) — shown only if there is one.
-  if (stored || !["not_requested", undefined].includes(rec.analysis_status as any)) main.append(hermesSection(rec, stored));
+  // Made by FieldKit before 0.3 — shown only if this entry has one.
+  const earlier = await earlierSection(rec, stored);
+  if (earlier) main.append(earlier);
 };
 
-function hermesSection(rec: LocalRecord, stored: StoredReport | undefined) {
-  const box = h("div", { class: "card" }, h("h2", null, h("span", { class: "tag-hermes" }, "Hermes report")));
+/** What FieldKit produced for this entry before 0.3 (rule findings, questions answered by Hermes, a report). Read-only;
+ *  new entries never get these: ask your Hermes agent instead. */
+async function earlierSection(rec: LocalRecord, stored: StoredReport | undefined): Promise<HTMLElement | null> {
+  const d = await db();
+  const findings = rec.local_results?.findings ?? [];
+  const questions = (await d.getAllFromIndex("questions", "by_record", rec.id)).filter((q) => q.answer);
+  if (!findings.length && !questions.length && !stored && !rec.report_id) return null;
+  const box = h("div", { class: "card", id: "earlier-results" }, h("h2", null, "From an earlier FieldKit version"),
+    h("p", { class: "muted" }, "Kept for reference. FieldKit no longer analyses entries; ask your Hermes agent instead."));
+  if (findings.length) box.append(h("h3", null, "Rule findings on the phone"), h("ul", { class: "clean" }, ...findings.map((f) =>
+    h("li", null, sevBadge(f.severity), " ", h("strong", null, f.label), f.detail ? h("div", { class: "muted" }, f.detail) : null))));
+  for (const q of questions) box.append(h("div", { class: "banner local", "data-question": q.id }, h("strong", null, q.question),
+    h("p", { style: "white-space:pre-wrap" }, q.answer!.answer)));
   if (stored) {
-    const r = stored.report;
-    box.append(h("p", { class: "muted" }, `Version ${r.version} · generated ${fmtTime(r.generated_at)} by ${r.generated_by} · downloaded ${fmtTime(stored.downloaded_at)} (available offline)`));
-    reportBody(box, r, rec.lang);
-  } else if (rec.sync_status !== "synced" && rec.sync_status !== "received") {
-    box.append(h("p", { class: "muted" }, "Available after Hermes has received and analyzed this record."));
-  } else {
-    box.append(h("p", { class: "muted" }, `Analysis status: ${ANALYSIS_TEXT[rec.analysis_status] ?? rec.analysis_status}. No report downloaded yet.`));
-  }
-
-  if (rec.sync_status === "synced" || rec.sync_status === "received") {
-    box.append(h("div", { class: "row" },
-      h("button", { onclick: async () => {
-        try { const n = await refreshReports(rec.id); toast(n ? "Report downloaded for offline use." : "No new report yet.", n ? "ok" : "info"); go(`#/results/${rec.id}?r=${Date.now()}`); }
-        catch (e) { toast(e instanceof AuthRequired ? "Sign in to Hermes first." : `Offline or unavailable: ${(e as Error).message}`, "error"); }
-      } }, stored ? "Check for newer report" : "Download report"),
-      null));
+    box.append(h("h3", null, "Hermes report"), h("p", { class: "muted" }, `Version ${stored.report.version} · downloaded ${fmtTime(stored.downloaded_at)}`));
+    reportBody(box, stored.report, rec.lang);
+  } else if (rec.report_id) {
+    box.append(h("button", { onclick: async () => {
+      try { await downloadEarlierReport(rec.id); go(`#/results/${rec.id}?r=${Date.now()}`); }
+      catch (e) { toast(e instanceof AuthRequired ? "Sign in to Hermes first." : `Offline or unavailable: ${(e as Error).message}`, "error"); }
+    } }, "Download the earlier report"));
   }
   return box;
-}
-
-/** "Ask Hermes about this visit": suggested and own questions, queued offline, answered from this record after sync. */
-async function askHermesCard(rec: LocalRecord, l: string): Promise<HTMLElement> {
-  const card = h("div", { class: "card", id: "ask-hermes" }, h("h2", null, "Ask Hermes about this visit"),
-    h("p", { class: "muted" }, "Hermes answers from this visit's answers, photos and voice notes. You can ask offline: the question waits and is sent when you sync."));
-  const list = h("div", { id: "ask-hermes-list" });
-  const render = async () => {
-    clear(list);
-    for (const q of await questionsFor(rec.id)) {
-      const a = q.answer;
-      const status = q.status === "answered" ? "" : q.status === "failed" ? `Hermes could not answer: ${q.error ?? ""}`
-        : q.status === "sent" ? (q.error ? `Sent. ${q.error}` : "Sent to Hermes. The answer appears here (check again in a minute).")
-        : ["synced", "received"].includes(rec.sync_status) ? "Waiting to send." : "Saved on this phone. It will be sent after this visit syncs.";
-      list.append(h("div", { class: "banner local", "data-question": q.id, "data-status": q.status },
-        h("strong", null, q.question),
-        a ? h("div", { class: "answer" }, h("p", { style: "white-space:pre-wrap" }, a.answer),
-          a.next_steps?.length ? h("ul", null, ...a.next_steps.map((s) => h("li", null, s))) : null,
-          a.uncertainty ? h("div", { class: "muted" }, `Not certain: ${a.uncertainty}`) : null,
-          h("div", { class: "muted" }, [a.confidence ? `Confidence: ${a.confidence}` : "", a.evidence_used?.length ? `Based on: ${a.evidence_used.join(", ")}` : "",
-            "About this visit only"].filter(Boolean).join(" · ")))
-          : h("div", { class: "muted" }, status),
-        q.status === "failed" ? h("button", { class: "small", "data-ask-again": q.id, onclick: async () => {
-          await askAgain(q.id); toast("Asked again. It is sent at the next sync.", "ok"); void runSync(); await render();
-        } }, "Ask again") : null));
-    }
-  };
-  const ask = async (text: string) => {
-    try {
-      await askAboutRecord(rec.id, text, l);
-      input.value = "";
-      if (navigator.onLine) await syncQuestions().catch(() => undefined);
-      await render();
-      toast(navigator.onLine ? "Question sent to Hermes." : "Saved. It will be sent when you're online.", "ok");
-    } catch (e) { toast((e as Error).message, "error"); }
-  };
-  const input = h("input", { id: "ask-hermes-input", placeholder: l === "hi" ? "अपना प्रश्न लिखें…" : "Your own question…", maxlength: "1000" }) as HTMLInputElement;
-  card.append(
-    h("div", { class: "row starters" }, ...(SUGGESTED_QUESTIONS[l] ?? SUGGESTED_QUESTIONS.en).map((s) => h("button", { onclick: () => ask(s) }, s))),
-    h("form", { class: "row", onsubmit: (e: Event) => { e.preventDefault(); void ask(input.value); } },
-      h("div", { class: "grow" }, input), h("button", { class: "primary" }, "Ask")),
-    list,
-    h("div", { class: "row" }, h("a", { class: "btn", id: "ask-about-record", href: `#/assistant?record=${encodeURIComponent(rec.id)}` },
-      "Ask the offline Workspace Assistant"), h("button", { id: "ask-hermes-refresh", onclick: async () => {
-      try { const n = await syncQuestions(); await render(); toast(n ? "Updated." : "No new answer yet.", n ? "ok" : "info"); }
-      catch (e) { toast(e instanceof AuthRequired ? "Sign in to Hermes first." : `Offline or unavailable: ${(e as Error).message}`, "error"); }
-    } }, "Check for answers")));
-  await render();
-  return card;
 }
 
 const INTEGRITY_TEXT: Record<string, string> = {
@@ -878,14 +719,11 @@ function reportV2(box: HTMLElement, r: any, tr: any, lg: string): void {
   box.append(h("p", null, tr?.summary || r.summary));
   const acts = r.next_actions ?? [];
   if (acts.length) {
-    const ws = r.workspace?.id;
     box.append(h("h3", null, "What to do next"), h("ol", { class: "actions", id: "report-actions" }, ...acts.map((a: any, i: number) =>
       h("li", { "data-origin": a.origin }, h("strong", null, tr?.next_actions?.[i] || a.action),
         h("div", { class: "muted" }, [a.who, typeof a.by_when_days === "number" ? (a.by_when_days <= 0 ? "now" : `within ${a.by_when_days} day(s)`) : ""].filter(Boolean).join(" · ")),
         a.verify_by ? h("div", null, `Check it worked: ${a.verify_by}`) : null,
-        h("div", { class: "row" }, h("span", { class: `badge origin-${a.origin}` }, ORIGIN_TEXT[a.origin] ?? a.origin),
-          a.origin === "guide" && ws && a.guide_id ? h("a", { class: "btn", href: `#/guide/${encodeURIComponent(ws)}/${encodeURIComponent(a.guide_id)}` }, "How to do this offline") : null,
-          a.origin === "knowledge" && ws && a.entry_id ? h("a", { class: "btn", href: `#/knowledge/${encodeURIComponent(`ws-${ws}-knowledge::${a.entry_id}`)}` }, "Read the procedure") : null)))));
+        h("div", { class: "row" }, h("span", { class: `badge origin-${a.origin}` }, ORIGIN_TEXT[a.origin] ?? a.origin))))));
   }
   if (r.issues?.length) box.append(h("h3", null, "Why"), h("ul", { class: "clean", id: "report-issues" }, ...r.issues.map((i: any, k: number) =>
     h("li", null, sevBadge(i.severity), " ", h("strong", null, tr?.issues?.[k] || i.title),
@@ -897,7 +735,7 @@ function reportV2(box: HTMLElement, r: any, tr: any, lg: string): void {
     h("ul", null, ...r.differences_from_local_findings.map((x: any) => h("li", null, `Phone: ${x.local} → Hermes: ${x.hermes}`, h("div", { class: "muted" }, x.why)))));
   if (r.follow_up_verification?.length) box.append(h("h3", null, "Checks for next time"),
     h("ul", { id: "report-checks" }, ...r.follow_up_verification.map((c: any) => h("li", null, c.what, h("div", { class: "muted" }, `${c.how}${typeof c.due_in_days === "number" ? ` · within ${c.due_in_days} day(s)` : ""}`)))),
-    h("p", { class: "muted" }, "Your next inspection of this subject asks these checks."));
+);
   if (r.images?.note) box.append(h("div", { class: `banner ${r.images.analyzed === false ? "warn" : "hermes"}` },
     h("strong", null, r.images.analyzed === false ? "Photos not analysed" : "Photos analysed"), h("div", null, r.images.note)));
   if (r.attachments?.evidence?.length) box.append(evidenceSection(r.attachments));
@@ -962,7 +800,7 @@ async function fetchRemoteCopy(id: string, names?: Map<string, string>, owner?: 
     device_label: names.get(rec.device_id) || (rec.device_id === await deviceId() ? "This device" : "Another device"),
     completed_at: rec.completed_at, received_at: rec.received_at, revision: rec.revision, analysis_status: rec.analysis_status,
     answers: rec.answers, local_results: rec.local_results, report, report_id: rec.report_id ?? null, downloaded_at: nowIso(),
-    attachments: (rec.attachments ?? []).map((a: any) => ({ id: a.id, field_id: a.field_id, mime: a.mime, size: a.size, sha256: a.sha256, status: a.status })),
+    attachments: (rec.attachments ?? []).map((a: any) => ({ id: a.id, field_id: a.field_id, kind: a.kind, mime: a.mime, size: a.size, sha256: a.sha256, status: a.status })),
     owner: owner || await currentAccountId() };
 }
 
@@ -1070,7 +908,7 @@ export const recordsView: View = async (main) => {
       r.availability === "waiting" ? h("span", null, " ", h("span", { class: "badge avail-waiting" },
         r.syncNote === "error" ? "Not accepted — open to retry" : r.syncNote === "conflict" ? "Conflict — needs your decision" : "Waiting to sync")) : null,
       h("div", { class: "muted" }, [r.source === "This device" ? "This device" : `From ${r.source}`, fmtTime(r.when),
-        r.syncNote ? STATUS_TEXT[r.syncNote] : null, `analysis: ${ANALYSIS_TEXT[r.analysis] ?? r.analysis}`, r.hasReport ? "report available" : null]
+        r.syncNote ? STATUS_TEXT[r.syncNote] : null, r.hasReport ? "earlier report available" : null]
         .filter(Boolean).join(" · ")),
       h("div", { class: "row" },
         r.availability === "needs-internet" && live ? h("button", { onclick: async (ev: Event) => {
@@ -1127,7 +965,6 @@ export const remoteView: View = async (main, p) => {
       h("div", null, "In your Hermes account. Read-only here.")),
     h("dl", { class: "kv" }, h("dt", null, "Completed"), h("dd", null, fmtTime(r.completed_at)),
       h("dt", null, "Received by Hermes"), h("dd", null, fmtTime(r.received_at)),
-      h("dt", null, "Hermes analysis"), h("dd", null, ANALYSIS_TEXT[r.analysis_status] ?? r.analysis_status),
       h("dt", null, "Availability"), h("dd", { "data-availability": copy ? "kept-offline" : "needs-internet" }, copy ? `Available offline (downloaded ${fmtTime(copy.downloaded_at)})` : "Needs internet"))));
   const dl = h("dl", { class: "kv" });
   const serverAtts = new Map<string, any>((live?.attachments ?? copy?.attachments ?? []).map((a) => [a.id, a]));
@@ -1138,12 +975,14 @@ export const remoteView: View = async (main, p) => {
     else if (f?.type === "multi_choice" && Array.isArray(v)) shown = v.map((x) => text(f.options?.find((o) => o.value === x)?.label, l) || String(x)).join(", ");
     else if (f?.type === "checkbox") shown = v ? "Yes" : "No";
     else if (f?.type === "gps" && v && typeof v === "object") shown = `${(v as any).lat}, ${(v as any).lon} (±${(v as any).accuracy ?? "?"} m)`;
-    else if (f && ["photo", "audio", "signature"].includes(f.type)) {
+    else if ((f && ["photo", "audio", "signature"].includes(f.type)) || ([v].flat() as any[]).some((x) => x?.attachment_id && serverAtts.has(x.attachment_id))) {
+      // Media answers; when this phone doesn't have the form, the kind comes from Hermes' attachment details.
       const items = ([v].flat() as any[]).filter((x) => x?.attachment_id);
-      const box = h("div", null, f.type === "signature" ? `Signed ${fmtTime((v as any)?.signed_at)}` : mediaSummary({ [f.type]: items.length }));
+      const kind = (f?.type ?? serverAtts.get(items[0]?.attachment_id)?.kind ?? "photo") as MediaKind;
+      const box = h("div", null, kind === "signature" ? `Signed ${fmtTime((v as any)?.signed_at)}` : mediaSummary({ [kind]: items.length }));
       for (const it of items) {
         const sa = serverAtts.get(it.attachment_id);
-        box.append(hermesMedia({ id: it.attachment_id, mime: sa?.mime ?? "", sha256: sa?.sha256, status: sa?.status }, f.type as MediaKind));
+        box.append(hermesMedia({ id: it.attachment_id, mime: sa?.mime ?? "", sha256: sa?.sha256, status: sa?.status }, kind));
         if (it.transcript) box.append(h("div", { class: "muted" }, `Transcript: ${it.transcript}`));
         if (it.ocr_text) box.append(h("div", { class: "muted" }, `Text in photo: ${it.ocr_text}`));
       }
@@ -1152,10 +991,11 @@ export const remoteView: View = async (main, p) => {
     dl.append(h("dt", null, f ? text(f.label, l) : k), h("dd", null, shown));
   }
   main.append(h("div", { class: "card" }, h("h2", null, "Answers"), dl));
-  const rep = h("div", { class: "card", id: "remote-report" }, h("h2", null, h("span", { class: "tag-hermes" }, "Hermes report")));
-  if (r.report) reportBody(rep, r.report, l); else rep.append(h("p", { class: "muted" }, "No Hermes report yet."));
-  if (copy) rep.append(h("div", { class: "row" }, h("a", { class: "btn", href: `#/assistant?remote=${encodeURIComponent(id)}` }, "Ask about this")));
-  main.append(rep);
+  if (r.report) {
+    const rep = h("div", { class: "card", id: "remote-report" }, h("h2", null, "Report from an earlier FieldKit version"));
+    reportBody(rep, r.report, l);
+    main.append(rep);
+  }
   main.append(h("div", { class: "row" },
     live ? h("button", { class: "primary", onclick: async () => {
       await d.put("remote", live!);
@@ -1225,28 +1065,6 @@ function conflictBox(r: LocalRecord, wf?: Workflow) {
       h("button", { onclick: async () => { await resolveConflict(r.id, "use_client"); go(`#/sync?r=${Date.now()}`); } }, "Keep this device's version"),
       h("button", { onclick: async () => { await resolveConflict(r.id, "keep_server"); go(`#/sync?r=${Date.now()}`); } }, "Use the Hermes version")));
 }
-
-export const reportsView: View = async (main) => {
-  const d = await db();
-  const reps = await d.getAll("reports");
-  const recs = new Map((await d.getAll("records")).map((r) => [r.id, r]));
-  main.append(h("div", { class: "card" }, h("h2", null, "Downloaded Hermes reports"),
-    h("p", { class: "muted" }, "These stay readable without internet."),
-    reps.length ? h("ul", { class: "clean" }, ...reps.map((r) => h("li", null, h("a", { href: `#/results/${r.record_id}` }, recs.get(r.record_id)?.workflow_title ?? "Report (record removed from this device)"),
-      h("div", { class: "muted" }, `v${r.version} · downloaded ${fmtTime(r.downloaded_at)}${r.report.requires_review ? " · requires review" : ""}`),
-      h("div", null, String(r.report.summary ?? "").slice(0, 200))))) : h("p", { class: "muted" }, "No reports downloaded yet."),
-    h("button", { onclick: async () => {
-      try { const n = await refreshReports(); toast(`${n} new report(s) downloaded.`, "ok"); go(`#/reports?r=${Date.now()}`); }
-      catch (e) { toast(e instanceof AuthRequired ? "Sign in to Hermes first." : "Offline — showing downloaded reports.", "error"); }
-    } }, "Check for new reports")));
-  const copies = (await accountCopies()).filter((c) => c.report);
-  if (copies.length) {
-    main.append(h("div", { class: "card", id: "other-device-reports" }, h("h2", null, "From your other devices (available offline)"),
-      h("ul", { class: "clean" }, ...copies.map((c) => h("li", null, h("a", { href: `#/remote/${c.id}` }, c.workflow_title),
-        h("div", { class: "muted" }, `${c.device_label} · kept ${fmtTime(c.downloaded_at)}${c.report.requires_review ? " · requires review" : ""}`),
-        h("div", null, String(c.report.summary ?? "").slice(0, 200)))))));
-  }
-};
 
 export async function whoAmI(): Promise<{ user_id: string; display_name: string; provider?: string } | null> {
   try { return await api("me"); } catch { return null; }

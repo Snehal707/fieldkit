@@ -1,9 +1,9 @@
 {
   "name": "fieldkit",
   "label": "FieldKit",
-  "description": "Offline field workflows, knowledge packs, synchronised records and Hermes reports.",
+  "description": "Offline observation forms, synchronised entries, files and devices.",
   "icon": "ClipboardCheck",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "tab": { "path": "/fieldkit", "position": "end" },
   "entry": "dist/index.js",
   "css": "dist/style.css",

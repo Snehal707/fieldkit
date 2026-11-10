@@ -137,8 +137,6 @@ async function sendRecord(op: OutboxOp, dev: string): Promise<"done" | "stop" | 
       r.server_ack = { received_at: res.received_at, revision: res.revision, sync_status: res.sync_status };
       if (typeof res.workspace_id === "string") r.workspace_id = res.workspace_id;  // the workspace Hermes filed it under
       r.sync_status = res.sync_status === "complete" ? "synced" : "received";
-      r.analysis_status = res.analysis_status;
-      r.analysis_job_id = res.analysis_job_id;
       r.sync_error = undefined;
       await tx.objectStore("records").put(r);
     }
@@ -177,8 +175,6 @@ async function sendAttachment(op: OutboxOp): Promise<"done" | "stop" | "retry"> 
     const r = await tx.objectStore("records").get(op.record_id);
     if (r) {
       r.sync_status = body.sync_status === "complete" ? "synced" : "received";
-      r.analysis_status = body.analysis_status;
-      r.analysis_job_id = body.analysis_job_id;
       await tx.objectStore("records").put(r);
     }
     await tx.done;
@@ -231,7 +227,6 @@ async function handleError(e: unknown, op: OutboxOp, recordId: string): Promise<
 }
 
 /** Process the outbox once. Safe to call often; concurrent calls coalesce. */
-/** Upload queued knowledge gaps and feedback (idempotent on the server; verified outcomes travel inside records). */
 export async function runSync(opts: { force?: boolean } = {}): Promise<SyncState> {
   if (running) return state;
   running = true;
@@ -256,8 +251,6 @@ export async function runSync(opts: { force?: boolean } = {}): Promise<SyncState
     if (!state.auth_required && !state.offline) {
       emit({ last_ok: nowIso() });
       await setSetting("auth_required", false);
-      await refreshReports().catch(() => undefined);
-      await import("./questions").then((m) => m.syncQuestions()).catch(() => undefined);
     }
   } finally {
     running = false;
@@ -287,40 +280,17 @@ export async function restoreAuthFlag(): Promise<void> {
   emit({ auth_required: await getSetting("auth_required", false) });
 }
 
-/** Pull analysis status for synced records and download any new Hermes report for offline use. */
-export async function refreshReports(recordId?: string): Promise<number> {
+/** Download, for offline reading, a report FieldKit made for this entry before 0.3 (if there is one). */
+export async function downloadEarlierReport(recordId: string): Promise<boolean> {
   const d = await db();
-  const recs = recordId ? [await d.get("records", recordId)].filter(Boolean) as LocalRecord[] : await d.getAll("records");
-  let downloaded = 0;
-  for (const rec of recs) {
-    if (!["synced", "received"].includes(rec.sync_status)) continue;
-    const have = await d.get("reports", rec.id);
-    if (!recordId && have && have.report_id === rec.report_id && ["completed", "requires_review"].includes(rec.analysis_status)) continue;
-    let server: any;
-    try { server = await api<any>(`records/${encodeURIComponent(rec.id)}`); }
-    catch (e) {
-      // Hermes doesn't have this record (its data was reset or moved): skip it, keep refreshing the others.
-      // Saved Records offers "Upload again" for such records. Sign-in and connection problems still stop here.
-      if (e instanceof HttpError && e.status === 404 && !recordId) continue;
-      throw e;
-    }
-    const patch: Partial<LocalRecord> = { analysis_status: server.analysis_status, analysis_job_id: server.analysis_job_id,
-      report_id: server.report_id, report_version: server.report_version };
-    if (server.report_id && (!have || have.report_id !== server.report_id)) {
-      const report = await api<any>(`records/${encodeURIComponent(rec.id)}/report`);
-      await d.put("reports", { record_id: rec.id, report_id: report.report_id, version: report.version, downloaded_at: nowIso(), report });
-      patch.report_downloaded_at = nowIso();
-      downloaded++;
-    }
-    await updateRecord(rec.id, patch);
-  }
-  return downloaded;
-}
-
-export async function requestAnalysis(recordId: string): Promise<any> {
-  const res = await api<any>(`records/${encodeURIComponent(recordId)}/analyze`, { method: "POST" });
-  await updateRecord(recordId, { analysis_status: res.analysis_status, analysis_job_id: res.job_id });
-  return res;
+  const server = await api<any>(`records/${encodeURIComponent(recordId)}`);
+  if (!server.report_id) return false;
+  const have = await d.get("reports", recordId);
+  if (have && have.report_id === server.report_id) return false;
+  const report = await api<any>(`records/${encodeURIComponent(recordId)}/report`);
+  await d.put("reports", { record_id: recordId, report_id: report.report_id, version: report.version, downloaded_at: nowIso(), report });
+  await updateRecord(recordId, { report_id: server.report_id, report_version: server.report_version });
+  return true;
 }
 
 export async function resolveConflict(recordId: string, resolution: "keep_server" | "use_client"): Promise<void> {

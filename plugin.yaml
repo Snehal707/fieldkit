@@ -1,6 +1,6 @@
 name: fieldkit
-version: "0.2.6"
-description: "FieldKit: create offline mobile field workflows through Hermes, run them on a phone with no internet (installable PWA with local findings, knowledge Q&A, dictionaries, translation, OCR and voice), sync securely when back online, and get Hermes analysis and reports in the PWA, the dashboard and Hermes Mobile."
+version: "0.3.0"
+description: "FieldKit: create and edit offline observation forms through Hermes conversations, collect entries with photos, voice notes, GPS and signatures on a phone with no internet (installable PWA, optional offline OCR and translation), sync securely when back online, and give your Hermes agent the synced entries and files to work with."
 author: "FieldKit contributors"
 license: MIT
 homepage: "https://github.com/Snehal707/fieldkit"
@@ -12,32 +12,19 @@ tags:
   - field-work
   - pwa
 provides_tools:
-  - fieldkit_get_app_link
   - fieldkit_list_records
   - fieldkit_get_record
-  - fieldkit_get_report
+  - fieldkit_get_attachment
   - fieldkit_get_sync_status
   - fieldkit_resolve_conflict
-  - fieldkit_ask_about_record
-  - fieldkit_list_questions
-  - fieldkit_process_pending_jobs
-  - fieldkit_install_examples
+  - fieldkit_get_app_link
   - fieldkit_workspace_format
-  - fieldkit_save_workspace_brief
-  - fieldkit_start_workspace_build
-  - fieldkit_add_workspace_parts
-  - fieldkit_workspace_build_status
-  - fieldkit_build_workspace
-  - fieldkit_undo_workspace_update
+  - fieldkit_draft_workspace
   - fieldkit_publish_workspace
+  - fieldkit_undo_workspace_update
   - fieldkit_get_workspace
   - fieldkit_list_workspaces
-provides_hooks:
-  - on_session_start
 python_dependencies:
   - "jsonschema>=4.17,<5"
 config_keys:
   - public_url
-  - auto_analyze
-  - vision_task
-  - voice_transcription
