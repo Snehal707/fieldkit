@@ -5,11 +5,11 @@ import { db, type InstalledPack, type StoredWorkflow } from "./db";
 import type { Workflow } from "./engine";
 import { nowIso, sha256Hex } from "./util";
 
-export interface Catalog { workflows: any[]; packs: any[]; models: any }
+export interface Catalog { models: any }
 
+/** The optional on-device packs (OCR, translation) Hermes offers. */
 export async function fetchCatalog(): Promise<Catalog> {
-  const [w, p, m] = await Promise.all([api("workflows"), api("packs"), api("models")]);
-  return { workflows: w.workflows, packs: p.packs, models: m };
+  return { models: await api("models") };
 }
 
 export async function installPack(id: string): Promise<InstalledPack> {

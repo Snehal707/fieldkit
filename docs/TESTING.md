@@ -685,3 +685,33 @@ learning queue; entries, files, drafts and answers are untouched.
 **NOT verified:** the hosted Hermes, the owner's iPhone, and Android. Everything in the table ran against a local test
 Hermes only. The owner's 0.2.4 iPhone run (offline recording, sync, media and Saved Records) is recorded in section 5; the
 collection code is unchanged in 0.3.0.
+
+## 0.3.0 release verification (2026-11-10, final code)
+
+All on a local test Hermes v0.23.0 (Windows 11, model `openai/gpt-5.4-mini` via Nous), phone-sized browsers.
+
+| Check | Result |
+|---|---|
+| Unit tests | 90 Python, 100 TypeScript; typecheck clean; `hermes plugins validate` passed; `doctor --ci`: 12 tools, 0 hooks |
+| Full WebKit suite (final build, one run) | 21 passed, 0 failed, 8 skipped (6 network-blocking tests WebKit can't run under a service worker, which run in Chromium; 2 model-download tests, run separately below) |
+| Full Chromium suite (final build) | 27 passed, 0 failed, 2 skipped (model-download tests, run separately below) |
+| Offline OCR and translation | Packs installed online, then a cold start with the network off: OCR read "FIELDKIT OFFLINE 42" and en→hi translation ran on the device, in Chromium and WebKit. The small model still renders "bearing" as "bear" (known limitation) |
+| Hermes transcribes a synced voice note | A spoken WAV synced through the real API (stored, no transcript from FieldKit). Asked to transcribe it, Hermes called `fieldkit_get_record`, `fieldkit_get_attachment` and its own `transcribe` tool, and returned the sentence word for word (108 s). FieldKit made no model call |
+| Workspace association | Phone entries carry their workspace (E2E: entries made offline from the workspace page; API sync of a voice-note entry); unit tests cover a valid claim, a wrong claim, ambiguity (never guessed) and repair of old entries |
+| Account isolation | API tests: another user cannot read, overwrite, list or download a user's entries, files, reports or questions; E2E: two installs of one account share one record list without duplicates |
+| Signatures optional | A form without a signature shows no signature pad; a form with a required signature cannot be completed unsigned. Both completed offline in one workspace and synced (Chromium and WebKit); the signature file arrived intact with its time. A draft that would drop a published signature field is flagged; unrelated edits keep it. The builder skill adds a signature only when the user asks |
+| Existing data | Copies of three earlier databases (two real-Hermes test runs and the test store before the 0.2.6 fixes): row counts unchanged; 167/167, 96/96 and 201/201 entries readable; 73, 33 and 83 old reports shown; 35/35, 24/24 and 45/45 stored files readable through `fieldkit_get_attachment`; all workspaces readable. On the live test store, the answers of all 7 entries with 0.2.6 questions are shown |
+| No leftovers | No unused Python functions; the two list routes (`GET /workflows`, `GET /packs`) the phone fetched and discarded were removed; the model catalog offers only OCR and translation; the phone bundle carries no assistant code (Whisper/embedding strings exist only inside the translation library) |
+
+**Defects found and fixed in this pass**
+- Phone form: when a choice was saved slowly (seen in WebKit), the form re-rendered while the user was typing in
+  another field and the cursor left the field, so further typing was lost (1 in 6 WebKit runs lost a note). The form
+  now keeps focus and cursor position on such re-renders. 10 of 10 repeated WebKit runs passed afterwards.
+- The two unused list routes above.
+- Test fixes (not product changes): waits for the workspace update and for "download all" to finish, OCR screen render,
+  scroll position for the update-notice geometry.
+
+**NOT verified (separate from the local results above):** the hosted Hermes (it still runs an earlier FieldKit until the
+owner updates it), the owner's iPhone with 0.3.0 (Safari and the Home Screen app), Hermes Mobile, Android, and real
+speech or photos from a phone camera. The owner's 0.2.4 iPhone run covered offline recording, sync, media and Saved
+Records; that collection code is unchanged apart from the focus fix above.

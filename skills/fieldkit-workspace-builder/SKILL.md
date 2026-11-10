@@ -16,7 +16,8 @@ Start with one question: **what is this workspace for?** Then ask only what you 
 - what they record each time (questions, measurements with units, choices with their options, free notes, issues seen);
 - what identifies an entry (a site, person, household, asset, plot, sample...), so earlier entries of the same
   subject can be found;
-- which media they need (photos, voice notes, location, signature);
+- which media they need (photos, voice notes, location). Add a **signature** field only if the user asks for one
+  (e.g. consent or sign-off); never add it by default;
 - languages: the phone app supports **English and Hindi** only.
 Ask before drafting: never guess a form before the user has told you what they record. Infer small details (field ids,
 which fields are required) and show them in the summary.
@@ -36,7 +37,9 @@ which fields are required) and show them in the summary.
 For "add a question about X", "remove the GPS field", "make the date required", "add an option", "change the purpose":
 1. `fieldkit_get_workspace(workspace_id)` to see the current forms.
 2. `fieldkit_draft_workspace(workspace_id, ...)` with **only** what changes: the whole changed form in `forms` (same id
-   replaces it), `remove_forms`, `title`, `purpose` or `languages`. Do not redesign anything else.
+   replaces it), `remove_forms`, `title`, `purpose` or `languages`. Do not redesign anything else. Keep every field the
+   user did not ask to change, signatures included; if the draft warns that a signature field would be removed, remove
+   it only if the user asked for that.
 3. Show `changes_since_published` as a short list and ask "Publish these changes?". Publish only after they say yes.
 4. Entries already made keep their original form version and answers, including answers to removed questions.
 

@@ -77,6 +77,7 @@ test("update notice after a real service-worker update is compact, opaque and ne
     const bar = page.locator(".update-bar");
     await expect(bar).toBeVisible({ timeout: 30_000 });
     await expect(bar).toContainText("Update ready");
+    await page.evaluate(() => window.scrollTo(0, 0));                    // WebKit scrolls to the focused field late
 
     const geo = await page.evaluate(() => {
       const r = (s: string) => document.querySelector(s)!.getBoundingClientRect();

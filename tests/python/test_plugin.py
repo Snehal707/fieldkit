@@ -237,3 +237,52 @@ def test_language_shapes_from_real_models_are_understood():
     assert n({"en": "English", "hi": "Hindi"}) == {"content": ["en", "hi"]}
     assert n({"primary": ["hi", "en"]}) == {"content": ["hi", "en"]}
     assert n("हिंदी") == {"content": ["hi"]} and n(None) == {"content": ["en"]}
+
+
+# ----------------------------------------------------------------------------- signatures are optional
+def test_signature_is_only_a_field_type_and_never_added_or_dropped_silently(ctx):
+    from fieldkit_core import forms
+    assert "signature" not in [f["type"] for f in forms.EXAMPLE["fields"]]                # the example has none
+    assert "only when the user asks" in forms.RULES
+    no_sig = {"id": "walk", "title": "Site walk", "fields": [{"id": "site", "type": "text", "label": "Site"}]}
+    d = call(ctx, "fieldkit_draft_workspace", workspace_id="walks", title="Walks", purpose="Site walks", forms=[no_sig])
+    assert d["valid"] and call(ctx, "fieldkit_publish_workspace", workspace_id="walks", user_approved=True)["ok"]
+    assert [f["type"] for f in db.get_store().get_workflow(db.ALL, "walk")["fields"]] == ["text"]   # nothing added
+    with_sig = {**no_sig, "fields": no_sig["fields"] + [{"id": "consent", "type": "signature", "label": "Consent", "required": True}]}
+    d = call(ctx, "fieldkit_draft_workspace", workspace_id="walks", forms=[with_sig])
+    assert any('added question "Consent" (signature)' in c for c in d["changes_since_published"])
+    call(ctx, "fieldkit_publish_workspace", workspace_id="walks", user_approved=True)
+    # An edit that would drop the signature is flagged (and listed), not silently applied.
+    edited = {**no_sig, "fields": no_sig["fields"] + [{"id": "notes", "type": "multiline", "label": "Notes"}]}
+    d = call(ctx, "fieldkit_draft_workspace", workspace_id="walks", forms=[edited])
+    assert any("signature field 'walk/consent' would be removed" in w for w in d["warnings"])
+    assert any('removed question "Consent"' in c for c in d["changes_since_published"])
+    # An edit of another field keeps the signature (the whole form is sent back unchanged apart from the edit).
+    kept = {**with_sig, "fields": with_sig["fields"] + [{"id": "notes", "type": "multiline", "label": "Notes"}]}
+    d = call(ctx, "fieldkit_draft_workspace", workspace_id="walks", forms=[kept])
+    assert not [w for w in d["warnings"] if "signature" in w]
+
+
+def test_legacy_form_with_a_signature_stays_publishable_and_its_signatures_readable(ctx, tmp_path):
+    import hashlib
+    store = db.get_store()
+    form = {"id": "audit", "title": "Audit", "version": 1, "fields": [
+        {"id": "site", "type": "text", "label": "Site"}, {"id": "sign", "type": "signature", "label": "Auditor", "required": True}]}
+    store.save_workspace_draft(db.ALL, {"id": "audits", "title": {"en": "Audits"}, "profile": {"purpose": "Audits"},
+                                        "languages": {"content": ["en"]}, "workflows": [form]}, {"ok": True})
+    ws.publish(store, "audits", 1, actor=db.ALL)
+    png = b"\x89PNG\r\n\x1a\n" + b"sig" * 40
+    sha = hashlib.sha256(png).hexdigest()
+    store.sync_record("alice", "k-sig", "dev", {"id": "rec_sig_000001", "workflow_id": "audit", "workflow_version": 1, "base_revision": 0,
+                                                "answers": {"site": "A1", "sign": {"attachment_id": "att_sig_00001", "signed_at": "2026-11-01T10:00:00Z"}},
+                                                "attachments": [{"id": "att_sig_00001", "field_id": "sign", "mime": "image/png", "size": len(png), "sha256": sha}]})
+    store.store_attachment("alice", "att_sig_00001", png, "image/png", tmp_path / "att")
+    d = call(ctx, "fieldkit_draft_workspace", workspace_id="audits", purpose="Site audits")     # unrelated edit
+    assert d["valid"] and not [w for w in d["warnings"] if "signature" in w]
+    call(ctx, "fieldkit_publish_workspace", workspace_id="audits", user_approved=True)
+    assert [f["type"] for f in store.get_workflow(db.ALL, "audit")["fields"]] == ["text", "signature"]
+    rec = call(ctx, "fieldkit_get_record", record_id="rec_sig_000001")
+    att = rec["record"]["attachments"][0]
+    assert att["kind"] == "signature" and att["signed_at"] == "2026-11-01T10:00:00Z" and att["integrity"] == "intact"
+    got = call(ctx, "fieldkit_get_attachment", attachment_id="att_sig_00001")
+    assert got["kind"] == "signature" and got["path"].endswith(".png")

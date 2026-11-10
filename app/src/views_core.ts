@@ -318,7 +318,12 @@ export const runView: View = async (main, p) => {
   };
 
   const notice = h("div");
-  const render = () => {
+  const render = (keepFocus = true) => {
+    // A re-render (e.g. after a choice is saved) must not take the cursor out of the field being typed in: on a slow
+    // device the save can finish mid-typing, and keystrokes after the rebuild would otherwise go nowhere.
+    const active = document.activeElement as HTMLInputElement | HTMLTextAreaElement | null;
+    const keep = keepFocus && active && form.contains(active) && active.id?.startsWith("in-")
+      ? { id: active.id, start: active.selectionStart, end: active.selectionEnd } : null;
     const st = computeState(wf, draft.answers, l);
     clear(form);
     form.append(notice);
@@ -331,6 +336,13 @@ export const runView: View = async (main, p) => {
       h("div", { class: "row" },
       h("button", { class: "primary", onclick: finish }, "Complete workflow"),
       h("span", { class: "muted" }, `Draft saved on this device · ${Object.keys(st.errors).length} item(s) to fix`)));
+    if (keep) {
+      const again = form.querySelector<HTMLInputElement | HTMLTextAreaElement>(`#${CSS.escape(keep.id)}`);
+      if (again) {
+        again.focus({ preventScroll: true });
+        try { if (keep.start !== null && keep.end !== null) again.setSelectionRange(keep.start, keep.end); } catch { /* date/number inputs */ }
+      }
+    }
   };
 
   const fieldView = (f: Field, st: ReturnType<typeof computeState>, _vis: Set<string>) => {
@@ -355,12 +367,12 @@ export const runView: View = async (main, p) => {
     const id = `in-${f.id}`;
     const ph = text(f.placeholder, l);
     switch (f.type) {
-      case "text": return h("input", { id, value: (v as string) ?? "", placeholder: ph, oninput: (e: Event) => set(f.id, (e.target as HTMLInputElement).value, false), onchange: () => render() });
+      case "text": return h("input", { id, value: (v as string) ?? "", placeholder: ph, oninput: (e: Event) => set(f.id, (e.target as HTMLInputElement).value, false), onchange: () => render(false) });
       case "multiline": {
-        return h("textarea", { id, placeholder: ph, oninput: (e: Event) => set(f.id, (e.target as HTMLTextAreaElement).value, false), onchange: () => render() }, (v as string) ?? "");
+        return h("textarea", { id, placeholder: ph, oninput: (e: Event) => set(f.id, (e.target as HTMLTextAreaElement).value, false), onchange: () => render(false) }, (v as string) ?? "");
       }
       case "number": return h("input", { id, type: "number", inputmode: "decimal", step: "any", value: v ?? "",
-        oninput: (e: Event) => { const s = (e.target as HTMLInputElement).value; set(f.id, s === "" ? undefined : Number(s), false); }, onchange: () => render() });
+        oninput: (e: Event) => { const s = (e.target as HTMLInputElement).value; set(f.id, s === "" ? undefined : Number(s), false); }, onchange: () => render(false) });
       case "date": return h("input", { id, type: "date", value: (v as string) ?? "", onchange: (e: Event) => set(f.id, (e.target as HTMLInputElement).value) });
       case "time": return h("input", { id, type: "time", value: (v as string) ?? "", onchange: (e: Event) => set(f.id, (e.target as HTMLInputElement).value) });
       case "checkbox": return h("div", { class: "choices row" },

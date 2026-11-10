@@ -15,14 +15,12 @@ Base path: `/api/plugins/fieldkit/`.
 ## Forms (workflows)
 | Method | Path | Query / body | Result |
 |---|---|---|---|
-| GET | `workflows` | `include_drafts=true` (drafts only for their owner) | `{workflows: [...]}` with `id`, `title`, `status`, `latest_version`, `published_version` |
 | GET | `workflows/{id}` | `version`, `draft=true` | The form definition. Published by default; `404` if none is published |
 | POST | `workflows/restore` | `{definition}` | `{restored, version}`. Puts back one exact form version that this Hermes lacks (for example after its data was reset), from the copy a phone downloaded. Validated like any form (`422` with `{problems}`). Never overwrites an existing version (`restored: false`). Never touches another user's form. |
 
 ## Packs and model catalog
 | Method | Path | Query / notes |
 |---|---|---|
-| GET | `packs` | `kind=` filter. Each pack has `id`, `kind`, `version`, `title`, `languages`, `sha256`, `size`. Workspace packs are `ws-<id>`. |
 | GET | `packs/{id}` | The raw JSON body, with header `X-FieldKit-SHA256` (must match the SHA-256 of the body) |
 | GET | `models` | The pinned upstream on-device model catalog (metadata only). The phone downloads the files from their upstream hosts. |
 

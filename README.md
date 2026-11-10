@@ -31,7 +31,8 @@ Details: [docs/INSTALL.md](docs/INSTALL.md).
 ### 1. Set up by chat
 Hermes asks what the workspace is for, which languages you use (English or Hindi), and what each entry records. A
 workspace has one or more **forms**. Each form has questions of these types: text, multiline text, number, date, time,
-checkbox, single choice, multiple choice, photo, audio (voice note), GPS, signature and instruction.
+checkbox, single choice, multiple choice, photo, audio (voice note), GPS, signature and instruction. A
+signature field is added only when you ask for one (for example consent or sign-off).
 
 - Questions can be required, or shown only when a condition holds. They can have validation rules and units.
 - A form can name the field that identifies what an entry is about (a site, a person, an asset). Earlier entries of the
@@ -86,15 +87,17 @@ Exact commands and results are in [docs/TESTING.md](docs/TESTING.md).
 
 **Local test only.** Hermes Agent v0.23.0 on a local machine, with real conversations (model `openai/gpt-5.4-mini` via
 Nous), 2026-11-10. This was **not** the hosted Hermes and **not** the owner's iPhone.
-- Unit tests: 88 Python and 100 TypeScript. Typecheck clean. `hermes plugins validate` passed. `hermes plugins doctor --ci`: 12 tools, 0 hooks.
-- Browser end-to-end tests (Playwright): Chromium 27 passed, 2 skipped; WebKit 19 passed, 8 skipped. Two WebKit failures passed on rerun after a fix.
-- Setup by chat, edit and undo by chat, and asking about a synced visit with a photo all worked with the new tools.
+- Unit tests: 90 Python and 100 TypeScript. Typecheck clean. `hermes plugins validate` passed. `hermes plugins doctor --ci`: 12 tools, 0 hooks.
+- Browser end-to-end tests (Playwright), final run on the release code: Chromium 27 passed, 2 skipped; WebKit 21 passed,
+  8 skipped, 0 failed. Offline OCR and translation passed in both browsers with the network off. Details: docs/TESTING.md.
+- Setup by chat, edit and undo by chat, and asking about a synced visit worked with the new tools; Hermes described a
+  synced photo with its own vision tool and transcribed a synced voice note word for word with its own speech-to-text.
 - Copies of two databases from earlier real-Hermes runs opened with 0.3: no row counts changed, and all old entries, reports
   and workspace versions stayed readable.
 
 **Owner's iPhone with the hosted Hermes, version 0.2.4 (2026-11-09, owner-reported):** offline recording, sync, media
-(photos, voice notes and signatures) and Saved Records worked. That collection code is unchanged in 0.3, so this still
-applies to it. The 0.3 changes (workspaces by chat, the phone's new screens and the removed tools) have not yet been
+(photos, voice notes and signatures) and Saved Records worked. That collection code is unchanged in 0.3 apart from one
+fix (the form keeps the cursor in a field while another answer is saved), so this still largely applies. The 0.3 changes (workspaces by chat, the phone's new screens and the removed tools) have not yet been
 checked on the iPhone or the hosted Hermes.
 
 ## Known limitations

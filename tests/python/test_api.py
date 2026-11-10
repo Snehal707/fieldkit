@@ -307,7 +307,8 @@ def test_retired_routes_are_gone(env):
     _sync(env, rec)
     for method, path in (("post", f"/records/{rec['id']}/analyze"), ("post", f"/records/{rec['id']}/questions"),
                          ("get", "/jobs"), ("get", "/followups"), ("post", "/learning/events"), ("post", "/examples/install"),
-                         ("post", "/workflows"), ("post", "/packs"), ("post", "/packs/from-document")):
+                         ("post", "/workflows"), ("post", "/packs"), ("post", "/packs/from-document"),
+                         ("get", "/workflows"), ("get", "/packs")):
         kw = {"json": {}} if method == "post" else {}
         assert getattr(env.client, method)(f"{PREFIX}{path}", headers=H(), **kw).status_code in (404, 405), path
 

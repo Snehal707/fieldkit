@@ -44,12 +44,21 @@ const FORM = {
   ],
 };
 
+// A second form WITH a signature (configured because the user asked for one, e.g. consent).
+const CONSENT = {
+  id: `e2e-consent-${RUN}`, title: { en: "Consent" }, languages: ["en"],
+  fields: [
+    { id: "household_id", type: "text", label: { en: "Household ID" }, required: true },
+    { id: "consent_sign", type: "signature", label: { en: "Consent signature" }, required: true },
+  ],
+};
+
 test.beforeEach(() => { test.skip(!PASS || !DATA_DIR, "set FIELDKIT_E2E_PASS and FIELDKIT_E2E_DATA_DIR"); });
 
 test("a workspace downloads in one tap, works offline, files entries under it and shows updates", async () => {
   test.setTimeout(180_000);
   const run = RUN;
-  const d = tool("fieldkit_draft_workspace", { workspace_id: WID, title: "Home visits", purpose: "Record what I see on home visits", forms: [FORM] });
+  const d = tool("fieldkit_draft_workspace", { workspace_id: WID, title: "Home visits", purpose: "Record what I see on home visits", forms: [FORM, CONSENT] });
   expect(d.valid, JSON.stringify(d.errors)).toBe(true);
   expect(tool("fieldkit_publish_workspace", { workspace_id: WID, user_approved: true }).ok).toBe(true);
 
@@ -70,7 +79,7 @@ test("a workspace downloads in one tap, works offline, files entries under it an
   page = await ctx.newPage();
   await page.goto(`${APP}#/workspace/${WID}`);
   await expect(page.locator("#ws-home")).toBeVisible({ timeout: 20_000 });
-  await page.locator(`#ws-workflows a[href*="?ws=${WID}"]`).click();
+  await page.locator(`#ws-workflows a[href*="${FORM.id}?ws=${WID}"]`).click();
   await page.getByRole("button", { name: "Start workflow" }).click();
   await page.locator("#in-household_id").fill(`HH-${run}`);
   await page.locator("#in-household_id").blur();
@@ -80,6 +89,27 @@ test("a workspace downloads in one tap, works offline, files entries under it an
   await page.getByRole("button", { name: "Complete workflow" }).click();
   await expect(page.locator("text=Saved locally. Pending synchronization.")).toBeVisible({ timeout: 15_000 });
   const rid = page.url().split("#/results/")[1].split("?")[0];
+  expect(await page.locator("canvas.sig").count()).toBe(0);              // no signature unless the form has one
+
+  // The form WITH a signature, also offline: it can't be completed unsigned; signed, it saves.
+  await page.goto(`${APP}#/workflow/${CONSENT.id}?ws=${WID}`);
+  await page.getByRole("button", { name: "Start workflow" }).click();
+  await page.locator("#in-household_id").fill(`HH-${run}`);
+  await page.locator("#in-household_id").blur();
+  await page.getByRole("button", { name: "Complete workflow" }).click();
+  await expect(page.locator("text=Not submitted yet")).toBeVisible();
+  const pad = page.locator("#f-consent_sign canvas");
+  await pad.scrollIntoViewIfNeeded();
+  const box = (await pad.boundingBox())!;
+  await page.mouse.move(box.x + 20, box.y + box.height / 2);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) await page.mouse.move(box.x + 20 + i * 20, box.y + box.height / 2 + (i % 2 ? -20 : 20));
+  await page.mouse.up();
+  await page.locator("#f-consent_sign").getByRole("button", { name: "Save signature" }).click();
+  await expect(page.locator("#f-consent_sign img")).toHaveCount(1, { timeout: 15_000 });
+  await page.getByRole("button", { name: "Complete workflow" }).click();
+  await expect(page.locator("text=Saved locally. Pending synchronization.")).toBeVisible({ timeout: 15_000 });
+  const ridSigned = page.url().split("#/results/")[1].split("?")[0];
   await ctx.close();
 
   // Online: the entry syncs, filed under its workspace.
@@ -89,6 +119,14 @@ test("a workspace downloads in one tap, works offline, files entries under it an
   await page.goto(`${APP}#/sync`);
   await expect.poll(async () => (await ctx.request.get(`${API}/records/${rid}`)).status(), { timeout: 60_000 }).toBe(200);
   expect((await (await ctx.request.get(`${API}/records/${rid}`)).json()).workspace_id).toBe(WID);
+  await expect.poll(async () => (await (await ctx.request.get(`${API}/records/${ridSigned}`)).json()).sync_status,
+    { timeout: 60_000, intervals: [1_000] }).toBe("complete");
+  const signed = await (await ctx.request.get(`${API}/records/${ridSigned}`)).json();
+  expect(signed.workspace_id).toBe(WID);
+  const sigAtt = signed.attachments.find((a: any) => a.kind === "signature");
+  expect(sigAtt.status).toBe("stored");
+  expect(sigAtt.signed_at).toBeTruthy();
+  expect((await (await ctx.request.get(`${API}/records/${rid}`)).json()).attachments).toEqual([]);   // unsigned form: no files
 
   // An edit published from Hermes: the phone shows the update and its change list; the old entry keeps its answers.
   const edited = { ...FORM, fields: FORM.fields.filter((f) => f.id !== "concern_notes").concat([{ id: "follow_up", type: "checkbox", label: { en: "Follow-up needed" } } as any]) };
@@ -99,6 +137,9 @@ test("a workspace downloads in one tap, works offline, files entries under it an
   await expect(page.locator("#ws-update")).toContainText("Update available: version 2", { timeout: 20_000 });
   await expect(page.locator("#ws-update")).toContainText("Follow-up needed");
   await page.locator("#ws-download").click();
+  // The update finishes by reopening the workspace page; wait for it before leaving (WebKit is slower).
+  await expect(page.locator("#ws-update")).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.locator("#ws-home")).toBeVisible();
   await page.goto(`${APP}#/results/${rid}`);
   await expect(page.locator("text=Tank leaking")).toBeVisible();
   await ctx.close();

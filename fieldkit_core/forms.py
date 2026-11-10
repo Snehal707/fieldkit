@@ -51,7 +51,8 @@ RULES = ("Use the user's own words, units and categories; ask, never invent. Lab
          "Choice fields need options [{value, label}]. Conditions use field ids of the same form: numbers compare with "
          "numbers, checkbox with true/false, choices with an option value. Set metadata.subject_field to the field that "
          "identifies what an entry is about (a site, person, asset, plot...), if there is one. Notes and issues are "
-         "ordinary fields (multiline text, choices). Media: photo, audio (voice note), signature, gps.")
+         "ordinary fields (multiline text, choices). Media: photo, audio (voice note), gps; add a signature field only when "
+         "the user asks for one (consent, sign-off).")
 
 # ----------------------------------------------------------------------------- normalisation
 _OPS = {"==": "eq", "=": "eq", "===": "eq", "equals": "eq", "equal": "eq", "is": "eq", "!=": "neq", "<>": "neq", "!==": "neq",

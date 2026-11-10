@@ -76,6 +76,7 @@ def draft(a: dict) -> str:
     if "workflow_refs" in a:
         b["workflow_refs"] = list(a.get("workflow_refs") or [])
     changes = ws.workspace_changes(published, b) if published else ["New workspace."]
+    dropped_signatures = _dropped_signatures(published, b) if published else []
     d = ws.build_draft(store, ALL, b, changelog=a.get("changelog") or (changes[:12] if published else None))
     v = d["validation"]
     if not v["ok"]:
@@ -85,7 +86,9 @@ def draft(a: dict) -> str:
                "after they say yes. Old entries keep their original form version and answers.")
     else:
         nxt = "Show the user in a few lines what the phone will record (each form and its questions). Publish only after they approve."
-    out = dict(workspace_id=wid, version=d["version"], valid=v["ok"], errors=v["errors"][:30], warnings=v["warnings"][:10],
+    warnings = v["warnings"][:10] + [f"signature field {x!r} would be removed: keep it unless the user asked to remove it"
+                                     for x in dropped_signatures]
+    out = dict(workspace_id=wid, version=d["version"], valid=v["ok"], errors=v["errors"][:30], warnings=warnings,
                summary=v["summary"], changes_since_published=changes if published else None,
                forms=[{"id": w["id"], "title": w.get("title"), "questions": [f.get("id") for f in w.get("fields") or []
                                                                            if isinstance(f, dict)]} for w in b["workflows"]],
@@ -93,6 +96,14 @@ def draft(a: dict) -> str:
     if fixes:
         out["fixed_automatically"] = fixes
     return _ok(**out)
+
+
+def _dropped_signatures(old: dict, new: dict) -> list[str]:
+    """Signature fields of the published version that a draft no longer has (a user configured them; never silently)."""
+    def sigs(b: dict) -> set:
+        return {f"{w.get('id')}/{f.get('id')}" for w in b.get("workflows") or [] if isinstance(w, dict)
+                for f in w.get("fields") or [] if isinstance(f, dict) and f.get("type") == "signature"}
+    return sorted(sigs(old) - sigs(new))
 
 
 def publish(a: dict) -> str:

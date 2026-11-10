@@ -108,16 +108,6 @@ def status(request: Request):
 
 
 # ----------------------------------------------------------------------------- workflows
-@router.get("/workflows")
-def list_workflows(request: Request, include_drafts: bool = False):
-    uid = _uid(request)
-    store = get_store()
-    rows = store.list_workflows(ALL, published_only=not include_drafts)
-    if include_drafts:  # drafts only visible to their owner
-        rows = [r for r in rows if r["published_version"] is not None or r["owner_user_id"] in (uid, "owner", "local")]
-    return {"workflows": rows}
-
-
 @router.get("/workflows/{wid}")
 def get_workflow(wid: str, request: Request, version: Optional[int] = None, draft: bool = False):
     _uid(request)
@@ -142,12 +132,6 @@ def restore_workflow(request: Request, definition: dict = Body(..., embed=True))
 
 
 # ----------------------------------------------------------------------------- packs
-@router.get("/packs")
-def list_packs(request: Request, kind: Optional[str] = None):
-    _uid(request)
-    return {"packs": get_store().list_packs(ALL, kind)}
-
-
 @router.get("/packs/{pid}")
 def get_pack(pid: str, request: Request):
     _uid(request)

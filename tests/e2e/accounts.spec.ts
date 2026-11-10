@@ -124,6 +124,8 @@ s.conn.commit()
   // A downloads everything for offline (B's record + its report).
   await records(A.page);
   await A.page.locator("#download-all").click();
+  // Downloads every entry of the account one by one (hundreds on a long-used test Hermes): wait until it is done.
+  await expect(A.page.locator(".toast", { hasText: /now available offline|downloaded/ })).toBeVisible({ timeout: 300_000 });
   await expect(row(A.page, idB)).toHaveAttribute("data-availability", "kept-offline", { timeout: 20_000 });
   await expect(row(A.page, idB)).toContainText("Available offline");
 
