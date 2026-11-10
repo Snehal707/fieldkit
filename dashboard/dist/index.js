@@ -1642,9 +1642,6 @@
     const React = SDK.React;
     const h = React.createElement;
     const { useState, useEffect, useCallback } = SDK.hooks;
-    const C = SDK.components || {};
-    const Card = C.Card || "div", CardHeader = C.CardHeader || "div", CardTitle = C.CardTitle || "h3", CardContent = C.CardContent || "div";
-    const Button = C.Button || "button", Badge = C.Badge || "span";
     const API = "/api/plugins/fieldkit";
     const get = (p) => SDK.fetchJSON(`${API}/${p}`);
     const post = (p, body) => SDK.fetchJSON(`${API}/${p}`, {
@@ -1652,14 +1649,123 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body != null ? body : {})
     });
-    const del = (p) => SDK.fetchJSON(`${API}/${p}`, { method: "DELETE" });
-    const ts = (v) => v ? new Date(typeof v === "number" ? v * 1e3 : v).toLocaleString() : "\u2014";
     const APP_PATH = "/dashboard-plugins/fieldkit/app_dist/index.html";
     const appUrl = () => `${window.location.origin}${APP_PATH}`;
-    const box = { border: "1px solid var(--border, #e5e7eb)", borderRadius: 10, padding: 12, marginBottom: 12 };
-    const pre = { whiteSpace: "pre-wrap", fontSize: 12, maxHeight: 360, overflow: "auto", background: "rgba(127,127,127,.08)", padding: 8, borderRadius: 6 };
-    const row = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" };
-    const sevColor = { critical: "#b91c1c", high: "#dc2626", medium: "#d97706", low: "#15803d", info: "#2563eb" };
+    const CSS = `
+.fk{--ink:var(--midground-base,#1d2a2a);--paper:var(--background-base,#fbfaf7);
+  --rule:color-mix(in srgb,var(--ink) 14%,transparent);--rule-soft:color-mix(in srgb,var(--ink) 7%,transparent);
+  --mute:color-mix(in srgb,var(--ink) 62%,transparent);--wash:color-mix(in srgb,var(--ink) 4%,transparent);
+  --ok:color-mix(in srgb,#3fae80 72%,var(--ink));--wait:color-mix(in srgb,#d39a2c 72%,var(--ink));
+  --bad:color-mix(in srgb,#e0533b 78%,var(--ink));--old:color-mix(in srgb,#8f80d6 72%,var(--ink));
+  color:var(--ink);font-family:var(--theme-font-sans,inherit);font-size:13px;line-height:1.45;
+  padding:16px;max-width:1240px;font-variant-numeric:tabular-nums}
+.fk *{box-sizing:border-box}
+.fk ::selection{background:color-mix(in srgb,var(--ink) 25%,transparent)}
+.fk input{caret-color:var(--ink)}
+.fk h2{font-size:15px;font-weight:600;margin:0}
+.fk h3{font-size:13px;font-weight:600;margin:0 0 6px}
+.fk p{margin:0}
+.fk .mute{color:var(--mute)}
+.fk .id{font-family:var(--theme-font-mono,ui-monospace,monospace);font-size:11px;color:var(--mute);word-break:break-all}
+.fk-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid var(--rule);margin-bottom:16px}
+.fk-chip{font-size:12px;padding:1px 8px;border:1px solid var(--rule);border-radius:999px;color:var(--mute);white-space:nowrap}
+.fk-chip.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 50%,transparent)}
+.fk-tabs{margin-left:auto;display:flex;border:1px solid var(--rule);border-radius:7px;overflow:hidden}
+.fk-tabs button{all:unset;cursor:pointer;padding:6px 14px;font-size:13px;color:var(--mute);border-left:1px solid var(--rule)}
+.fk-tabs button:first-child{border-left:0}
+.fk-tabs button:hover{color:var(--ink);background:var(--wash)}
+.fk-tabs button[aria-pressed=true]{color:var(--paper);background:var(--ink);font-weight:600}
+.fk button:focus-visible,.fk input:focus-visible,.fk summary:focus-visible,.fk a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.fk-btn{all:unset;cursor:pointer;font-size:12px;padding:4px 10px;border:1px solid var(--rule);border-radius:6px;white-space:nowrap}
+.fk-btn:hover{background:var(--wash);border-color:color-mix(in srgb,var(--ink) 30%,transparent)}
+.fk-btn.solid{background:var(--ink);color:var(--paper);border-color:var(--ink);font-weight:600}
+.fk-btn[disabled]{opacity:.5;cursor:default}
+.fk-sec{margin-bottom:24px}
+.fk-sec>header{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+.fk-sec>header .act{margin-left:auto;display:flex;gap:8px;align-items:center}
+.fk-cols{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,8fr);gap:28px}
+.fk-err{color:var(--bad);margin:6px 0}
+.fk-empty{padding:14px 0;color:var(--mute);border-top:1px solid var(--rule)}
+/* sync track */
+.fk-track{display:flex;height:14px;border-radius:3px;overflow:hidden;background:var(--rule-soft);margin:10px 0 8px}
+.fk-track>span{height:100%;min-width:3px}
+.fk-legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px}
+.fk-legend b{font-size:15px;font-weight:650;margin-right:4px}
+.fk-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;vertical-align:1px}
+.fk-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin-top:12px}
+.fk-stats>div{padding:8px 12px 8px 0}
+.fk-stats>div+div{padding-left:12px;border-left:1px solid var(--rule-soft)}
+.fk-stats dt{font-size:12px;color:var(--mute)}
+.fk-stats dd{margin:0;font-size:20px;font-weight:650}
+.fk-stats dd.small{font-size:13px;font-weight:500;padding-top:6px}
+.fk-stats .bad{color:var(--bad)}.fk-stats .wait{color:var(--wait)}
+/* ledger */
+.fk-ledger{border-top:1px solid var(--rule)}
+.fk-line{display:grid;grid-template-columns:8px minmax(0,1fr) minmax(0,170px) 120px 64px 58px;gap:12px;align-items:center;
+  padding:6px 0;border-bottom:1px solid var(--rule-soft)}
+.fk-line.compact{grid-template-columns:8px minmax(0,1fr) 64px 58px}
+.fk-line.compact .state{display:none}
+.fk-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.fk-more{all:unset;cursor:pointer;font-size:12px;color:var(--mute);padding:8px 0;text-decoration:underline;text-underline-offset:3px}
+.fk-more:hover{color:var(--ink)}
+.fk-line .rail{width:8px;height:8px;border-radius:2px;align-self:start;margin-top:6px}
+.fk-line .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fk-line .sub{font-weight:400;color:var(--mute)}
+.fk-line .when{font-size:12px;color:var(--mute);text-align:right}
+.fk-line .state{font-size:12px}
+.fk-line.open{background:var(--wash)}
+.fk-detail{border-bottom:1px solid var(--rule);padding:12px 12px 16px 20px;background:var(--wash)}
+.fk-detail-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px}
+.fk-kv{display:grid;grid-template-columns:minmax(110px,38%) 1fr;margin:0;border-top:1px solid var(--rule-soft)}
+.fk-kv dt,.fk-kv dd{margin:0;padding:4px 8px 4px 0;border-bottom:1px solid var(--rule-soft)}
+.fk-kv dt{color:var(--mute)}
+.fk-kv dd{white-space:pre-wrap;word-break:break-word}
+.fk-kv .diff{background:color-mix(in srgb,var(--wait) 16%,transparent)}
+.fk-files{display:flex;flex-wrap:wrap;gap:10px}
+.fk-files figure{margin:0;width:180px}
+.fk-files img{display:block;max-width:180px;max-height:180px;border-radius:4px;border:1px solid var(--rule)}
+.fk-files img.sig{background:#fff}
+.fk-files audio{width:180px}
+.fk-files figcaption{font-size:12px;color:var(--mute);margin-top:3px}
+.fk-files .pending{width:180px;padding:10px;border:1px dashed var(--rule);border-radius:4px;font-size:12px;color:var(--mute)}
+.fk details>summary{cursor:pointer;color:var(--mute);font-size:12px;margin-top:8px}
+.fk pre{white-space:pre-wrap;font-size:12px;max-height:320px;overflow:auto;background:var(--rule-soft);padding:8px;border-radius:4px;margin:6px 0 0}
+.fk-legacy{margin-top:14px;padding:10px 12px;border:1px solid color-mix(in srgb,var(--old) 40%,transparent);border-radius:8px;background:color-mix(in srgb,var(--old) 6%,transparent)}
+.fk-legacy h3{color:var(--old)}
+.fk-hint{font-size:12px;color:var(--mute);margin-top:12px}
+.fk-filter{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.fk-filter input{background:transparent;color:var(--ink);border:1px solid var(--rule);border-radius:6px;padding:5px 9px;font:inherit;width:320px;max-width:100%}
+.fk-table{width:100%;border-collapse:collapse}
+.fk-table th{text-align:left;font-weight:500;font-size:12px;color:var(--mute);padding:4px 12px 4px 0;border-bottom:1px solid var(--rule)}
+.fk-table td{padding:6px 12px 6px 0;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+.fk-conflict{border:1px solid color-mix(in srgb,var(--bad) 45%,transparent);border-radius:8px;padding:10px 12px;margin-bottom:12px}
+.fk-conflict .acts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.fk-mobile{display:grid;grid-template-columns:auto minmax(0,1fr);gap:24px;align-items:start}
+.fk-mobile img{background:#fff;border-radius:6px;padding:4px;display:block}
+.fk-mobile ol{margin:10px 0;padding-left:20px}
+.fk-mobile li{margin:4px 0}
+.fk-url{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.fk-url a{color:inherit;word-break:break-all}
+@media (max-width:820px){.fk-cols,.fk-detail-grid,.fk-mobile{grid-template-columns:1fr}
+  .fk-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.fk-stats>div:nth-child(3){padding-left:0;border-left:0}
+  .fk-line{grid-template-columns:3px minmax(0,1fr) 84px 60px}.fk-line .wf,.fk-line .state{display:none}
+  .fk-line,.fk-line.compact{grid-template-columns:8px minmax(0,1fr) 52px 58px}
+  .fk-tabs{margin-left:0;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--rule)}
+  .fk-tabs button{border-left:0;text-align:center;background:var(--paper)}}
+@media (prefers-reduced-motion:no-preference){.fk-detail{animation:fk-in .14s ease-out}
+  @keyframes fk-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}}`;
+    const toDate = (v) => new Date(typeof v === "number" ? v * 1e3 : v);
+    const ts = (v) => v ? toDate(v).toLocaleString() : "\u2014";
+    function ago(v) {
+      if (!v) return "\u2014";
+      const s = Math.round((Date.now() - toDate(v).getTime()) / 1e3);
+      if (s < 60) return "just now";
+      if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+      if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+      if (s < 86400 * 7) return `${Math.floor(s / 86400)} d ago`;
+      return toDate(v).toLocaleDateString();
+    }
+    const When = ({ v }) => h("span", { title: ts(v) }, ago(v));
     function useLoad(fn, deps = []) {
       const [data, setData] = useState(null);
       const [err, setErr] = useState(null);
@@ -1679,23 +1785,79 @@
     }
     function Section(props) {
       return h(
-        Card,
-        { style: { marginBottom: 16 } },
-        h(CardHeader, null, h("div", { style: { ...row, justifyContent: "space-between" } }, h(CardTitle, null, props.title), props.actions)),
-        h(CardContent, null, props.children)
+        "section",
+        { className: "fk-sec" },
+        h(
+          "header",
+          null,
+          h("h2", null, props.title),
+          props.meta ? h("span", { className: "mute" }, props.meta) : null,
+          props.actions ? h("div", { className: "act" }, props.actions) : null
+        ),
+        props.children
       );
     }
-    function Err({ msg }) {
-      return msg ? h("div", { style: { color: "#b91c1c", margin: "8px 0" } }, msg) : null;
+    function useMore(items, n = 8) {
+      const [all, setAll] = useState(false);
+      if (items.length <= n) return [items, null];
+      return [
+        all ? items : items.slice(0, n),
+        h("button", { className: "fk-more", onClick: () => setAll(!all) }, all ? "Show fewer" : `Show all ${items.length}`)
+      ];
     }
-    function Sev({ s }) {
+    const Err = ({ msg }) => msg ? h("div", { className: "fk-err", role: "alert" }, msg) : null;
+    const Loading = () => h("div", { className: "fk-empty" }, "Loading\u2026");
+    const STATE = {
+      complete: { word: "synced", color: "var(--ok)" },
+      received: { word: "files still uploading", color: "var(--wait)" }
+    };
+    const stateOf = (k) => {
       var _a2;
-      return h(Badge, { style: { color: (_a2 = sevColor[s]) != null ? _a2 : void 0 } }, s);
+      return (_a2 = STATE[k]) != null ? _a2 : { word: k.replace(/_/g, " "), color: "var(--bad)" };
+    };
+    const total = (o) => Object.values(o != null ? o : {}).reduce((a, n) => a + Number(n || 0), 0);
+    function Track({ byStatus, conflicts }) {
+      const entries = Object.entries(byStatus != null ? byStatus : {}).filter(([, n2]) => Number(n2) > 0).sort(([a], [b]) => a === "complete" ? -1 : b === "complete" ? 1 : 0);
+      const n = total(byStatus);
+      if (!n) return h("p", { className: "fk-empty" }, "Nothing synchronised yet. Records appear here once a phone syncs.");
+      return h(
+        "div",
+        null,
+        h(
+          "div",
+          { className: "fk-track", role: "img", "aria-label": entries.map(([k, c]) => `${c} ${stateOf(k).word}`).join(", ") },
+          entries.map(([k, c]) => h("span", { key: k, style: { width: `${c / n * 100}%`, background: stateOf(k).color } }))
+        ),
+        h(
+          "div",
+          { className: "fk-legend" },
+          entries.map(([k, c]) => h("span", { key: k }, h("i", { className: "fk-dot", style: { background: stateOf(k).color } }), h("b", null, c), stateOf(k).word)),
+          conflicts > 0 ? h(
+            "span",
+            null,
+            h("i", { className: "fk-dot", style: { background: "var(--bad)" } }),
+            h("b", null, conflicts),
+            conflicts === 1 ? "conflict to resolve" : "conflicts to resolve"
+          ) : null
+        )
+      );
+    }
+    function Stats({ sync }) {
+      const n = total(sync.records_by_sync_status);
+      const cell = (label2, value, cls = "") => h("div", null, h("dt", null, label2), h("dd", { className: cls }, value));
+      return h(
+        "dl",
+        { className: "fk-stats" },
+        cell("Synchronised records", n),
+        cell("Files still uploading", sync.attachments_outstanding, sync.attachments_outstanding ? "wait" : ""),
+        cell(sync.open_conflicts ? "Open conflicts" : "No open conflicts", sync.open_conflicts, sync.open_conflicts ? "bad" : ""),
+        cell("Last record received", h(When, { v: sync.last_received_at }), "small")
+      );
     }
     function Overview() {
       var _a2;
-      const [st, err] = useLoad(() => Promise.all([get("status"), get("sync/status"), get("records?limit=5"), get("workspaces")]));
-      if (!st) return h(Err, { msg: err }) || h("div", null, "Loading\u2026");
+      const [st, err] = useLoad(() => Promise.all([get("status"), get("sync/status"), get("records?limit=8"), get("workspaces")]));
+      if (!st) return err ? h(Err, { msg: err }) : h(Loading);
       const [status, sync, recs, wss] = st;
       const own = ((_a2 = wss.workspaces) != null ? _a2 : []).filter((w) => !w.starter);
       return h(
@@ -1703,58 +1865,98 @@
         null,
         h(
           Section,
-          { title: "FieldKit status" },
-          h("div", { style: row }, h(Badge, null, `version ${status.version}`), h(Badge, null, `app ${status.app_built ? "built" : "NOT built"}`)),
-          h("p", null, `Records: ${counts(sync.records_by_sync_status)} \xB7 Files still uploading: ${sync.attachments_outstanding} \xB7 Open conflicts: ${sync.open_conflicts}`),
-          h("p", { style: { fontSize: 13, opacity: 0.8 } }, "FieldKit collects and syncs. Ask your Hermes agent to read, analyse or summarise synced entries.")
+          { title: "FieldKit status", actions: [
+            h("span", { key: "v", className: "fk-chip" }, `version ${status.version}`),
+            h("span", { key: "a", className: `fk-chip${status.app_built ? "" : " bad"}` }, status.app_built ? "phone app built" : "phone app NOT built")
+          ] },
+          h(Track, { byStatus: sync.records_by_sync_status, conflicts: sync.open_conflicts }),
+          h(Stats, { sync }),
+          h("p", { className: "fk-hint" }, "FieldKit collects and syncs. Ask your Hermes agent to read, analyse or summarise synced entries.")
         ),
-        h(Section, { title: "Workspaces" }, own.length ? own.map((w) => {
-          var _a3;
-          return h(
-            "div",
-            { key: w.id, style: box },
-            h("b", null, w.title),
-            ` \xB7 version ${(_a3 = w.published_version) != null ? _a3 : "draft"}`,
-            h("div", { style: small }, w.id)
-          );
-        }) : "No workspace yet. In Hermes: \u201CSet up FieldKit for my work.\u201D"),
-        h(Section, { title: "Recent records" }, h(RecordList, { records: recs.records }))
+        h(
+          "div",
+          { className: "fk-cols" },
+          h(
+            Section,
+            { title: "Workspaces", meta: own.length || null },
+            own.length ? h(Workspaces, { items: own }) : h("p", { className: "fk-empty" }, "No workspace yet. In Hermes, say: \u201CSet up FieldKit for my work.\u201D")
+          ),
+          h(Section, { title: "Recent records" }, h(RecordList, { records: recs.records, compact: true }))
+        )
       );
     }
-    const STATE_WORDS = {
-      complete: "complete",
-      received: "files still uploading"
-    };
-    function counts(o) {
-      const parts = Object.entries(o != null ? o : {}).filter(([, n]) => Number(n) > 0).map(([k, n]) => {
-        var _a2;
-        return `${n} ${(_a2 = STATE_WORDS[k]) != null ? _a2 : k.replace(/_/g, " ")}`;
-      });
-      return parts.length ? parts.join(", ") : "none";
+    function Workspaces({ items }) {
+      const [shown, more] = useMore(items);
+      return h("div", null, h(
+        "table",
+        { className: "fk-table" },
+        h("thead", null, h("tr", null, h("th", null, "Workspace"), h("th", null, "Version"), h("th", null, "Updated"))),
+        h("tbody", null, shown.map((w) => {
+          var _a2;
+          return h(
+            "tr",
+            { key: w.id },
+            h("td", null, h("div", null, w.title), h("div", { className: "id" }, w.id)),
+            h("td", null, (_a2 = w.published_version) != null ? _a2 : "draft"),
+            h("td", { className: "mute" }, h(When, { v: w.updated_at }))
+          );
+        }))
+      ), more);
     }
-    function title(r) {
-      return `${r.workflow_title || r.workflow_id}${r.subject ? ` \xB7 ${r.subject}` : ""}`;
-    }
-    const small = { fontSize: 11, opacity: 0.55, fontFamily: "monospace" };
-    function RecordList({ records }) {
+    function RecordList({ records, compact }) {
       const [open, setOpen] = useState(null);
-      if (!(records == null ? void 0 : records.length)) return h("div", null, "No synchronised records yet.");
-      return h("div", null, records.map((r) => {
-        var _a2;
+      if (!(records == null ? void 0 : records.length)) return h("p", { className: "fk-empty" }, "No synchronised records yet.");
+      return h("div", { className: "fk-ledger" }, records.map((r) => {
+        const s = stateOf(r.sync_status), isOpen = open === r.id;
         return h(
-          "div",
-          { key: r.id, style: box },
+          React.Fragment,
+          { key: r.id },
           h(
             "div",
-            { style: row },
-            h("div", { style: { flex: 1 } }, h("b", null, title(r)), h("div", { style: small }, r.id)),
-            h(Badge, null, r.sync_status === "complete" ? "synced" : (_a2 = STATE_WORDS[r.sync_status]) != null ? _a2 : r.sync_status),
-            h("span", null, ts(r.received_at)),
-            h(Button, { onClick: () => setOpen(open === r.id ? null : r.id) }, open === r.id ? "Hide" : "Details")
+            { className: `fk-line${compact ? " compact" : ""}${isOpen ? " open" : ""}` },
+            h("span", { className: "rail", style: { background: s.color }, title: s.word, "aria-hidden": true }),
+            h(
+              "div",
+              { style: { minWidth: 0 } },
+              h("div", { className: "t" }, r.workflow_title || r.workflow_id, r.subject ? h("span", { className: "sub" }, `  ${r.subject}`) : null),
+              h("div", { className: "id" }, r.id)
+            ),
+            compact ? null : h("span", { className: "id wf", title: "Workflow id" }, r.workflow_id),
+            h("span", { className: "state", style: { color: s.color } }, s.word),
+            h("span", { className: "when" }, h("span", { className: "fk-sr" }, `${s.word}, received `), h(When, { v: r.received_at })),
+            h("button", { className: "fk-btn", "aria-expanded": isOpen, onClick: () => setOpen(isOpen ? null : r.id) }, isOpen ? "Hide" : "Details")
           ),
-          open === r.id && h(RecordDetail, { id: r.id })
+          isOpen ? h(RecordDetail, { id: r.id }) : null
         );
       }));
+    }
+    const label = (v) => {
+      var _a2;
+      return v && typeof v === "object" ? (_a2 = v.en) != null ? _a2 : Object.values(v)[0] : v;
+    };
+    function answerText(v, f) {
+      if (v === null || v === void 0 || v === "") return h("span", { className: "mute" }, "\u2014");
+      const opt = (x) => {
+        var _a2, _b2, _c;
+        return (_c = label((_b2 = ((_a2 = f == null ? void 0 : f.options) != null ? _a2 : []).find((o) => o.value === x)) == null ? void 0 : _b2.label)) != null ? _c : String(x);
+      };
+      if (typeof v === "boolean") return v ? "Yes" : "No";
+      if (Array.isArray(v)) {
+        if (v.length && v.every((x) => x && typeof x === "object" && (x.attachment_id || x.id))) return `${v.length} file${v.length === 1 ? "" : "s"} (below)`;
+        return v.every((x) => typeof x !== "object") ? v.map(opt).join(", ") : JSON.stringify(v);
+      }
+      if (typeof v === "object") return v.attachment_id ? "1 file (below)" : JSON.stringify(v);
+      return opt(v);
+    }
+    function answerRows(answers, wf) {
+      var _a2, _b2;
+      const out = [], seen = /* @__PURE__ */ new Set();
+      for (const f of (_a2 = wf == null ? void 0 : wf.fields) != null ? _a2 : []) if (f.id in (answers != null ? answers : {})) {
+        out.push([f.id, String((_b2 = label(f.label)) != null ? _b2 : f.id), f]);
+        seen.add(f.id);
+      }
+      for (const k of Object.keys(answers != null ? answers : {})) if (!seen.has(k)) out.push([k, k.replace(/_/g, " "), void 0]);
+      return out;
     }
     function Attachment({ a }) {
       const [url, setUrl] = useState(null);
@@ -1771,59 +1973,100 @@
         };
       }, [a.id]);
       const noun = a.kind === "signature" ? "Signature" : a.kind === "audio" ? "Voice note" : a.kind === "photo" ? "Photo" : "File";
-      if (a.status !== "stored") return h("div", null, `${noun} (${a.mime}) \u2014 still uploading`);
-      if (!url) return h("div", null, `Loading ${noun.toLowerCase()}\u2026`);
+      if (a.status !== "stored") return h("div", { className: "pending" }, `${noun} still uploading`, h("div", { className: "id" }, a.mime));
+      if (!url) return h("div", { className: "pending" }, `Loading ${noun.toLowerCase()}\u2026`);
+      const signed = a.signed_at ? `signed ${String(a.signed_at).replace("T", " ").slice(0, 16)}` : "";
       return h(
         "figure",
-        { style: { margin: "0 8px 8px 0" } },
-        String(a.mime).startsWith("audio/") ? h("audio", { controls: true, src: url }) : h("img", { src: url, style: { maxWidth: 220, borderRadius: 8, background: a.kind === "signature" ? "#fff" : void 0 } }),
-        h("figcaption", { style: { fontSize: 12, opacity: 0.75 } }, `${noun}${a.field_label ? ` \xB7 ${a.field_label}` : ""}${a.signed_at ? ` \xB7 signed ${String(a.signed_at).replace("T", " ").slice(0, 16)}` : ""}${a.transcript ? ` \xB7 \u201C${a.transcript}\u201D` : ""}`)
+        null,
+        String(a.mime).startsWith("audio/") ? h("audio", { controls: true, src: url }) : h(
+          "a",
+          { href: url, target: "_blank", rel: "noopener" },
+          h("img", { src: url, alt: `${noun}${a.field_label ? `: ${a.field_label}` : ""}`, className: a.kind === "signature" ? "sig" : "" })
+        ),
+        h(
+          "figcaption",
+          null,
+          h("div", null, a.field_label || noun),
+          signed ? h("div", null, signed) : null,
+          a.transcript ? h("div", null, `\u201C${a.transcript}\u201D`) : null
+        )
       );
     }
     function RecordDetail({ id }) {
-      var _a2, _b2, _c, _d;
-      const [data, err] = useLoad(() => Promise.all([
-        get(`records/${id}`),
-        get(`records/${id}/report`).catch(() => null),
-        get(`records/${id}/questions`).catch(() => ({ questions: [] }))
-      ]), [id]);
-      if (!data) return h(Err, { msg: err }) || h("div", null, "Loading\u2026");
-      const [rec, rep, qs] = data;
+      var _a2, _b2, _c, _d, _e;
+      const [data, err] = useLoad(async () => {
+        const rec2 = await get(`records/${id}`);
+        const [wf2, rep2, qs2] = await Promise.all([
+          get(`workflows/${encodeURIComponent(rec2.workflow_id)}?version=${rec2.workflow_version}`).catch(() => null),
+          get(`records/${id}/report`).catch(() => null),
+          get(`records/${id}/questions`).catch(() => ({ questions: [] }))
+        ]);
+        return [rec2, wf2, rep2, qs2];
+      }, [id]);
+      if (!data) return h("div", { className: "fk-detail" }, err ? h(Err, { msg: err }) : "Loading\u2026");
+      const [rec, wf, rep, qs] = data;
+      const rows = answerRows(rec.answers, wf);
+      const findings = (_b2 = (_a2 = rec.local_results) == null ? void 0 : _a2.findings) != null ? _b2 : [];
+      const questions = (_c = qs == null ? void 0 : qs.questions) != null ? _c : [];
       return h(
         "div",
-        { style: { marginTop: 8 } },
+        { className: "fk-detail" },
         h(
           "div",
-          { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
-          h("div", null, h("b", null, "Answers"), h("pre", { style: pre }, JSON.stringify(rec.answers, null, 2))),
-          ((_b2 = (_a2 = rec.local_results) == null ? void 0 : _a2.findings) != null ? _b2 : []).length ? h(
+          { className: "fk-detail-grid" },
+          h(
             "div",
             null,
-            h("b", { style: { color: "#7c3aed" } }, "Phone findings (FieldKit before 0.3)"),
-            rec.local_results.findings.map((f, i) => h("div", { key: i }, h(Sev, { s: f.severity }), " ", f.label, f.detail ? ` \u2014 ${f.detail}` : ""))
-          ) : h("div", null)
+            h("h3", null, "Answers"),
+            rows.length ? h("dl", { className: "fk-kv" }, rows.map(([k, l, f]) => [h("dt", { key: `t${k}` }, l), h("dd", { key: `d${k}` }, answerText(rec.answers[k], f))])) : h("p", { className: "mute" }, "No answers recorded."),
+            h("details", null, h("summary", null, "Raw answers (JSON)"), h("pre", null, JSON.stringify(rec.answers, null, 2)))
+          ),
+          h(
+            "div",
+            null,
+            h("h3", null, ((_d = rec.attachments) == null ? void 0 : _d.length) ? rec.attachment_summary || `${rec.attachments.length} file(s)` : "Files"),
+            ((_e = rec.attachments) == null ? void 0 : _e.length) ? h("div", { className: "fk-files" }, rec.attachments.map((a) => h(Attachment, { key: a.id, a }))) : h("p", { className: "mute" }, "No photos, voice notes or signatures."),
+            h(
+              "dl",
+              { className: "fk-kv", style: { marginTop: 12 } },
+              h("dt", null, "Completed on phone"),
+              h("dd", null, ts(rec.completed_at)),
+              h("dt", null, "Received by Hermes"),
+              h("dd", null, ts(rec.received_at)),
+              h("dt", null, "Revision"),
+              h("dd", null, rec.revision),
+              rec.workspace_id ? [h("dt", { key: "wt" }, "Workspace"), h("dd", { key: "wd", className: "id" }, rec.workspace_id)] : null,
+              rec.device_id ? [h("dt", { key: "dt" }, "Device"), h("dd", { key: "dd", className: "id" }, rec.device_id)] : null
+            )
+          )
         ),
-        ((_c = rec.attachments) == null ? void 0 : _c.length) > 0 && h(
+        findings.length ? h(
           "div",
-          { style: { marginTop: 8 } },
-          h("b", null, rec.attachment_summary || `${rec.attachments.length} file(s)`),
-          h("div", { style: { ...row, flexWrap: "wrap" } }, rec.attachments.map((a) => h(Attachment, { key: a.id, a })))
-        ),
-        ((_d = qs.questions) != null ? _d : []).length ? h(
+          { className: "fk-legacy" },
+          h("h3", null, "Phone findings (FieldKit before 0.3)"),
+          findings.map((f, i) => h("div", { key: i }, h(Sev, { s: f.severity }), " ", f.label, f.detail ? `: ${f.detail}` : ""))
+        ) : null,
+        questions.length ? h(
           "div",
-          { style: { marginTop: 8 } },
-          h("b", { style: { color: "#0f766e" } }, "Questions answered by FieldKit before 0.3"),
-          qs.questions.map((q) => h(
+          { className: "fk-legacy" },
+          h("h3", null, "Questions answered by FieldKit before 0.3"),
+          questions.map((q) => h(
             "div",
             { key: q.id, style: { margin: "6px 0" } },
-            h("div", null, h("b", null, q.question), ` \xB7 ${q.status}`),
+            h("div", null, h("b", null, q.question), h("span", { className: "mute" }, `  ${q.status}`)),
             q.answer ? h("div", null, q.answer.answer) : null
           ))
         ) : null,
-        rep ? h("div", { style: { marginTop: 8 } }, h("b", { style: { color: "#0f766e" } }, "Report from FieldKit before 0.3"), h(ReportView, { r: rep })) : null,
-        h("div", { style: { ...small, marginTop: 8 } }, "To analyse this entry, ask your Hermes agent (it can open the photos and voice notes).")
+        rep ? h("div", { className: "fk-legacy" }, h("h3", null, "Report from FieldKit before 0.3"), h(ReportView, { r: rep })) : null,
+        h("p", { className: "fk-hint" }, "To analyse this entry, ask your Hermes agent. It can open the photos and voice notes.")
       );
     }
+    const sevColor = { critical: "var(--bad)", high: "var(--bad)", medium: "var(--wait)", low: "var(--ok)", info: "var(--mute)" };
+    const Sev = ({ s }) => {
+      var _a2;
+      return h("b", { style: { color: (_a2 = sevColor[s]) != null ? _a2 : void 0, fontSize: 12 } }, s);
+    };
     const INTEGRITY = {
       intact: "intact (SHA-256 verified)",
       mismatch: "DOES NOT MATCH the captured file",
@@ -1846,7 +2089,7 @@
             var _a3;
             return h(
               "div",
-              { key: e.attachment_id, style: { fontSize: 13 } },
+              { key: e.attachment_id },
               e.transcript ? `\u201C${e.transcript}\u201D (${e.transcript_source === "device" ? "transcribed on the phone" : "transcribed by Hermes"})` : `Not transcribed: ${(_a3 = e.transcript_error) != null ? _a3 : "unknown reason"}`
             );
           })
@@ -1856,120 +2099,203 @@
           return h(
             "div",
             { key: e.attachment_id, style: { marginTop: 4 } },
-            `${e.field_label || "Signature"}${e.signed_at ? ` \u2014 signed ${String(e.signed_at).replace("T", " ").slice(0, 16)}` : ""} \xB7 file ${(_a3 = INTEGRITY[e.integrity]) != null ? _a3 : e.integrity}`,
-            e.stored && h(Attachment, { a: { id: e.attachment_id, mime: e.mime, status: "stored", kind: "signature" } })
+            `${e.field_label || "Signature"}${e.signed_at ? `, signed ${String(e.signed_at).replace("T", " ").slice(0, 16)}` : ""}: file ${(_a3 = INTEGRITY[e.integrity]) != null ? _a3 : e.integrity}`,
+            e.stored && h("div", { className: "fk-files" }, h(Attachment, { a: { id: e.attachment_id, mime: e.mime, status: "stored", kind: "signature" } }))
           );
         })
       );
     }
     function ReportView({ r }) {
-      var _a2, _b2, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
+      var _a2, _b2, _c, _d, _e, _f, _g, _h;
+      const list = (title, items, fn) => (items == null ? void 0 : items.length) > 0 && h("div", { style: { marginTop: 6 } }, h("b", null, title), h("ul", { style: { margin: "2px 0", paddingLeft: 18 } }, items.map((x, k) => h("li", { key: k }, fn(x)))));
       return h(
         "div",
-        { style: box },
-        h("div", { style: { fontSize: 12, opacity: 0.7 } }, `v${r.version} \xB7 ${ts(r.generated_at)} \xB7 ${r.generated_by} \xB7 ${r.provider || ""} ${r.model || ""}`),
-        r.requires_review && h("div", { style: { color: "#d97706", fontWeight: 600 } }, `Requires human review${r.review_reason ? `: ${r.review_reason}` : ""}`),
+        null,
+        h("div", { className: "mute", style: { fontSize: 12 } }, `Version ${r.version}, ${ts(r.generated_at)}, by ${[r.generated_by, r.provider, r.model].filter(Boolean).join(" ")}`),
+        r.requires_review && h("div", { style: { color: "var(--wait)", fontWeight: 600 } }, `Requires human review${r.review_reason ? `: ${r.review_reason}` : ""}`),
         ((_a2 = r.decision) == null ? void 0 : _a2.outcome) && h(
           "div",
-          { style: { margin: "6px 0", padding: 8, borderRadius: 6, border: "1px solid #0f766e" } },
+          { style: { margin: "6px 0" } },
           h("b", null, "Decision: "),
           ((_c = ((_b2 = r.decision_scale) != null ? _b2 : []).find((d) => d.id === r.decision.outcome)) == null ? void 0 : _c.label) || r.decision.outcome,
-          ` \xB7 confidence ${r.decision.confidence}`,
-          typeof r.decision.deadline_days === "number" ? ` \xB7 within ${r.decision.deadline_days} day(s)` : "",
-          r.decision.escalate_to ? ` \xB7 escalate to ${r.decision.escalate_to}` : "",
+          `, confidence ${r.decision.confidence}`,
+          typeof r.decision.deadline_days === "number" ? `, within ${r.decision.deadline_days} day(s)` : "",
+          r.decision.escalate_to ? `, escalate to ${r.decision.escalate_to}` : "",
           h("div", null, r.decision.rationale)
         ),
-        h("p", null, r.summary),
-        ((_d = r.next_actions) == null ? void 0 : _d.length) > 0 && h("div", null, h("b", null, "Next actions"), h("ol", null, r.next_actions.map((a, k) => h(
-          "li",
-          { key: k },
+        h("p", { style: { margin: "6px 0" } }, r.summary),
+        list("Next actions", r.next_actions, (a) => [
           a.action,
-          a.who ? ` (${a.who}` + (typeof a.by_when_days === "number" ? `, within ${a.by_when_days} day(s))` : ")") : "",
-          h("div", { style: { fontSize: 12, opacity: 0.75 } }, `Verify: ${a.verify_by} \xB7 ${a.origin === "ai_suggestion" ? "AI suggestion" : `from workspace ${a.origin}`}`)
-        )))),
-        ((_e = r.uncertainty) == null ? void 0 : _e.length) > 0 && h("div", null, h("b", null, "Uncertain"), h("ul", null, r.uncertainty.map((u, k) => h("li", { key: k }, `${u.unknown} \u2014 ${u.how_to_resolve}`)))),
-        ((_g = (_f = r.quality) == null ? void 0 : _f.problems) == null ? void 0 : _g.length) > 0 && h("div", { style: { color: "#d97706" } }, `Quality checks not passed: ${r.quality.problems.join("; ")}`),
-        ((_h = r.images) == null ? void 0 : _h.note) && h(
-          "div",
-          { style: { margin: "6px 0", padding: 8, borderRadius: 6, border: `1px solid ${r.images.analyzed === false ? "#d97706" : "#0f766e"}` } },
-          h("b", null, r.images.analyzed === false ? "Photos not analysed: " : "Photos: "),
-          r.images.note
-        ),
-        ((_j = (_i = r.attachments) == null ? void 0 : _i.evidence) == null ? void 0 : _j.length) > 0 && h(Evidence, { att: r.attachments }),
-        ((_k = r.issues) == null ? void 0 : _k.length) > 0 && h("div", null, h("b", null, "Issues"), r.issues.map((i, k) => h("div", { key: k }, h(Sev, { s: i.severity }), ` ${i.title} \u2014 ${i.evidence}`))),
-        ((_l = r.missing_information) == null ? void 0 : _l.length) > 0 && h("div", null, h("b", null, "Missing information"), h("ul", null, r.missing_information.map((m, k) => h("li", { key: k }, m)))),
-        ((_m = r.suggested_actions) == null ? void 0 : _m.length) > 0 && h("div", null, h("b", null, "Suggested actions"), h("ul", null, r.suggested_actions.map((a, k) => h("li", { key: k }, `[${a.priority}] ${a.action}`)))),
-        ((_n = r.references) == null ? void 0 : _n.length) > 0 && h("div", null, h("b", null, "References"), h("ul", null, r.references.map((x, k) => h("li", { key: k }, `${x.title}${x.source ? ` \u2014 ${x.source}` : ""}`))))
+          a.who ? ` (${a.who}${typeof a.by_when_days === "number" ? `, within ${a.by_when_days} day(s)` : ""})` : "",
+          h("div", { key: "v", className: "mute", style: { fontSize: 12 } }, `Verify: ${a.verify_by}. ${a.origin === "ai_suggestion" ? "AI suggestion" : `From workspace ${a.origin}`}`)
+        ]),
+        list("Uncertain", r.uncertainty, (u) => `${u.unknown}: ${u.how_to_resolve}`),
+        ((_e = (_d = r.quality) == null ? void 0 : _d.problems) == null ? void 0 : _e.length) > 0 && h("div", { style: { color: "var(--wait)" } }, `Quality checks not passed: ${r.quality.problems.join("; ")}`),
+        ((_f = r.images) == null ? void 0 : _f.note) && h("div", { style: { margin: "6px 0" } }, h("b", null, r.images.analyzed === false ? "Photos not analysed: " : "Photos: "), r.images.note),
+        ((_h = (_g = r.attachments) == null ? void 0 : _g.evidence) == null ? void 0 : _h.length) > 0 && h(Evidence, { att: r.attachments }),
+        list("Issues", r.issues, (i) => [h(Sev, { key: "s", s: i.severity }), ` ${i.title}: ${i.evidence}`]),
+        list("Missing information", r.missing_information, (m) => m),
+        list("Suggested actions", r.suggested_actions, (a) => `${a.action} (${a.priority})`),
+        list("References", r.references, (x) => `${x.title}${x.source ? `, ${x.source}` : ""}`)
       );
     }
     function Records() {
       var _a2;
       const [wf, setWf] = useState("");
-      const [data, err] = useLoad(() => get(`records?limit=100${wf ? `&workflow_id=${encodeURIComponent(wf)}` : ""}`), [wf]);
+      const [q, setQ] = useState("");
+      useEffect(() => {
+        const t = setTimeout(() => setQ(wf.trim()), 250);
+        return () => clearTimeout(t);
+      }, [wf]);
+      const [data, err] = useLoad(() => get(`records?limit=100${q ? `&workflow_id=${encodeURIComponent(q)}` : ""}`), [q]);
+      const recs = (_a2 = data == null ? void 0 : data.records) != null ? _a2 : [];
+      const ids = Array.from(new Set(recs.map((r) => r.workflow_id)));
       return h(
         Section,
-        { title: "Synchronised records" },
+        { title: "Synchronised records", meta: data ? recs.length === 100 ? "latest 100, newest first" : `${recs.length}, newest first` : null },
+        h(
+          "div",
+          { className: "fk-filter" },
+          h("input", {
+            placeholder: "Filter by workflow id, e.g. equipment-inspection",
+            value: wf,
+            list: "fk-wf-ids",
+            "aria-label": "Filter by workflow id",
+            onChange: (e) => setWf(e.target.value)
+          }),
+          h("datalist", { id: "fk-wf-ids" }, ids.map((i) => h("option", { key: i, value: i }))),
+          wf ? h("button", { className: "fk-btn", onClick: () => setWf("") }, "Clear") : null
+        ),
         h(Err, { msg: err }),
-        h("input", { placeholder: "Filter by workflow id (e.g. equipment-inspection)", value: wf, onChange: (e) => setWf(e.target.value), style: { marginBottom: 8 } }),
-        h(RecordList, { records: (_a2 = data == null ? void 0 : data.records) != null ? _a2 : [] })
+        data ? h(RecordList, { records: recs }) : err ? null : h(Loading)
       );
+    }
+    function Conflict({ c, onDone }) {
+      var _a2, _b2, _c, _d;
+      const [server] = useLoad(() => get(`records/${c.record_id}`).catch(() => null), [c.record_id]);
+      const [busy, setBusy] = useState(false);
+      const [err, setErr] = useState(null);
+      const phone = (_c = (_b2 = (_a2 = c.client_payload) == null ? void 0 : _a2.record) == null ? void 0 : _b2.answers) != null ? _c : {};
+      const mine = (_d = server == null ? void 0 : server.answers) != null ? _d : {};
+      const keys = Array.from(/* @__PURE__ */ new Set([...Object.keys(mine), ...Object.keys(phone)]));
+      const resolve = (resolution) => {
+        setBusy(true);
+        setErr(null);
+        post(`sync/conflicts/${c.id}/resolve`, { resolution }).then(onDone, (e) => {
+          var _a3;
+          setErr(String((_a3 = e == null ? void 0 : e.message) != null ? _a3 : e));
+          setBusy(false);
+        });
+      };
+      const txt = (v) => v === void 0 ? "\u2014" : typeof v === "string" ? v : JSON.stringify(v);
+      return h(
+        "div",
+        { className: "fk-conflict" },
+        h("div", null, h("b", null, "Record "), h("span", { className: "id" }, c.record_id)),
+        h("p", { className: "mute" }, `The phone edited revision ${c.base_revision}; Hermes already has revision ${c.server_revision}. Choose which copy to keep.`),
+        server ? h(
+          "table",
+          { className: "fk-table", style: { marginTop: 8 } },
+          h("thead", null, h("tr", null, h("th", null, "Answer"), h("th", null, "Hermes copy"), h("th", null, "Phone copy"))),
+          h("tbody", null, keys.map((k) => {
+            const diff = JSON.stringify(mine[k]) !== JSON.stringify(phone[k]);
+            return h(
+              "tr",
+              { key: k, style: diff ? { background: "color-mix(in srgb,var(--wait) 16%,transparent)" } : void 0 },
+              h("td", { className: "mute" }, k.replace(/_/g, " ")),
+              h("td", null, txt(mine[k])),
+              h("td", null, txt(phone[k]))
+            );
+          }))
+        ) : h("pre", null, JSON.stringify(phone, null, 2)),
+        h(Err, { msg: err }),
+        h(
+          "div",
+          { className: "acts" },
+          h("button", { className: "fk-btn", disabled: busy, onClick: () => resolve("keep_server") }, "Keep server version"),
+          h("button", { className: "fk-btn solid", disabled: busy, onClick: () => resolve("use_client") }, "Use phone version")
+        )
+      );
+    }
+    function Devices({ items }) {
+      const [shown, more] = useMore(items);
+      return h("div", null, h(
+        "table",
+        { className: "fk-table" },
+        h("thead", null, h("tr", null, h("th", null, "Device"), h("th", null, "Last seen"), h("th", null, "Device id"))),
+        h("tbody", null, shown.map((d) => h(
+          "tr",
+          { key: d.id },
+          h("td", null, d.label || h("span", { className: "mute" }, "Unnamed device")),
+          h("td", null, h(When, { v: d.last_seen })),
+          h("td", { className: "id" }, d.id)
+        )))
+      ), more);
     }
     function Sync() {
       const [data, err, reload] = useLoad(() => Promise.all([get("sync/status"), get("sync/conflicts")]));
-      if (!data) return h(Err, { msg: err }) || h("div", null, "Loading\u2026");
+      if (!data) return err ? h(Err, { msg: err }) : h(Loading);
       const [st, cf] = data;
       return h(
         "div",
         null,
         h(
           Section,
-          { title: "Synchronisation", actions: h(Button, { onClick: reload }, "Refresh") },
-          h("div", null, `Last record received: ${ts(st.last_received_at)} \xB7 Attachments outstanding: ${st.attachments_outstanding} \xB7 Open conflicts: ${st.open_conflicts}`),
-          h("div", null, `Records: ${counts(st.records_by_sync_status)}`),
-          h("div", { style: { marginTop: 8 } }, h("b", null, "Devices"), st.devices.map((d) => h("div", { key: d.id }, `${d.label || "Unnamed device"} \xB7 last seen ${ts(d.last_seen)} `, h("span", { style: small }, d.id))))
+          { title: "Synchronisation", actions: h("button", { className: "fk-btn", onClick: reload }, "Refresh") },
+          h(Track, { byStatus: st.records_by_sync_status, conflicts: st.open_conflicts }),
+          h(Stats, { sync: st }),
+          h(Err, { msg: err })
         ),
-        h(Section, { title: "Conflicts" }, cf.conflicts.length ? cf.conflicts.map((c) => {
-          var _a2, _b2;
-          return h(
-            "div",
-            { key: c.id, style: box },
-            h("div", null, `Record ${c.record_id}: phone edited revision ${c.base_revision}, server is at ${c.server_revision}`),
-            h("pre", { style: pre }, JSON.stringify((_b2 = (_a2 = c.client_payload) == null ? void 0 : _a2.record) == null ? void 0 : _b2.answers, null, 2)),
-            h(
-              "div",
-              { style: row },
-              h(Button, { onClick: () => post(`sync/conflicts/${c.id}/resolve`, { resolution: "keep_server" }).then(reload) }, "Keep server version"),
-              h(Button, { onClick: () => post(`sync/conflicts/${c.id}/resolve`, { resolution: "use_client" }).then(reload) }, "Use phone version")
-            )
-          );
-        }) : "No open conflicts.")
+        h(
+          Section,
+          { title: "Conflicts", meta: cf.conflicts.length ? `${cf.conflicts.length} open` : null },
+          cf.conflicts.length ? cf.conflicts.map((c) => h(Conflict, { key: c.id, c, onDone: reload })) : h("p", { className: "fk-empty" }, "No open conflicts. Edits from every phone have been merged.")
+        ),
+        h(
+          Section,
+          { title: "Devices", meta: st.devices.length || null },
+          st.devices.length ? h(Devices, { items: st.devices }) : h("p", { className: "fk-empty" }, "No phone has synced yet. Open the Mobile Access tab to set one up.")
+        )
       );
     }
     function Mobile() {
       const url = appUrl();
+      const [copied, setCopied] = useState(false);
       const qr = qrcode_default(0, "M");
       qr.addData(url);
       qr.make();
+      const copy = () => {
+        var _a2;
+        return (_a2 = navigator.clipboard) == null ? void 0 : _a2.writeText(url).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }, () => void 0);
+      };
       return h(
         Section,
         { title: "Open FieldKit on a phone" },
         h(
           "div",
-          { style: { ...row, alignItems: "flex-start" } },
-          h("img", { src: qr.createDataURL(6, 8), alt: "QR code for the FieldKit app", style: { background: "#fff", borderRadius: 8 } }),
+          { className: "fk-mobile" },
+          h("img", { src: qr.createDataURL(5, 4), alt: "QR code for the FieldKit app" }),
           h(
             "div",
-            { style: { flex: 1, minWidth: 240 } },
-            h("p", null, h("a", { href: url, target: "_blank", rel: "noopener" }, url)),
+            null,
+            h(
+              "div",
+              { className: "fk-url" },
+              h("a", { href: url, target: "_blank", rel: "noopener" }, url),
+              h("button", { className: "fk-btn", onClick: copy }, copied ? "Copied" : "Copy link")
+            ),
             h(
               "ol",
               null,
               h("li", null, "Scan the code (or open the link) on the phone while online and sign in to Hermes."),
               h("li", null, "Open your workspace and tap \u201CDownload everything for offline\u201D. Optional: OCR and translation packs in Offline Packs."),
-              h("li", null, "Add to Home Screen (Android: menu \u2192 Install app; iPhone: Share \u2192 Add to Home Screen)."),
-              h("li", null, "Check the Offline readiness card on Home, then it works with no connection.")
+              h("li", null, "Add to Home Screen. Android: menu, then Install app. iPhone: Share, then Add to Home Screen."),
+              h("li", null, "Check the Offline readiness card on Home. After that it works with no connection.")
             ),
-            h("p", { style: { fontSize: 13, opacity: 0.8 } }, "Service workers need HTTPS. The phone must reach this dashboard over https:// (or localhost).")
+            h("p", { className: "fk-hint" }, "Service workers need HTTPS: the phone must reach this dashboard over https:// (or localhost).")
           )
         )
       );
@@ -1986,8 +2312,18 @@
       const View = ((_a2 = TABS.find(([n]) => n === tab)) != null ? _a2 : TABS[0])[1];
       return h(
         "div",
-        { style: { padding: 16, maxWidth: 1200 } },
-        h("div", { style: { ...row, marginBottom: 16 } }, TABS.map(([n]) => h(Button, { key: n, variant: n === tab ? "default" : "outline", onClick: () => setTab(n) }, n))),
+        { className: "fk" },
+        h("style", null, CSS),
+        h(
+          "div",
+          { className: "fk-top" },
+          h("span", { className: "mute" }, "Observations collected offline on phones, synced to Hermes"),
+          h(
+            "nav",
+            { className: "fk-tabs", "aria-label": "FieldKit sections" },
+            TABS.map(([n]) => h("button", { key: n, type: "button", "aria-pressed": n === tab, onClick: () => setTab(n) }, n))
+          )
+        ),
         h(View, null)
       );
     }

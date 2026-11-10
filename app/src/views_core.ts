@@ -11,6 +11,7 @@ import { completeDraft } from "./results";
 import { downloadEarlierReport, getSyncState, refreshPending, resendRecords, resolveConflict, retryRecords, runSync } from "./sync";
 import { availableWorkspaces, installWorkspace, workspaceForEntry } from "./workspace";
 import { clear, fmtBytes, fmtTime, h, isOnline, nowIso, toast, uuid } from "./util";
+import { icon } from "./icons";
 
 export type View = (main: HTMLElement, params: Record<string, string>) => Promise<void> | void;
 export const go = (hash: string) => { location.hash = hash; };
@@ -444,7 +445,7 @@ export const runView: View = async (main, p) => {
     const libraryIn = h("input", { type: "file", accept: "image/*", style: "display:none", "data-source": "library",
       onchange: (e: Event) => add((e.target as HTMLInputElement).files?.[0], true) }) as HTMLInputElement;
     return h("div", null, thumbs, items.length < max ? h("div", null, h("div", { class: "row" },
-      h("button", { onclick: () => cameraIn.click() }, "📷 Take photo"), h("button", { onclick: () => libraryIn.click() }, "🖼 Choose from Photos"),
+      h("button", { onclick: () => cameraIn.click() }, icon("camera"), "Take photo"), h("button", { onclick: () => libraryIn.click() }, icon("photos"), "Choose from Photos"),
       cameraIn, libraryIn),
       h("div", { class: "muted" }, "For close-ups, take the photo with the Camera app (it switches to macro), then choose it here."))
       : h("div", { class: "muted" }, `Maximum ${max} photos.`));
@@ -467,14 +468,14 @@ export const runView: View = async (main, p) => {
     let on = false;
     const btn = h("button", { onclick: async () => {
       if (!on) {
-        try { await rec.start(); on = true; btn.textContent = "■ Stop recording"; } catch (e) { toast(`Microphone unavailable: ${(e as Error).message}`, "error"); }
+        try { await rec.start(); on = true; btn.replaceChildren(icon("stop"), "Stop recording"); } catch (e) { toast(`Microphone unavailable: ${(e as Error).message}`, "error"); }
         return;
       }
       on = false;
       const { blob, duration_s } = await rec.stop();
       const att = await saveAttachment(draft.id, f.id, "audio", blob, { duration_s });
       await set(f.id, [...items, { attachment_id: att.id, recorded_at: nowIso() }]);
-    } }, "🎙 Record voice note");
+    } }, icon("mic"), "Record voice note");
     return h("div", null, list, btn);
   };
 
@@ -487,7 +488,7 @@ export const runView: View = async (main, p) => {
       h("button", { onclick: async () => {
         status.textContent = "Locating…";
         try { await set(f.id, await captureGps()); } catch (e) { status.textContent = (e as Error).message; }
-      } }, "📍 Capture location")),
+      } }, icon("pin"), "Capture location")),
       h("details", null, h("summary", { class: "muted" }, "Enter manually"), h("div", { class: "row" }, lat, lon,
         h("button", { onclick: () => set(f.id, { lat: Number(lat.value), lon: Number(lon.value), accuracy: null, timestamp: nowIso(), source: "manual" }) }, "Save"))));
   };

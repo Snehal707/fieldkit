@@ -9,6 +9,7 @@ import {
 import { fetchCatalog, installedWorkflows, removeWorkflow, storageInfo } from "./packs";
 import { enqueueRecord, getSyncState, runSync } from "./sync";
 import { clear, fmtBytes, fmtTime, h, isOnline, toast } from "./util";
+import { icon } from "./icons";
 import { go, lang, readiness, signInBanner, whoAmI, type View } from "./views_core";
 import { currentDeviceLabel, describeLoadProblem, registerDevice } from "./device";
 import { languageLabel, requestOutcome, requestProtection, storageMessage, storageState } from "./storage";
@@ -71,8 +72,8 @@ export const ocrView: View = async (main) => {
   const camera = h("input", { type: "file", accept: "image/*", capture: "environment", style: "display:none", "data-source": "camera", onchange: read }) as HTMLInputElement;
   const library = h("input", { type: "file", accept: "image/*", style: "display:none", "data-source": "library", onchange: read }) as HTMLInputElement;
   main.append(h("div", { class: "card" }, h("h2", null, "Scan text (OCR, offline)"),
-    h("div", { class: "row" }, sel, h("button", { onclick: () => camera.click() }, "📷 Take photo"),
-      h("button", { onclick: () => library.click() }, "🖼 Choose from Photos"), camera, library),
+    h("div", { class: "row" }, sel, h("button", { onclick: () => camera.click() }, icon("camera"), "Take photo"),
+      h("button", { onclick: () => library.click() }, icon("photos"), "Choose from Photos"), camera, library),
     h("div", { class: "muted" }, "For small print, a close-up from the Camera app (macro) reads best."), prog, status, out,
     h("button", { onclick: async () => {
       try { await navigator.clipboard.writeText(out.value); toast("Copied", "ok"); } catch { out.select(); toast("Select the text and copy it", "info"); }

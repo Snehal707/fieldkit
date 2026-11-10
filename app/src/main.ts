@@ -5,6 +5,7 @@ import { registerDevice } from "./device";
 import { isStandalone } from "./storage";
 import { refreshPending, onSyncState, restoreAuthFlag, startAutoSync, registerBackgroundSync, clearAuthRequired, getSyncState } from "./sync";
 import { clear, h, isOnline, toast } from "./util";
+import { icon } from "./icons";
 import { freeRetiredModels } from "./intel";
 import {
   authBanner, homeView, recordsView, remoteView, resultsView, runView, syncView, workflowLinkView, whoAmI, type View,
@@ -34,8 +35,8 @@ const title = h("h1", null, "FieldKit");
 const net = h("a", { class: "pill", href: "#/diagnostics", style: "color:inherit;text-decoration:none" });
 const queue = h("span", { class: "pill" });
 const main = h("main");
-const navItems: [string, string, string][] = [["#/", "⌂", "Home"], ["#/workspaces", "☑", "Workspace"], ["#/records", "≡", "Records"], ["#/sync", "⇅", "Sync"], ["#/settings", "⚙", "Settings"]];
-const nav = h("nav", { class: "bottom" }, ...navItems.map(([href, icon, label]) => h("a", { href }, h("span", null, icon), label)));
+const navItems: [string, string, string][] = [["#/", "home", "Home"], ["#/workspaces", "ws", "Workspace"], ["#/records", "rec", "Records"], ["#/sync", "sync", "Sync"], ["#/settings", "set", "Settings"]];
+const nav = h("nav", { class: "bottom" }, ...navItems.map(([href, ico, label]) => h("a", { href }, icon(ico, 22), label)));
 const authSlot = h("div", { style: "max-width:720px;margin:0 auto;padding:0 1rem" });
 // Update notice: one compact, opaque line directly under the header, IN the page flow. Not position:fixed —
 // fixed bars overlapped the bottom navigation (hard-coded offset ignored the iPhone safe area), let content
@@ -47,10 +48,10 @@ document.addEventListener("fieldkit:update-ready", (ev) => {
   updateSlot.append(h("div", { class: "update-bar", role: "status", "aria-live": "polite" },
     h("span", { class: "update-text" }, "Update ready"),
     h("button", { class: "primary", onclick: () => { activate ? activate() : location.reload(); } }, "Reload"),
-    h("button", { class: "update-close", "aria-label": "Dismiss update notice", onclick: () => clear(updateSlot) }, "✕")));
+    h("button", { class: "update-close", "aria-label": "Dismiss update notice", onclick: () => clear(updateSlot) }, icon("close"))));
 });
 clear(app);
-app.append(h("header", { class: "top" }, title, queue, net), updateSlot, authSlot, main, nav);
+app.append(h("header", { class: "top" }, title, h("div", { class: "status" }, queue, net)), updateSlot, authSlot, main, nav);
 let authShown = false;
 onSyncState((s) => {
   // App-wide: the moment a protected request returns 401, show sign-in — on whatever screen is open.
@@ -70,12 +71,12 @@ onSyncState((s) => {
 //  3. server-confirmed sync (records the server has fully acknowledged).
 function paintNet() {
   const s = getSyncState();
-  if (!isOnline()) net.textContent = "○ device offline";
+  if (!isOnline()) { net.textContent = "device offline"; net.dataset.state = "off"; }
   // Reachability is evidence with a shelf life: only a contact in the last 60 s counts as "reachable".
-  else if (s.reachable === true && s.last_contact && Date.now() - Date.parse(s.last_contact) < 60_000) net.textContent = "● Hermes reachable";
-  else if (s.reachable === true) net.textContent = "◌ checking Hermes…";
-  else if (s.reachable === false) net.textContent = "◐ no Hermes connection";
-  else net.textContent = "◌ checking…";
+  else if (s.reachable === true && s.last_contact && Date.now() - Date.parse(s.last_contact) < 60_000) { net.textContent = "Hermes reachable"; net.dataset.state = "ok"; }
+  else if (s.reachable === true) { net.textContent = "checking Hermes…"; net.dataset.state = "wait"; }
+  else if (s.reachable === false) { net.textContent = "no Hermes connection"; net.dataset.state = "bad"; }
+  else { net.textContent = "checking…"; net.dataset.state = "wait"; }
   net.title = s.last_contact ? `Last contact with Hermes: ${new Date(s.last_contact).toLocaleString()}` : "No contact with Hermes yet";
 }
 window.addEventListener("online", paintNet);
@@ -89,6 +90,7 @@ onSyncState((s) => {
   if (s.awaiting) parts.push(`${s.awaiting} awaiting confirmation`);
   if (s.drafts) parts.push(`${s.drafts} not submitted`);
   queue.textContent = s.running ? "syncing…" : s.auth_required ? "sign-in needed" : parts.length ? parts.join(" · ") : "all confirmed";
+  queue.dataset.state = s.auth_required ? "bad" : s.running || parts.length ? "wait" : "ok";
   queue.title = s.last_confirmed ? `Last server confirmation: ${new Date(s.last_confirmed).toLocaleString()}` : "";
   paintNet();
   // When a sync pass ends, refresh status screens so they never contradict the header. Never re-render forms.
@@ -157,7 +159,7 @@ if (RUNNING_FROM_LEGACY_PATH) {
       const note = h("div", { class: "update-bar", role: "status", "data-legacy-install": "true" },
         h("span", { class: "update-text" }, "Please re-add FieldKit to your Home Screen"),
         h("a", { class: "btn primary", href: "#/settings" }, "How"),
-        h("button", { class: "update-close", "aria-label": "Dismiss", onclick: () => note.remove() }, "✕"));
+        h("button", { class: "update-close", "aria-label": "Dismiss", onclick: () => note.remove() }, icon("close")));
       updateSlot.prepend(note);
     });
   }
