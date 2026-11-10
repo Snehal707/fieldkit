@@ -609,18 +609,12 @@ def prompt_section(store: Any) -> str:
         try:
             rec = store.get_workspace_version(w["id"])
             sm = (rec.get("validation") or {}).get("summary", {})
-            try:
-                from . import learning
-                ls = learning.summary(store, w["id"])
-                extra = f", {ls['open_candidates']} improvement candidate(s), {ls['knowledge_gap']} unanswered offline question(s)"
-            except Exception:
-                extra = ""
             parts.append(f"{w['title']} (id {w['id']}, v{w['published_version']}; {sm.get('verified', 0)} verified, "
-                         f"{sm.get('conflicting', 0)} conflicting, {sm.get('gaps', 0)} gaps{extra})")
+                         f"{sm.get('conflicting', 0)} conflicting, {sm.get('gaps', 0)} gaps)")
         except Exception:
             parts.append(f"{w['title']} (id {w['id']})")
     return (ASK_HINT + resume + "FieldKit workspaces built for this user: " + "; ".join(parts) + ". Use the fieldkit-workspace-builder skill "
-            "to update them (new responsibilities, gaps, conflicting evidence, learning candidates).")[:1500]
+            "to change them when the user asks (show the changes, publish only after approval, undo on request).")[:1500]
 
 
 # ----------------------------------------------------------------------------- excerpt check

@@ -46,7 +46,7 @@ a real conversation.
 4. **Decide offline.**
    - Open the workspace's decision guide and answer what it asks. The outcome shows the evidence status of each action.
    - Ask the assistant a question in English and one in Hindi. Each answer has a citation and an evidence status.
-   - Ask an off-topic question. It is refused as not covered, and the question is kept for Hermes.
+   - Ask an off-topic question. It is refused as not covered, and the assistant points to "Ask Hermes about this visit" or Hermes chat.
 5. **Inspect offline.**
    - Symptoms → vibration, which reveals the vibration question; enter 9 mm/s.
    - Guard → No. Add a photo, a voice note, GPS and a signature.
@@ -77,7 +77,7 @@ network_disclosure: "PWA downloads pinned on-device model files from huggingface
 
 ## Known limitations
 - The small OPUS-MT model mistranslates some technical terms (for example "bearing" → "bear").
-- Whisper tiny's Hindi accuracy is limited.
+- Whisper tiny (the default speech-to-text pack) is English-only; Hindi speech-to-text needs the optional 250 MB Whisper small pack.
 - iOS PWAs have separate storage from Safari. Sign in once inside the installed app.
 - Uploads run while the app is open. There is no background upload from a closed app.
 - Hermes OAuth sessions last 15 minutes. Sync pauses and asks you to sign in; nothing is lost.
@@ -88,7 +88,7 @@ network_disclosure: "PWA downloads pinned on-device model files from huggingface
 ## Checklist before submitting
 - [ ] Confirm the deadline (reported as Nov 11 2026, 5 PM ET) and the submission format (catalog PR, form, or both) against the official announcement.
 - [ ] Push to the public GitHub repo at https://github.com/Snehal707/fieldkit.
-- [ ] Run `hermes plugins validate .` and `hermes plugins doctor . --ci` on the final commit. Both pass on v0.2.4 (security scan safe; doctor: 23 tools, 1 hook). For 0.2.5, `validate` passed at phase C and the final doctor run (32 tools expected) is not recorded yet. For 0.2.6, the doctor run is not recorded since the change to 20 Hermes tools. Re-run on the exact commit you submit.
+- [ ] Run `hermes plugins validate .` and `hermes plugins doctor . --ci` on the final commit. Both passed on 0.2.6 (20 Hermes tools) on a local test Hermes. Re-run on the exact commit you submit.
 - [ ] Run the Python, TypeScript and Playwright suites on the final commit (see [docs/TESTING.md](TESTING.md)).
 - [ ] Run `npm run build` and commit `dashboard/dist` and `dashboard/app_dist`.
 - [x] Real iPhone + hosted Hermes + Hermes mobile app: everything checked and working (owner, 0.2.4).

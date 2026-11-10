@@ -292,7 +292,8 @@ def test_learning_loop_through_tools(ctx):
     lst = call(ctx, "fieldkit_list_learning", workspace_id="dairy-collection-mh")
     assert lst["summary"]["verified_outcome"] == 4 and lst["summary"]["knowledge_gap"] == 2
     content, _ = ctx.prompt_sections["fieldkit.workspace"]
-    assert "improvement candidate(s)" in content({})
+    text = content({})
+    assert "dairy-collection-mh" in text and "candidate" not in text   # the retired learning loop is not advertised
 
 
 def test_local_practice_needs_real_outcomes():

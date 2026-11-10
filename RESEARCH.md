@@ -99,25 +99,23 @@ or exercised by a test in this repository.
 
 - FieldKit's workaround is to set `env.remotePathTemplate` to the pinned commit while building each pipeline (`app/src/intel.ts`).
 
-## Server-side transcription (0.2.4)
+## Server-side transcription (on demand since 0.2.6)
 
 - Voice notes without a phone transcript are transcribed by **Hermes' own** `tools.transcription_tools.transcribe_audio`, the service Hermes uses for voice messages. FieldKit does not ship or call its own server-side speech model.
-- It runs in the dashboard process, in a background thread, one at a time, after the upload finishes. It never blocks or fails the upload. The transcript (or the error) is stored on the attachment.
+- Since 0.2.6 this happens **only when a question about that visit needs the transcript**; uploading never starts it. It runs in the dashboard process, one at a time, and the transcript (or the reason there isn't one) is stored on the attachment.
 - The provider is whatever the Hermes operator configured: local faster-whisper, or a cloud provider with a key. A cloud provider receives the voice note.
 - Off switch: plugin setting `voice_transcription: false` (or `FIELDKIT_VOICE_TRANSCRIPTION=false`).
-- **Verified:** a local Hermes v0.23.0 transcribed a synthetic English voice note exactly, and the transcript appeared in the analysis prompt.
-- **Verified by the owner (0.2.4, hosted Hermes + iPhone):** voice notes reach the reports. Which STT provider the hosted instance uses (local or cloud) is the operator's configuration and is not recorded here.
+- **Verified (0.2.4):** a local Hermes v0.23.0 transcribed a synthetic English voice note exactly, and the owner confirmed voice notes reached Hermes on the hosted instance with the iPhone. **0.2.6, local test Hermes:** answers to questions about a visit used the voice note.
 
-## Hermes facilities used for workspaces (0.2.5)
+## Hermes facilities used (0.2.6)
 
 | Facility | Used for | Verification |
 |---|---|---|
-| `web_search` and `web_extract` (Hermes' own tools) | Research for a workspace. Hermes quotes the exact clause and its location. FieldKit re-fetches each cited web page and drops quotes it cannot find there | The tools are named in `fieldkit_core/workspace_tools.py` and in `skills/fieldkit-workspace-builder/SKILL.md`. The re-fetch and unsafe-address rules are tested in `tests/python/test_plugin.py`. A live research run in a Hermes conversation is **not verified**. The search backends are configured in Hermes; which one the hosted instance uses is not recorded here |
-| `delegate` | The builder skill suggests it for parallel research on a broad job | Named in the skill only. **Not verified** |
-| `cronjob` (`hermes cron create … --skill fieldkit-workspace-builder`) | Optional daily run of `fieldkit_propose_workspace_changes` | The command is in [docs/INSTALL.md](docs/INSTALL.md). **Not verified** |
-| `ctx.register_system_prompt_section("fieldkit.workspace", …)` | Each new Hermes session is told whether the user has a workspace (offer to build one) or summarises the built ones, including open candidates | Registered in `__init__.py` with a bounded text (`fieldkit_core/workspace.py`). Its effect in a live session is **not verified** |
-| Skills (`ctx.register_skill`) | `fieldkit-workspace-builder`, next to the `fieldkit` skill, which resolves as `fieldkit:fieldkit` | Registered in `__init__.py`. `hermes plugins validate` passed at phase C |
-| `ctx.register_tool` | 9 new tools (32 in total) | Tool count: `hermes plugins doctor . --ci` reported 29 tools at phase C. The final count is not recorded |
+| `ctx.llm.complete_structured` | Answers to questions about a visit, and workspace parts | Real conversations on a local test Hermes v0.23.0 via Nous Portal (see `docs/TESTING.md`) |
+| `web_search` and `web_extract` (Hermes' own tools) | Optional: checking one of the user's rules against an official source. Hermes quotes the exact clause; FieldKit re-fetches the cited page or PDF and drops quotes it cannot find | The re-fetch and unsafe-address rules are tested in `tests/python/test_plugin.py`. The interview and build need no web research |
+| `ctx.register_system_prompt_section("fieldkit.workspace", …)` | Each new Hermes session is told whether the user has a workspace (offer to build one) or lists the built ones, plus how to ask about entries | Registered in `__init__.py` with a bounded text (`fieldkit_core/workspace.py`) |
+| Skills (`ctx.register_skill`) | `fieldkit` (questions about entries) and `fieldkit-workspace-builder` (interview, build, edit, undo) | Registered in `__init__.py`; `hermes plugins validate` passes |
+| `ctx.register_tool` | 20 tools (18 earlier tools retired; their code is kept for existing data) | `hermes plugins doctor . --ci`: 20 tools |
 
 ## Workspace Assistant model evaluation (0.2.5)
 
