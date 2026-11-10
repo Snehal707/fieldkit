@@ -112,11 +112,6 @@ SHA-256 file integrity and access control (every API route checks the signed-in 
   `<HERMES_HOME>/plugin-data/fieldkit/data.db`). After updating FieldKit, restart the Hermes dashboard.
 - Android Chrome is not yet tested.
 
-## Earlier features
-Before 0.2.6, FieldKit wrote a structured AI report automatically after every sync and had follow-up tasks, a learning
-loop, standalone workflows and knowledge packs. These were removed from the product in 0.2.6; older reports stay
-readable, and the code is kept for existing data. Retired tools are listed in [docs/API.md](docs/API.md#hermes-tools).
-
 ## Docs
 [ARCHITECTURE.md](ARCHITECTURE.md) · [docs/API.md](docs/API.md) · [docs/INSTALL.md](docs/INSTALL.md) ·
 [docs/TESTING.md](docs/TESTING.md) · [docs/SUBMISSION.md](docs/SUBMISSION.md) · [RESEARCH.md](RESEARCH.md) ·

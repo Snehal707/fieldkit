@@ -164,7 +164,7 @@ Hermes registers 20 tools in 0.2.6 (37 before):
 - Records and questions: `fieldkit_list_records`, `fieldkit_get_record`, `fieldkit_get_report` (reads older reports), `fieldkit_ask_about_record`, `fieldkit_list_questions`.
 - Sync and jobs: `fieldkit_get_sync_status`, `fieldkit_resolve_conflict`, `fieldkit_process_pending_jobs`.
 
-Retired from Hermes in 0.2.6 (code kept for existing data, not registered): create, validate, publish, list and get workflow; create knowledge pack; create dictionary pack; list knowledge packs; search knowledge; analyze record; generate report; save report; list reports; create and list follow-ups; propose workspace changes; list learning; decide candidate.
+Retired from Hermes in 0.2.6 (code kept for existing data, not registered): create, validate, publish, list and get workflow; create knowledge pack; create dictionary pack; list knowledge packs; search knowledge; analyze record; generate report; save report; list reports; create and list follow-ups; propose workspace changes; list learning; decide candidate. Reports created before 0.2.6 remain readable (`fieldkit_get_report`, the phone and the dashboard).
 
 Workspace tools:
 Workspace build tools (0.2.6):
