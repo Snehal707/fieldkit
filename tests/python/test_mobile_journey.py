@@ -46,7 +46,8 @@ def hermes(tmp_path, monkeypatch):
 
 
 def say(ctx, tool, **args):
-    raw = ctx.tools[tool](args)
+    from fieldkit_core import tools as _tools
+    raw = (ctx.tools.get(tool) or _tools.handler_for(tool))(args)
     assert isinstance(raw, str) and len(raw) < MAX_TOOL_RESULT, f"{tool} result too large ({len(raw)} chars)"
     out = json.loads(raw)
     assert out["ok"], f"{tool} failed: {out}"

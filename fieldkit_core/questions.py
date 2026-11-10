@@ -44,6 +44,9 @@ SUBJECT_HINT = re.compile(r"(^|_)(id|code|no|number|tag|asset|panel|farmer|house
 
 def subject_field(wf: dict) -> Optional[str]:
     """The field that names what a record is about (asset id, farmer code, household id...), for its history."""
+    explicit = (wf.get("metadata") or {}).get("subject_field")
+    if explicit and any(f.get("id") == explicit for f in wf.get("fields") or []):
+        return explicit
     texts = [f for f in wf.get("fields") or [] if f.get("type") == "text"]
     for f in texts:
         if SUBJECT_HINT.search(str(f.get("id", ""))):

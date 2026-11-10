@@ -41,7 +41,7 @@ const title = h("h1", null, "FieldKit");
 const net = h("a", { class: "pill", href: "#/diagnostics", style: "color:inherit;text-decoration:none" });
 const queue = h("span", { class: "pill" });
 const main = h("main");
-const navItems: [string, string, string][] = [["#/", "⌂", "Home"], ["#/workflows", "☑", "Workflows"], ["#/assistant", "?", "Assistant"], ["#/sync", "⇅", "Sync"], ["#/settings", "⚙", "Settings"]];
+const navItems: [string, string, string][] = [["#/", "⌂", "Home"], ["#/workspaces", "☑", "Workspace"], ["#/assistant", "?", "Assistant"], ["#/sync", "⇅", "Sync"], ["#/settings", "⚙", "Settings"]];
 const nav = h("nav", { class: "bottom" }, ...navItems.map(([href, icon, label]) => h("a", { href }, h("span", null, icon), label)));
 const authSlot = h("div", { style: "max-width:720px;margin:0 auto;padding:0 1rem" });
 // Update notice: one compact, opaque line directly under the header, IN the page flow. Not position:fixed —

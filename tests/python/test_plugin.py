@@ -70,7 +70,8 @@ def ctx(tmp_path, monkeypatch):
 
 
 def call(ctx, name, **args):
-    return json.loads(ctx.tools[name](args))
+    fn = ctx.tools.get(name) or tools.handler_for(name)     # retired tools: still tested, no longer registered
+    return json.loads(fn(args))
 
 
 def test_manifest_matches_registration(ctx):
@@ -176,7 +177,7 @@ def test_workspace_builder_flow_through_tools(ctx, monkeypatch):
     assert fmt["ok"] and "verified" in fmt["format"]["evidence_rules"]
     # Interview: incomplete brief cannot be confirmed.
     r = call(ctx, "fieldkit_save_workspace_brief", brief={"role": "Milk collection checker"}, confirmed=True)
-    assert r["ok"] is False and "country" in " ".join(r["missing"])
+    assert r["ok"] is False and "what is recorded" in " ".join(r["missing"]) and "country" not in " ".join(r["missing"])
     brief = {**BUNDLE["profile"], "languages": BUNDLE["languages"], "escalation": ["centre manager"]}
     r = call(ctx, "fieldkit_save_workspace_brief", brief=brief)
     assert r["ok"] and r["confirmed"] is False and "Maharashtra" in r["summary"] and r["missing"] == []
@@ -366,7 +367,7 @@ def test_workspace_built_part_by_part_survives_chats_and_rejects_bad_items(ctx, 
     assert "only by FieldKit" in str(add("evidence", [forged])["rejected"])
     add("knowledge", b["knowledge"]["entries"])
     out = call(ctx, "fieldkit_build_workspace", workspace_id=b["id"])
-    assert out["valid"] is True and out["checks_pending"] == 0, out["errors"]
+    assert out.get("valid") is True and out["checks_pending"] == 0, out
     assert out["research_report"]["summary"]["workflows"] == 1
     pub = call(ctx, "fieldkit_publish_workspace", workspace_id=b["id"], user_approved=True)
     assert pub["ok"] and pub["version"] == out["version"]
@@ -406,7 +407,7 @@ def test_fast_setup_from_the_interview_in_one_call(ctx):
     assert all(not v.get("rejected") for v in r["results"].values()), r["results"]
     assert r["results"]["evidence"]["evidence_status"] == {"ev_user_snf": "user_procedure"}
     out = call(ctx, "fieldkit_build_workspace", workspace_id="dairy-fast")
-    assert out["valid"] is True and out["checks_pending"] == 0, out["errors"]
+    assert out.get("valid") is True and out["checks_pending"] == 0, out
     assert out["research_report"]["summary"]["user_procedure"] == 1 and out["research_report"]["summary"]["verified"] == 0
 
 
@@ -439,3 +440,42 @@ def test_ask_about_record_tool_through_registration(ctx, monkeypatch):
         "uncertainty": "No photos.", "evidence_used": ["asset_id"], "next_steps": []}})))
     r = call(ctx, "fieldkit_ask_about_record", record_id="rec_ask_000001", question="What do you think about this visit?")
     assert r["ok"] and r["answer"] == "Looks routine." and r["record_id"] == "rec_ask_000001"
+
+
+def test_edit_workspace_by_chat_with_change_summary_and_undo(ctx):
+    """Editing without a new interview: start a build on the existing workspace, change one form, build (shows what
+    changed), publish with approval, then "fieldkit_undo_workspace_update" restores the previous version as a NEW
+    version. Records keep their original form version and answers, including a removed field's answer."""
+    import copy
+    from fieldkit_core import workspace as ws
+    BUNDLE, bundle = _ws_fixture()
+    store = db.get_store()
+    b = bundle()
+    d = ws.build_draft(store, db.ALL, b)
+    ws.publish(store, b["id"], d["version"])
+    store.sync_record("alice", "k-old", "dev", {"id": "rec_edit_00001", "workflow_id": "milk-collection-check", "workflow_version": 1,
+                                                "base_revision": 0, "answers": {"farmer_code": "F-1", "smell_ok": True}}, auto_analyze=False)
+    st = call(ctx, "fieldkit_start_workspace_build", workspace_id=b["id"])            # no brief_id: an edit
+    assert st["ok"] and st["from_version"] == 1
+    wf = copy.deepcopy(BUNDLE["workflows"][0])
+    wf["fields"] = [f for f in wf["fields"] if f["id"] != "smell_ok"] + [
+        {"id": "door_seal_ok", "type": "checkbox", "label": {"en": "Can lid sealed", "hi": "ढक्कन बंद"}}]
+    assert call(ctx, "fieldkit_add_workspace_parts", workspace_id=b["id"], part="workflows", items=[wf])["accepted"]
+    out = call(ctx, "fieldkit_build_workspace", workspace_id=b["id"], check_excerpts=False)
+    assert out["valid"], out["errors"]
+    joined = " | ".join(out["changes_since_published"])
+    assert 'added question "Can lid sealed"' in joined and 'removed question "Smell and colour normal"' in joined
+    assert "approve" in out["next"]
+    pub = call(ctx, "fieldkit_publish_workspace", workspace_id=b["id"], user_approved=True)
+    assert pub["version"] == 2 and any("Can lid sealed" in c for c in pub["changes"])
+    # the old record still has its version and the removed field's answer
+    old = store.get_record("alice", "rec_edit_00001")
+    assert old["workflow_version"] == 1 and old["answers"]["smell_ok"] is True
+    assert store.get_workflow_any_owner("milk-collection-check", 1)["fields"][-1]["id"] == "smell_ok"
+    # undo: first a preview, then confirmed → version 3 equals version 1's content
+    prev = call(ctx, "fieldkit_undo_workspace_update", workspace_id=b["id"])
+    assert prev["would_restore_version"] == 1 and any("Can lid sealed" in c for c in prev["changes"])
+    done = call(ctx, "fieldkit_undo_workspace_update", workspace_id=b["id"], user_confirmed=True)
+    assert done["version"] == 3 and done["restored_from_version"] == 1 and done["undid_version"] == 2
+    fields = [f["id"] for f in store.get_workspace_version(b["id"], 3)["bundle"]["workflows"][0]["fields"]]
+    assert "smell_ok" in fields and "door_seal_ok" not in fields

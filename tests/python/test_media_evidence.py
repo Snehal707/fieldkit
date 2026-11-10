@@ -210,9 +210,9 @@ def test_api_record_has_attachment_kinds_and_isolation(store, tmp_path, monkeypa
     assert c.get("/api/plugins/fieldkit/attachments/att_sign_000001", headers={"x-test-user": "mallory"}).status_code == 404
 
 
-def test_upload_triggers_no_transcription_unless_switched_on(store, tmp_path, monkeypatch):
-    """0.2.6: an upload triggers no AI processing; a voice note is transcribed when someone asks about its visit. The
-    plugin setting transcribe_on_upload: true restores transcription right after upload (checked below)."""
+def test_upload_triggers_no_transcription(store, tmp_path, monkeypatch):
+    """0.2.6: an upload triggers no AI processing; a voice note is transcribed only when someone asks about its visit
+    (questions and chat are covered in test_questions.py)."""
     import importlib.util
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
@@ -230,29 +230,10 @@ def test_upload_triggers_no_transcription_unless_switched_on(store, tmp_path, mo
 
     app.include_router(api.router, prefix="/api/plugins/fieldkit")
     c = TestClient(app)
-    from fieldkit_core import runtime
-    rid0 = _inspection(store, tmp_path, rid="rec_media_000008", upload=False)
+    rid = _inspection(store, tmp_path, rid="rec_media_000008", upload=False)
     assert c.put("/api/plugins/fieldkit/attachments/att_voice_000008", content=M4A, headers={"content-type": "audio/mp4"}).status_code == 200
-    assert api._STT_POOL is None and stt.paths == []          # default: nothing transcribed on upload
-    real_setting = runtime.setting
-    monkeypatch.setattr(runtime, "setting", lambda k, d=None: True if k == "transcribe_on_upload" else real_setting(k, d))
-    rid = _inspection(store, tmp_path, rid="rec_media_000009", upload=False)
-    for aid, body, mime in (("att_photo_000009", JPEG, "image/jpeg"), ("att_voice_000009", M4A, "audio/mp4")):
-        assert c.put(f"/api/plugins/fieldkit/attachments/{aid}", content=body, headers={"content-type": mime}).status_code == 200
-    api._STT_POOL.shutdown(wait=True)                     # let the background transcription finish
-    api._STT_POOL = None
     a = [x for x in c.get(f"/api/plugins/fieldkit/records/{rid}").json()["attachments"] if x["field_id"] == "voice_note"][0]
-    assert a["transcript"] == "Coupling guard rattles at full speed." and a["transcript_source"] == "hermes"
-    assert len(stt.paths) == 1                            # only the audio upload triggered it
-
-    # The phone already transcribed it: Hermes does not transcribe again.
-    stt2 = FakeSTT()
-    monkeypatch.setattr(media, "hermes_transcriber", lambda: (stt2, ""))
-    rid2 = _inspection(store, tmp_path, rid="rec_media_000010", upload=False, device_transcript="Seal weeping slightly.")
-    assert c.put("/api/plugins/fieldkit/attachments/att_voice_000010", content=M4A, headers={"content-type": "audio/mp4"}).status_code == 200
-    api._STT_POOL.shutdown(wait=True)
-    api._STT_POOL = None
-    assert stt2.paths == []
+    assert stt.paths == [] and not a.get("transcript") and not a.get("transcript_error")
 
 
 def test_dashboard_lists_have_readable_labels_and_clean_previews(store, tmp_path):

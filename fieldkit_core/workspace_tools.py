@@ -10,7 +10,7 @@ fieldkit_publish_workspace only with the user's approval.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Optional
 
 from . import workspace as ws
 from . import workspace_schema as wsc
@@ -144,15 +144,32 @@ def _status_dict(store: Any, build: dict) -> dict:
             "ids": {p: list((parts.get(p) or {}).keys())[:60] for p in ("sources", "evidence", "workflows", "guides", "knowledge")}}
 
 
+def _brief_of_workspace(store: Any, wid: str) -> Optional[str]:
+    rows = store._q("SELECT brief_id FROM workspaces WHERE id=?", (wid,))
+    return rows[0]["brief_id"] if rows and rows[0]["brief_id"] else None
+
+
 def start_build(a: dict) -> str:
     store = get_store()
-    bid = a.get("brief_id")
-    if not bid:
-        return _fail("brief_id required: interview the user and confirm the brief first (fieldkit_save_workspace_brief)")
-    brief = _brief_for(store, bid)["brief"]
     wid = str(a.get("workspace_id") or "").strip()
     if not ws.SLUG.match(wid):
         return _fail("workspace_id must be a lowercase slug of 2-48 characters, e.g. dairy-collection-pune")
+    bid = a.get("brief_id")
+    if not bid:                               # editing an existing workspace: no new interview
+        try:
+            existing_bundle = store.get_workspace_version(wid)["bundle"]
+            bid = _brief_of_workspace(store, wid)
+            if not bid:                       # built without an interview (e.g. a starter): its profile is the brief
+                bid = store.save_workspace_brief(ALL, existing_bundle.get("profile") or {}, None, confirmed=True)["brief_id"]
+        except NotFound:
+            bid = None
+    if not bid:
+        return _fail("brief_id required for a new workspace: interview the user and confirm the brief first "
+                     "(fieldkit_save_workspace_brief). To edit an existing one, pass its workspace_id.")
+    brief = _brief_for(store, bid)["brief"]
+    if isinstance(a.get("profile_changes"), dict) and a["profile_changes"]:
+        brief = {**brief, **a["profile_changes"]}          # the user asked for this change in chat
+        store.save_workspace_brief(ALL, brief, bid, confirmed=True)
     cur = store.get_workspace_build(wid)
     if cur and not a.get("restart"):
         return _ok(resumed=True, **_status_dict(store, cur),
@@ -353,6 +370,12 @@ def build(a: dict) -> str:
     d = ws.build_draft(store, ALL, bundle, brief_id=bid, changelog=a.get("changelog"))
     rr = d["research_report"]
     pending = ws.pending_checks(bundle)
+    try:
+        live = store.get_workspace_version(d["workspace_id"])
+        before = live["bundle"] if live.get("published_version") else None
+    except NotFound:
+        before = None
+    changes = ws.workspace_changes(before, bundle) if before is not None and before.get("version") != d["version"] else None
     compact = {
         "summary": rr["summary"], "quote_check": checks,
         "conflicting": rr["evidence"]["conflicting"], "unverified": [e["claim"] for e in rr["evidence"]["unverified"]][:20],
@@ -373,13 +396,17 @@ def build(a: dict) -> str:
     if valid and pending:
         nxt = (f"{pending} source quote(s) are still being checked in the background (slow pages). Wait a minute, then "
                "call fieldkit_build_workspace again; publishing is blocked until the checks finish.")
+    elif valid and changes:
+        nxt = ("This is an edit. Show the user changes_since_published as a short list and ask them to approve; publish "
+               "only after they say yes. Old records keep their original version and answers.")
     elif valid:
-        nxt = ("Show the research report to the user in plain language (verified / supported / conflicting / unverified "
-               "background / gaps, and which sources were excluded or downgraded). Publish only after they approve.")
+        nxt = ("Show the user what the phone will do and where the rules come from (their own procedure, sources, gaps) "
+               "in a few lines. Publish only after they approve.")
     else:
         nxt = ("Fix the errors: with a build in progress use fieldkit_add_workspace_parts to replace or remove the items "
                "named, then build again. Unsupported instructions need a quoted qualifying source or must be removed.")
     out = dict(workspace_id=d["workspace_id"], version=d["version"], valid=valid, checks_pending=pending, errors=errors,
+               changes_since_published=changes,
                warnings=d["validation"]["warnings"][:20], research_report=compact, next=nxt)
     if fixes:
         out["fixed_automatically"] = dict(list(fixes.items())[:20])
@@ -391,11 +418,47 @@ def publish(a: dict) -> str:
         return _fail("publish only after the user has seen the research report and approved it (user_approved=true)")
     from .tools import app_link
     store = get_store()
+    try:
+        prev = store.get_workspace_version(a["workspace_id"])
+        prev_bundle = prev["bundle"] if prev.get("published_version") else None
+    except NotFound:
+        prev_bundle = None
     out = ws.publish(store, a["workspace_id"], a.get("version"), actor=ALL)
+    new_bundle = store.get_workspace_version(a["workspace_id"], out["version"])["bundle"]
+    out["changes"] = ws.workspace_changes(prev_bundle, new_bundle)
     store.delete_workspace_build(a["workspace_id"])          # the build is finished; updates start a new one
     link = app_link()
     link["url"] = link["url"] + f"#/workspace/{a['workspace_id']}"
-    return _ok(**out, app_link=link, next="Give the user the app link; on the phone, open it and tap 'Download everything for offline'.")
+    return _ok(**out, app_link=link, next="Give the user the app link. On the phone: open the workspace and tap "
+               "'Update from Hermes' (or 'Download everything for offline' the first time). Old records keep their version.")
+
+
+def undo_update(a: dict) -> str:
+    """Undo the last published change: republish the previous published version as a NEW version (so phones see an
+    update), after the user confirmed."""
+    store = get_store()
+    wid = a.get("workspace_id") or ""
+    rows = store._q("SELECT version, status FROM workspace_versions WHERE workspace_id=? ORDER BY version DESC", (wid,))
+    if not rows:
+        return _fail(f"unknown workspace {wid!r}")
+    cur = next((r["version"] for r in rows if r["status"] == "published"), None)
+    earlier = [r["version"] for r in rows if r["status"] == "superseded" and (cur is None or r["version"] < cur)]
+    if cur is None or not earlier:
+        return _fail("there is no earlier published version to go back to")
+    target = int(a.get("to_version") or earlier[0])
+    old = store.get_workspace_version(wid, target)["bundle"]
+    now = store.get_workspace_version(wid, cur)["bundle"]
+    changes = ws.workspace_changes(now, old)
+    if not a.get("user_confirmed"):
+        return _ok(would_restore_version=target, current_version=cur, changes=changes,
+                   next="Show the user these changes and ask to confirm; then call again with user_confirmed=true.")
+    bundle = {k: v for k, v in old.items() if k != "version"}
+    d = ws.build_draft(store, ALL, bundle, changelog=[f"Undo: back to version {target} (replaces version {cur})"])
+    if not d["ok"]:
+        return _fail("the earlier version no longer validates: " + "; ".join(d["validation"]["errors"][:5]))
+    out = ws.publish(store, wid, d["version"], actor=ALL)
+    return _ok(**out, restored_from_version=target, undid_version=cur, changes=changes,
+               next="Tell the user it is undone; on the phone, tap 'Update from Hermes'. Records made with any version stay readable.")
 
 
 def get(a: dict) -> str:
@@ -467,7 +530,7 @@ TOOLS = [
         "one at a time with fieldkit_add_workspace_parts and saved server-side, so a long build can continue in a later chat. "
         "If the workspace already exists, the build starts from its latest version (for updates).",
         {"brief_id": STR, "workspace_id": STR, "title": OBJ, "languages": OBJ, "workflow_refs": {"type": "array", "items": STR},
-         "restart": BOOL, "from_existing": BOOL}, ["brief_id", "workspace_id"]), start_build),
+         "restart": BOOL, "from_existing": BOOL, "profile_changes": OBJ}, ["workspace_id"]), start_build),
     (_s("fieldkit_add_workspace_parts", "Add, replace (same id) or remove items of one workspace part: sources, evidence, "
         "report_policy, workflows, guides, knowledge, vocabulary, intents, gaps or traceability. Each item is checked against "
         "the part's schema, the rest of the build (evidence ids, fields, decisions) and value types; unambiguous shape "
@@ -483,6 +546,10 @@ TOOLS = [
         "Alternatively pass brief_id and a complete bundle. Returns errors to fix, or the report to show the user.",
         {"workspace_id": STR, "brief_id": STR, "bundle": OBJ, "check_excerpts": BOOL,
          "changelog": {"type": "array", "items": STR}}), build),
+    (_s("fieldkit_undo_workspace_update", "Undo the last published change to a workspace ('undo my last workspace update'): "
+        "first call without user_confirmed to get what would change, show it, then call with user_confirmed=true. It "
+        "republishes the previous version as a new version so phones update; records keep their original version.",
+        {"workspace_id": STR, "to_version": INT, "user_confirmed": BOOL}, ["workspace_id"]), undo_update),
     (_s("fieldkit_publish_workspace", "Publish a valid workspace draft so the user's phone can download it for offline use. "
         "Requires user_approved=true after the user reviewed the research report.",
         {"workspace_id": STR, "version": INT, "user_approved": BOOL}, ["workspace_id", "user_approved"]), publish),

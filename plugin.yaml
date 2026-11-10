@@ -12,25 +12,10 @@ tags:
   - field-work
   - pwa
 provides_tools:
-  - fieldkit_create_workflow
-  - fieldkit_validate_workflow
-  - fieldkit_publish_workflow
-  - fieldkit_list_workflows
-  - fieldkit_get_workflow
   - fieldkit_get_app_link
-  - fieldkit_create_knowledge_pack
-  - fieldkit_create_dictionary_pack
-  - fieldkit_list_knowledge_packs
-  - fieldkit_search_knowledge
   - fieldkit_list_records
   - fieldkit_get_record
-  - fieldkit_analyze_record
-  - fieldkit_generate_report
-  - fieldkit_save_report
   - fieldkit_get_report
-  - fieldkit_list_reports
-  - fieldkit_create_followup
-  - fieldkit_list_followups
   - fieldkit_get_sync_status
   - fieldkit_resolve_conflict
   - fieldkit_ask_about_record
@@ -43,12 +28,10 @@ provides_tools:
   - fieldkit_add_workspace_parts
   - fieldkit_workspace_build_status
   - fieldkit_build_workspace
+  - fieldkit_undo_workspace_update
   - fieldkit_publish_workspace
   - fieldkit_get_workspace
   - fieldkit_list_workspaces
-  - fieldkit_propose_workspace_changes
-  - fieldkit_list_learning
-  - fieldkit_decide_candidate
 provides_hooks:
   - on_session_start
 python_dependencies:

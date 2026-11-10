@@ -1,73 +1,86 @@
 ---
 name: fieldkit-workspace-builder
-description: Set up or update a FieldKit workspace for the user's actual field job (their responsibilities, decisions, tools, own rules, documents and languages) so the phone can record work and give a quick opinion offline. Fast by default (built from the interview, no up-front web research). Use when the user wants FieldKit set up for their work, when FieldKit has no workspace yet, or when a workspace needs changes, gaps filled or improvements reviewed.
+description: Set up, edit or undo changes to a FieldKit workspace for any kind of work (inspections, research and data collection, business or client visits, field surveys, personal or study logs) so the phone can record entries offline and Hermes can answer questions about them. Use when the user wants FieldKit set up for their work, wants to change their workspace (add, remove or change questions, rules, guides or the description), or says "undo my last workspace update".
 ---
 
 # FieldKit workspace builder
 
-A workspace is the user's job turned into an offline kit: a form to record their work, the decisions they make, decision
-guides that walk to a decision, and the rules they already use. The phone records offline and gives a quick opinion from
-the workspace; after sync, Hermes gives the full opinion on each record. FieldKit validates everything you build and
-computes where each rule comes from. **Never present model knowledge as verified guidance.**
+A workspace is the user's work turned into an offline kit: forms to record entries, and, only if their work has them,
+their own rules, decision guides and procedures. Saving or syncing never triggers AI work; Hermes answers when the user
+asks. **Never present model knowledge as verified guidance, and never invent a part the user's work does not have.**
+Web research is never needed to build a workspace; the user's own description, rules and documents are the source.
 
-**Be fast.** Setup should take the user a few minutes of answers and about a minute of building. Do **not** research
-the web before building. The user's own rules and documents are the source for their process.
+## 1. Interview: purpose first, then only what fits (in the user's language)
 
-## 1. Interview (in the user's language, a few questions at a time)
+Start with one question: **what is this workspace for?** (e.g. "storing my research interviews", "checking milk at the
+collection centre", "logging client site visits", "tracking my hives"). Then choose the follow-ups that fit that
+purpose, a few at a time, **5-8 questions at most**, and infer the rest. Examples (not a fixed script):
+- **Research / data collection / surveys:** what each entry records (fields, photos, audio, location), what identifies
+  an entry (participant, household, sample id), categories or tags, consent or privacy needs, how they will analyse later.
+- **Inspections / quality checks:** what is checked and measured (units, instruments), the rules and limits they use,
+  the decisions they make (accept/reject, act now/watch), who they escalate to.
+- **Business / client visits:** what is recorded per visit, clients and sites, what follow-up they track.
+- **Personal or study logs:** what to capture and how they want to find it later.
+- Anything else: ask what a typical entry looks like and what they would want to know from their entries later.
 
-- What they do, how often, and **the decisions each task needs** (accept/reject, act now/watch, refer/treat…).
-- What they record or measure, with which instruments and units.
-- **The rules they already use**, in their words: limits, thresholds, steps ("we reject below 8.3 SNF", "spray only
-  after the KVK says so"). Ask for any SOP, checklist, form or photo of their paper form: build from it.
-- Country/region, languages (reading, speaking, text in photos), who they escalate to (roles), how long offline.
+Always learn: the purpose, **what is recorded each time**, **what identifies an entry** (the subject), and languages.
+Only ask about decisions, rules, escalation, location or instruments if the purpose involves them. If there are no
+decisions, there are none: do not create a decision scale, guides or "flag" decisions to fill a template.
 
-Call `fieldkit_save_workspace_brief`; show the returned `summary`; call again with `confirmed: true` only after the user
-confirms. Keep each responsibility's `id` short (e.g. `r_accept`).
+Call `fieldkit_save_workspace_brief` with `purpose`, `records` (what is captured), `subject`, `responsibilities`
+(the uses of the workspace, each with an `id` and `description`; `decisions` only if real), `languages`, and any of
+`rules`, `escalation`, `country`, `region`, `tools_and_instruments`, `procedures_in_use` that apply. Show the returned
+summary **and the questions the form will have**, ask the user to confirm or correct, and call again with
+`confirmed: true` only after they confirm.
 
 ## 2. Build straight away (about a minute)
 
-1. `fieldkit_start_workspace_build` (brief id, lowercase workspace id, title and languages).
-2. `fieldkit_workspace_format` once, then `fieldkit_workspace_format(part)` for the parts you write (copy the shape).
-3. Add everything in **one or two calls** with `fieldkit_add_workspace_parts(workspace_id, parts={...})`:
-   - `sources`: one `{"type": "user_statement", "title": "Stated by the user in the setup interview"}` for the rules
-     they told you, plus `user_document` sources for documents they shared.
-   - `evidence`: one item per rule they stated, quoting **their words** (`source_id` = the user_statement source).
-     These are labelled "Your procedure" on the phone, never "verified".
-   - `report_policy` (their decisions), `workflows` (their fields, units, terms; choice options as `{value, label}`),
-     `guides` (their steps to a decision; actions cite their rules, or are `{"kind": "escalate"}`), `vocabulary`,
-     `gaps` (what they did not know, e.g. "no SNF limit given: ask the union"), `traceability` (every responsibility).
-4. You may suggest extra checks from your own knowledge, but say they are suggestions and ask the user. Only what the
-   user accepts becomes a rule (record it as a user_statement: "Suggested by Hermes, accepted by the user"). Anything
-   not accepted stays out, or is an explanation entry (shown as unverified background).
-5. `fieldkit_build_workspace(workspace_id)`. Fix any rejected item from its path, error and hint, and build again.
+1. `fieldkit_start_workspace_build` (brief id, lowercase workspace id, title, languages).
+2. `fieldkit_workspace_format(part)` for the parts you write (copy the shape).
+3. Add everything in **one or two calls**: `fieldkit_add_workspace_parts(workspace_id, parts={...})`:
+   - `workflows`: the form(s) with the user's fields, units and terms (choice options as `{value, label}`); set
+     `metadata.subject_field` to the field that identifies an entry (e.g. `participant_id`, `asset_id`).
+   - Only if they have rules: one `sources` item `{"id": "s_user", "type": "user_statement", "title": "Stated by the
+     user in the setup interview"}`, `evidence` quoting **their words**, classification rules citing it ("Your
+     procedure" on the phone).
+   - Only if they make decisions: `report_policy.decision_scale` and `guides` (actions cite their rules, or are
+     `{"kind": "escalate"}`).
+   - `vocabulary` and `gaps` if useful; `traceability` mapping each use (responsibility id) to its form or guide.
+4. `fieldkit_build_workspace(workspace_id)`. Fix any rejected item from its path, error and hint, and build again.
 
 ## 3. Review and publish
 
-Tell the user in a few lines what the phone will do, which rules are theirs, and the gaps (with who to ask). Publish with
-`fieldkit_publish_workspace` and `user_approved: true` only after they approve. Give them the app link and tell them to
-tap "Download everything for offline".
+Tell the user in a few lines what the phone will record and do. Publish with `fieldkit_publish_workspace` and
+`user_approved: true` only after they approve. Give the app link: on the phone, "Download everything for offline".
 
-## 4. Optional: check rules against official sources (only if the user asks, or a legal limit decides the outcome)
+## 4. Editing a workspace (no new interview)
 
-Keep it short and targeted, one question at a time: at most two `web_search` calls on official domains for the country
-(regulator, standards body, manufacturer), open the one matching page with `web_extract`, copy the exact sentence, add it
-as a source + evidence. FieldKit checks the quote. If nothing qualifies quickly, add a `gaps` item and move on. Tell the
-user whether their rule matches ("matches FSSAI") or differs. Never spend long browsing.
+For "add a question about X", "remove the GPS field", "make temperature required", "change the description",
+"add our new rule", "change the guide":
+1. `fieldkit_start_workspace_build(workspace_id)` (no brief needed; it starts from the published version). For the
+   description or purpose, pass `profile_changes` (e.g. `{"purpose": "..."}`) and a new `title` if asked.
+2. `fieldkit_get_workspace(workspace_id, include_bundle=true)` if you need the current form, then
+   `fieldkit_add_workspace_parts`: send the **whole changed item** (e.g. the full form with the field added or removed);
+   `remove` deletes items. Do only what was asked; do not redesign the rest.
+3. `fieldkit_build_workspace(workspace_id)` returns `changes_since_published`: show it as a short list and ask
+   "Publish these changes?". Publish only after they say yes.
+4. Old records keep their original form version and answers, including answers to removed questions.
 
-## 5. After sync: answer what the user asks
+**Undo:** for "undo my last workspace update", call `fieldkit_undo_workspace_update(workspace_id)` to see what would
+change back, show it, and call again with `user_confirmed: true` after they confirm. It publishes the previous version
+as a new version, so phones get it as an update.
 
-Syncing alone triggers no AI work. Users ask about a visit on the phone ("Ask Hermes about this visit"); FieldKit
-answers those from that record automatically, and you can see them with `fieldkit_list_questions`. In chat, a question
-about one visit goes to `fieldkit_ask_about_record` (it gathers the photos, voice notes, procedures and history itself);
-summaries or comparisons across visits use `fieldkit_list_records` with `include_answers` (and `workspace_id`). Answers about one case stay with that case; never turn them into workspace rules.
+## 5. Optional: check a rule against official sources
 
-### Solution first
+Only if the user asks, or a legal limit decides the outcome: at most two `web_search` calls on official domains, open
+the one matching page with `web_extract`, copy the exact sentence, add it as a source + evidence (FieldKit checks the
+quote). If nothing qualifies quickly, add a `gaps` item. Never spend long browsing.
 
-When the user asks about a synced record or a report, answer with the solution and next steps from the record, the report
-and the workspace. Research only the one open question that blocks the answer, as in section 4. If it cannot be found
-quickly, say who to ask (their escalation role, KVK, supervisor) and record a gap. Questions the phone could not answer
-offline arrive as learning candidates (`fieldkit_propose_workspace_changes`): answer them the same way, and add accepted
-answers to the workspace (start a build with the same id, add the parts, build, publish) so the phone answers them
-offline next time.
+## 6. Questions about entries
+
+Users ask about an entry on the phone ("Ask Hermes about this visit"); FieldKit answers those after sync, and you can
+see them with `fieldkit_list_questions`. In chat, a question about one entry goes to `fieldkit_ask_about_record` (it uses
+the photos, voice notes, procedures and earlier entries of the same subject itself); summaries or comparisons across
+entries use `fieldkit_list_records` with `include_answers` (and `workspace_id`). Answers about one case stay with it.
 
 A build is saved as you go: if a chat ends, a new chat continues with `fieldkit_workspace_build_status`.

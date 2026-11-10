@@ -166,10 +166,10 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
   }
 
   function RecordDetail({ id }: { id: string }) {
-    const [data, err, reload] = useLoad(() => Promise.all([get(`records/${id}`), get(`records/${id}/report`).catch(() => null)]), [id]);
-    const [msg, setMsg] = useState("");
+    const [data, err] = useLoad(() => Promise.all([get(`records/${id}`), get(`records/${id}/report`).catch(() => null),
+      get(`records/${id}/questions`).catch(() => ({ questions: [] }))]), [id]);
     if (!data) return h(Err, { msg: err }) || h("div", null, "Loading…");
-    const [rec, rep] = data as any[];
+    const [rec, rep, qs] = data as any[];
     return h("div", { style: { marginTop: 8 } },
       h("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 } },
         h("div", null, h("b", null, "Answers"), h("pre", { style: pre }, JSON.stringify(rec.answers, null, 2))),
@@ -177,9 +177,12 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
           (rec.local_results?.findings ?? []).map((f: any, i: number) => h("div", { key: i }, h(Sev, { s: f.severity }), " ", f.label, f.detail ? ` — ${f.detail}` : "")))),
       rec.attachments?.length > 0 && h("div", { style: { marginTop: 8 } }, h("b", null, rec.attachment_summary || `${rec.attachments.length} file(s)`),
         h("div", { style: { ...row, flexWrap: "wrap" } }, rec.attachments.map((a: any) => h(Attachment, { key: a.id, a })))),
-      h("div", { style: { marginTop: 8 } }, h("b", { style: { color: "#0f766e" } }, "Hermes report"),
-        rep ? h(ReportView, { r: rep }) : h("div", null, `No report yet (analysis: ${rec.analysis_status}).`),
-        h("div", { style: row }, h(Button, { onClick: () => post(`records/${id}/analyze`).then((r: any) => { setMsg(`Analysis ${r.analysis_status} (${r.analysis_mode})`); reload(); }, (e: any) => setMsg(String(e))) }, rep ? "Re-analyse" : "Request analysis"), msg)));
+      h("div", { style: { marginTop: 8 } }, h("b", { style: { color: "#0f766e" } }, "Questions about this visit"),
+        (qs.questions ?? []).length ? (qs.questions as any[]).map((q: any) => h("div", { key: q.id, style: { margin: "6px 0" } },
+          h("div", null, h("b", null, q.question), ` · ${q.status}`),
+          q.answer ? h("div", null, q.answer.answer, q.answer.uncertainty ? h("div", { style: small }, `Not certain: ${q.answer.uncertainty}`) : null) : null))
+          : h("div", { style: small }, "No questions. Ask about this visit on the phone, or in the Hermes chat (e.g. “what do you think about this visit?”).")),
+      rep ? h("div", { style: { marginTop: 8 } }, h("b", { style: { color: "#0f766e" } }, "Earlier Hermes report"), h(ReportView, { r: rep })) : null);
   }
 
   const INTEGRITY: Record<string, string> = { intact: "intact (SHA-256 verified)", mismatch: "DOES NOT MATCH the captured file",
@@ -257,17 +260,14 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
     return h("div", null,
       h(Section, { title: "Synchronisation", actions: h(Button, { onClick: reload }, "Refresh") },
         h("div", null, `Last record received: ${ts(st.last_received_at)} · Attachments outstanding: ${st.attachments_outstanding} · Open conflicts: ${st.open_conflicts}`),
-        h("div", null, `Records: ${counts(st.records_by_sync_status)} · Analysis: ${counts(st.records_by_analysis_status)}`),
+        h("div", null, `Records: ${counts(st.records_by_sync_status)}`),
         h("div", { style: { marginTop: 8 } }, h("b", null, "Devices"), st.devices.map((d: any) => h("div", { key: d.id }, `${d.label || "Unnamed device"} · last seen ${ts(d.last_seen)} `, h("span", { style: small }, d.id))))),
       h(Section, { title: "Conflicts" }, cf.conflicts.length ? cf.conflicts.map((c: any) => h("div", { key: c.id, style: box },
         h("div", null, `Record ${c.record_id}: phone edited revision ${c.base_revision}, server is at ${c.server_revision}`),
         h("pre", { style: pre }, JSON.stringify(c.client_payload?.record?.answers, null, 2)),
         h("div", { style: row }, h(Button, { onClick: () => post(`sync/conflicts/${c.id}/resolve`, { resolution: "keep_server" }).then(reload) }, "Keep server version"),
           h(Button, { onClick: () => post(`sync/conflicts/${c.id}/resolve`, { resolution: "use_client" }).then(reload) }, "Use phone version")))) : "No open conflicts."),
-      h(Section, { title: `Analysis jobs (mode: ${jobs.mode})` }, jobs.jobs.length ? h("table", { style: { width: "100%", fontSize: 13 } },
-        h("thead", null, h("tr", null, ["job", "record", "rev", "status", "attempts", "updated", "error"].map((x) => h("th", { key: x, style: { textAlign: "left" } }, x)))),
-        h("tbody", null, jobs.jobs.map((j: any) => h("tr", { key: j.id }, h("td", null, j.id), h("td", null, j.record_id), h("td", null, j.revision), h("td", null, j.status),
-          h("td", null, j.attempts), h("td", null, ts(j.updated_at)), h("td", { style: { color: "#b91c1c" } }, j.last_error || ""))))) : "No jobs yet."));
+      h("div", { style: small }, `Syncing never triggers AI work. Questions asked about visits are answered by FieldKit's worker (mode: ${jobs.mode}).`));
   }
 
   // ---------------------------------------------------------------- Offline packs (model manifests)
@@ -301,8 +301,8 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
           h("p", { style: { fontSize: 13, opacity: .8 } }, "Service workers need HTTPS. The phone must reach this dashboard over https:// (or localhost)."))));
   }
 
-  const TABS: [string, () => any][] = [["Overview", Overview], ["Workflows", Workflows], ["Knowledge", Knowledge], ["Records", Records],
-    ["Reports", Reports], ["Synchronization", Sync], ["Offline Packs", OfflinePacks], ["Mobile Access", Mobile]];
+  const TABS: [string, () => any][] = [["Overview", Overview], ["Records", Records],
+    ["Synchronization", Sync], ["Mobile Access", Mobile]];
 
   function FieldKitPage() {
     const [tab, setTab] = useState("Overview");

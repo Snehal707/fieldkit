@@ -31,8 +31,12 @@ export async function installPack(id: string): Promise<InstalledPack> {
 export async function installWorkflow(id: string): Promise<{ workflow: StoredWorkflow; packs: string[]; failed: string[] }> {
   const def = await api<Workflow>(`workflows/${encodeURIComponent(id)}`);
   if (!def || !Array.isArray(def.fields)) throw new Error("Invalid workflow from server");
-  const stored: StoredWorkflow = { id: def.id, version: def.version ?? 1, downloaded_at: nowIso(), definition: def };
   const d = await db();
+  const before = await d.get("workflows", def.id);
+  const previous = { ...(before?.previous ?? {}) };
+  if (before && before.version !== (def.version ?? 1)) previous[String(before.version)] = before.definition;
+  const stored: StoredWorkflow = { id: def.id, version: def.version ?? 1, downloaded_at: nowIso(), definition: def,
+    ...(Object.keys(previous).length ? { previous } : {}) };
   await d.put("workflows", stored);
   const wanted = [...(def.knowledge_packs ?? []), ...(def.dictionary_packs ?? [])];
   const done: string[] = [];

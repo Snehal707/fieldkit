@@ -81,7 +81,18 @@ export interface RemoteCopy {
   owner?: string;        // Hermes account that downloaded it; only shown to that account
   attachments?: { id: string; field_id?: string; mime: string; size?: number; sha256?: string; status?: string }[];   // metadata only; files load from Hermes on demand
 }
-export interface StoredWorkflow { id: string; version: number; downloaded_at: string; definition: Workflow }
+export interface StoredWorkflow {
+  id: string; version: number; downloaded_at: string; definition: Workflow;
+  /** Earlier versions kept when an update is downloaded, so old records show their own questions (0.2.6). */
+  previous?: Record<string, Workflow>;
+}
+
+/** The form definition a record was made with (falls back to the current one). */
+export function definitionFor(stored: StoredWorkflow | undefined, version: number | undefined): Workflow | undefined {
+  if (!stored) return undefined;
+  if (version !== undefined && version !== stored.version && stored.previous?.[String(version)]) return stored.previous[String(version)];
+  return stored.definition;
+}
 
 interface FieldKitDB extends DBSchema {
   settings: { key: string; value: { key: string; value: unknown } };

@@ -1,7 +1,7 @@
 // Core screens: Home, My Workflows, workflow runner, Results, Saved Records, Pending Sync, Reports.
 import { api, AuthRequired, HttpError, Offline } from "./api";
 import { APP_VERSION, signIn } from "./config";
-import { db, deleteRecord, deviceId, getSetting, setSetting, type Attachment, type Draft, type LocalRecord, type RemoteCopy, type StoredReport } from "./db";
+import { db, definitionFor, deleteRecord, deviceId, getSetting, setSetting, type Attachment, type Draft, type LocalRecord, type RemoteCopy, type StoredReport } from "./db";
 import { describeLoadProblem, missingOnServer, unifiedRecords, type Availability, type LoadProblem, type ServerLike } from "./device";
 import { computeState, ERROR_TEXT, text, type Field, type Workflow } from "./engine";
 import { installedModels, ocr, ocrLanguages, speak, transcribe, voicesReady } from "./intel";
@@ -143,18 +143,15 @@ export const homeView: View = async (main) => {
       ...checks.map(checkRow),
       h("div", { class: "row", style: "margin-top:.5rem" }, h("a", { class: "btn", href: "#/packs" }, "Offline Packs"))),
     h("div", { class: "grid" },
-      tile("#/workflows", "My Workflows", `${(await installedWorkflows()).length} downloaded`),
       recordsTile(acct),
       tile("#/sync", "Pending Sync", pending ? `${pending} awaiting confirmation` : "All confirmed"),
-      tile("#/reports", "Reports", `${(await d.getAll("reports")).length + copiesWithReports} available offline`),
-      tile("#/assistant", "Workspace Assistant", "Your procedures and visits")),
+      tile("#/assistant", "Workspace Assistant", "Your procedures and visits"),
+      tile("#/workflows", "All forms", `${(await installedWorkflows()).length} on this phone`)),
     h("details", { class: "card", id: "home-tools" }, h("summary", null, h("strong", null, "Tools"),
-      h("span", { class: "muted" }, " · translate, scan text, dictionary, knowledge")),
+      h("span", { class: "muted" }, " · translate, scan text")),
       h("div", { class: "grid" },
         tile("#/translate", "Translate", "Sentence translation"),
-        tile("#/ocr", "Scan text (OCR)", "From camera or photo"),
-        tile("#/dictionary", "Dictionary", "Terms & definitions"),
-        tile("#/knowledge", "Knowledge", "Browse topics"))));
+        tile("#/ocr", "Scan text (OCR)", "From camera or photo"))));
   if (drafts.length) {
     main.append(h("div", { class: "card" }, h("h2", null, "Unfinished drafts"),
       h("ul", { class: "clean" }, ...drafts.map((dr) => h("li", null, h("a", { href: `#/run/${dr.id}` }, `${wfTitles.get(dr.workflow_id) ?? dr.workflow_id} — started ${fmtTime(dr.started_at)}`))))));
@@ -654,7 +651,7 @@ export const resultsView: View = async (main, p) => {
         h("a", { class: "btn", href: "#/records" }, "Saved Records"))));
     return;
   }
-  const wf = (await d.get("workflows", rec.workflow_id))?.definition;
+  const wf = definitionFor(await d.get("workflows", rec.workflow_id), rec.workflow_version);
   const stored = await d.get("reports", rec.id);
   const atts = await d.getAllFromIndex("attachments", "by_record", rec.id);
   const l = rec.lang;
@@ -749,10 +746,16 @@ export const resultsView: View = async (main, p) => {
       h("div", { class: "muted", id: "media-upload-status", "data-uploaded": String(up), "data-total": String(shownAtts.length) },
         up === shownAtts.length ? `All ${shownAtts.length} file(s) uploaded to Hermes and kept on this device.` : `${up} of ${shownAtts.length} file(s) uploaded to Hermes so far. All are kept on this device.`));
   }
+  const known = new Set((wf?.fields ?? []).map((f) => f.id));
+  const extra = Object.entries(rec.answers).filter(([k, v]) => !known.has(k) && v !== undefined && v !== null && v !== "" && typeof v !== "object");
+  if (extra.length) {
+    resp.append(h("h3", null, "Answers to questions no longer in the form"),
+      h("dl", { class: "kv", id: "removed-answers" }, ...extra.flatMap(([k, v]) => [h("dt", null, k.replace(/_/g, " ")), h("dd", null, String(v))])));
+  }
   main.append(resp);
 
-  // Hermes report (online result, also readable offline after download)
-  main.append(hermesSection(rec, stored));
+  // An older Hermes report (before 0.2.6, or requested in chat) — shown only if there is one.
+  if (stored || !["not_requested", undefined].includes(rec.analysis_status as any)) main.append(hermesSection(rec, stored));
 };
 
 function hermesSection(rec: LocalRecord, stored: StoredReport | undefined) {
@@ -766,8 +769,7 @@ function hermesSection(rec: LocalRecord, stored: StoredReport | undefined) {
   } else {
     box.append(h("p", { class: "muted" }, `Analysis status: ${ANALYSIS_TEXT[rec.analysis_status] ?? rec.analysis_status}. No report downloaded yet.`));
   }
-  box.append(h("div", { class: "row" }, h("a", { class: "btn", id: "ask-about-record", href: `#/assistant?record=${encodeURIComponent(rec.id)}` },
-    stored ? "Ask about this report" : "Ask about this record")));
+
   if (rec.sync_status === "synced" || rec.sync_status === "received") {
     box.append(h("div", { class: "row" },
       h("button", { onclick: async () => {
@@ -816,7 +818,8 @@ async function askHermesCard(rec: LocalRecord, l: string): Promise<HTMLElement> 
     h("form", { class: "row", onsubmit: (e: Event) => { e.preventDefault(); void ask(input.value); } },
       h("div", { class: "grow" }, input), h("button", { class: "primary" }, "Ask")),
     list,
-    h("div", { class: "row" }, h("button", { id: "ask-hermes-refresh", onclick: async () => {
+    h("div", { class: "row" }, h("a", { class: "btn", id: "ask-about-record", href: `#/assistant?record=${encodeURIComponent(rec.id)}` },
+      "Ask the offline Workspace Assistant"), h("button", { id: "ask-hermes-refresh", onclick: async () => {
       try { const n = await syncQuestions(); await render(); toast(n ? "Updated." : "No new answer yet.", n ? "ok" : "info"); }
       catch (e) { toast(e instanceof AuthRequired ? "Sign in to Hermes first." : `Offline or unavailable: ${(e as Error).message}`, "error"); }
     } }, "Check for answers")));

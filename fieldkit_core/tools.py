@@ -386,9 +386,31 @@ TOOLS += _wst.TOOLS
 TOOL_NAMES = [schema["name"] for schema, _ in TOOLS]
 
 
+# Retired from Hermes in 0.2.6 (the product is: workspaces built by interview, visits recorded offline, questions
+# answered on request). The code stays for existing data and is reachable through handler_for() in tests.
+RETIRED = {
+    "fieldkit_create_workflow", "fieldkit_validate_workflow", "fieldkit_publish_workflow", "fieldkit_list_workflows",
+    "fieldkit_get_workflow", "fieldkit_create_knowledge_pack", "fieldkit_create_dictionary_pack",
+    "fieldkit_list_knowledge_packs", "fieldkit_search_knowledge", "fieldkit_analyze_record", "fieldkit_generate_report",
+    "fieldkit_save_report", "fieldkit_list_reports", "fieldkit_create_followup", "fieldkit_list_followups",
+    "fieldkit_propose_workspace_changes", "fieldkit_list_learning", "fieldkit_decide_candidate",
+}
+TOOL_NAMES = [schema["name"] for schema, _ in TOOLS if schema["name"] not in RETIRED]
+
+
+def handler_for(name: str) -> Callable[..., str]:
+    """Any FieldKit tool handler, including retired ones (tests and internal use)."""
+    for schema, fn in TOOLS:
+        if schema["name"] == name:
+            return _guard(fn)
+    raise KeyError(name)
+
+
 def register_all(ctx: Any) -> list[str]:
     names = []
     for schema, fn in TOOLS:
+        if schema["name"] in RETIRED:
+            continue
         ctx.register_tool(name=schema["name"], toolset=TOOLSET, schema=schema, handler=_guard(fn),
                           description=schema["description"])
         names.append(schema["name"])

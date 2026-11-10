@@ -122,9 +122,9 @@ EVIDENCE = {
     },
 }
 REPORT_POLICY = {
-    "type": "object", "required": ["decision_scale"], "additionalProperties": False,
+    "type": "object", "required": [], "additionalProperties": False,
     "properties": {
-        "decision_scale": {"type": "array", "minItems": 2, "items": {
+        "decision_scale": {"type": "array", "minItems": 0, "items": {
             "type": "object", "required": ["id", "label", "severity"], "additionalProperties": False,
             "properties": {"id": SLOT, "label": LABEL, "severity": {"enum": list(SEVERITIES)}, "description": LABEL}}},
         "after_sync": {"enum": ["save", "summarize", "analyze"], "description": "Accepted for older workspaces and ignored: syncing never triggers AI work."},

@@ -1908,11 +1908,14 @@
       );
     }
     function RecordDetail({ id }) {
-      var _a2, _b2, _c;
-      const [data, err, reload] = useLoad(() => Promise.all([get(`records/${id}`), get(`records/${id}/report`).catch(() => null)]), [id]);
-      const [msg, setMsg] = useState("");
+      var _a2, _b2, _c, _d;
+      const [data, err] = useLoad(() => Promise.all([
+        get(`records/${id}`),
+        get(`records/${id}/report`).catch(() => null),
+        get(`records/${id}/questions`).catch(() => ({ questions: [] }))
+      ]), [id]);
       if (!data) return h(Err, { msg: err }) || h("div", null, "Loading\u2026");
-      const [rec, rep] = data;
+      const [rec, rep, qs] = data;
       return h(
         "div",
         { style: { marginTop: 8 } },
@@ -1936,13 +1939,15 @@
         h(
           "div",
           { style: { marginTop: 8 } },
-          h("b", { style: { color: "#0f766e" } }, "Hermes report"),
-          rep ? h(ReportView, { r: rep }) : h("div", null, `No report yet (analysis: ${rec.analysis_status}).`),
-          h("div", { style: row }, h(Button, { onClick: () => post(`records/${id}/analyze`).then((r) => {
-            setMsg(`Analysis ${r.analysis_status} (${r.analysis_mode})`);
-            reload();
-          }, (e) => setMsg(String(e))) }, rep ? "Re-analyse" : "Request analysis"), msg)
-        )
+          h("b", { style: { color: "#0f766e" } }, "Questions about this visit"),
+          ((_d = qs.questions) != null ? _d : []).length ? qs.questions.map((q) => h(
+            "div",
+            { key: q.id, style: { margin: "6px 0" } },
+            h("div", null, h("b", null, q.question), ` \xB7 ${q.status}`),
+            q.answer ? h("div", null, q.answer.answer, q.answer.uncertainty ? h("div", { style: small }, `Not certain: ${q.answer.uncertainty}`) : null) : null
+          )) : h("div", { style: small }, "No questions. Ask about this visit on the phone, or in the Hermes chat (e.g. \u201Cwhat do you think about this visit?\u201D).")
+        ),
+        rep ? h("div", { style: { marginTop: 8 } }, h("b", { style: { color: "#0f766e" } }, "Earlier Hermes report"), h(ReportView, { r: rep })) : null
       );
     }
     const INTEGRITY = {
@@ -2080,7 +2085,7 @@
           Section,
           { title: "Synchronisation", actions: h(Button, { onClick: reload }, "Refresh") },
           h("div", null, `Last record received: ${ts(st.last_received_at)} \xB7 Attachments outstanding: ${st.attachments_outstanding} \xB7 Open conflicts: ${st.open_conflicts}`),
-          h("div", null, `Records: ${counts(st.records_by_sync_status)} \xB7 Analysis: ${counts(st.records_by_analysis_status)}`),
+          h("div", null, `Records: ${counts(st.records_by_sync_status)}`),
           h("div", { style: { marginTop: 8 } }, h("b", null, "Devices"), st.devices.map((d) => h("div", { key: d.id }, `${d.label || "Unnamed device"} \xB7 last seen ${ts(d.last_seen)} `, h("span", { style: small }, d.id))))
         ),
         h(Section, { title: "Conflicts" }, cf.conflicts.length ? cf.conflicts.map((c) => {
@@ -2098,22 +2103,7 @@
             )
           );
         }) : "No open conflicts."),
-        h(Section, { title: `Analysis jobs (mode: ${jobs.mode})` }, jobs.jobs.length ? h(
-          "table",
-          { style: { width: "100%", fontSize: 13 } },
-          h("thead", null, h("tr", null, ["job", "record", "rev", "status", "attempts", "updated", "error"].map((x) => h("th", { key: x, style: { textAlign: "left" } }, x)))),
-          h("tbody", null, jobs.jobs.map((j) => h(
-            "tr",
-            { key: j.id },
-            h("td", null, j.id),
-            h("td", null, j.record_id),
-            h("td", null, j.revision),
-            h("td", null, j.status),
-            h("td", null, j.attempts),
-            h("td", null, ts(j.updated_at)),
-            h("td", { style: { color: "#b91c1c" } }, j.last_error || "")
-          )))
-        ) : "No jobs yet.")
+        h("div", { style: small }, `Syncing never triggers AI work. Questions asked about visits are answered by FieldKit's worker (mode: ${jobs.mode}).`)
       );
     }
     function OfflinePacks() {
@@ -2171,12 +2161,8 @@
     }
     const TABS = [
       ["Overview", Overview],
-      ["Workflows", Workflows],
-      ["Knowledge", Knowledge],
       ["Records", Records],
-      ["Reports", Reports],
       ["Synchronization", Sync],
-      ["Offline Packs", OfflinePacks],
       ["Mobile Access", Mobile]
     ];
     function FieldKitPage() {

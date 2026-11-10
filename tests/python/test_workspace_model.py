@@ -92,7 +92,8 @@ def test_every_responsibility_must_be_served_and_brief_fields_required():
     p.pop("country")
     p["responsibilities"] = [{"id": "x", "description": "y"}]
     errs = ws.validate_bundle(bundle(profile=p, languages={"content": []}))["errors"]
-    assert any("country" in e for e in errs) and any("decisions" in e for e in errs) and any("languages" in e for e in errs)
+    # 0.2.6 purpose-first: country and decisions are optional (nothing is invented); languages are still required.
+    assert not any("country" in e for e in errs) and any("languages" in e for e in errs)
 
 
 def test_missing_languages_are_flagged():

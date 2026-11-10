@@ -248,11 +248,8 @@ def validate_bundle(b: Any, existing_workflow_ids: Optional[Any] = None) -> dict
     profile = b.get("profile") or {}
     resp = profile.get("responsibilities") or []
     if not resp or not all(isinstance(r, dict) and r.get("id") and r.get("description") for r in resp):
-        errs.append("profile.responsibilities: at least one, each with id and description")
-    if not any((r.get("decisions") or []) for r in resp if isinstance(r, dict)):
-        errs.append("profile.responsibilities: at least one responsibility must list the decisions it requires")
-    if not profile.get("country"):
-        errs.append("profile.country required")
+        errs.append("profile.responsibilities: at least one use of the workspace, each with id and description")
+    uses_decisions = any((r.get("decisions") or []) for r in resp if isinstance(r, dict)) or bool(b.get("guides"))
     langs = (b.get("languages") or {}).get("content") or []
     if not langs or not all(isinstance(x, str) and re.match(r"^[a-z]{2,3}$", x) for x in langs):
         errs.append("languages.content: list of language codes required")
@@ -311,8 +308,9 @@ def validate_bundle(b: Any, existing_workflow_ids: Optional[Any] = None) -> dict
     # Guides.
     policy = b.get("report_policy") or {}
     decisions = {d.get("id") for d in policy.get("decision_scale") or [] if isinstance(d, dict)}
-    if not decisions:
-        errs.append("report_policy.decision_scale required (e.g. stop / repair_soon / monitor)")
+    if uses_decisions and not decisions:
+        errs.append("report_policy.decision_scale required when the work involves decisions or guides "
+                    "(e.g. stop / repair_soon / monitor)")
     for g in b.get("guides") or []:
         e2, w2 = validate_guide(g if isinstance(g, dict) else {}, workflows, decisions, statuses, langs)
         errs += e2
@@ -533,34 +531,36 @@ def ensure_starters(store: Any) -> list[str]:
 
 # ----------------------------------------------------------------------------- brief (interview result)
 def validate_brief(brief: Any) -> dict:
-    """The interview must establish the user's actual job before any research. Returns missing items and a summary
-    the user confirms in their own words."""
+    """Purpose first (0.2.6): any kind of work (inspection, research, business visits, personal logs). Required: what
+    the workspace is for, what is recorded, and languages. Decisions, rules, location, escalation, instruments and
+    documents are used only if the person has them; nothing is invented to fill a template."""
     if not isinstance(brief, dict):
         return {"ok": False, "missing": ["brief must be an object"], "summary": ""}
     missing = []
-    if not str(brief.get("role") or "").strip():
-        missing.append("role (what the user does)")
+    purpose = str(brief.get("purpose") or brief.get("role") or "").strip()
+    if not purpose:
+        missing.append("purpose (what this workspace is for, in the user's words)")
     resp = brief.get("responsibilities") or []
-    if not resp or not all(isinstance(r, dict) and r.get("description") for r in resp):
-        missing.append("responsibilities (each with a description)")
-    elif not all(r.get("decisions") for r in resp):
-        missing.append("the decisions each responsibility requires")
-    if not brief.get("country"):
-        missing.append("country (and region if rules differ by region)")
+    records = brief.get("records") or []
+    if not (records or (resp and all(isinstance(r, dict) and r.get("description") for r in resp))):
+        missing.append("what is recorded each time (the things to capture)")
     langs = brief.get("languages") or {}
     if not (langs.get("content") if isinstance(langs, dict) else langs):
-        missing.append("languages (reading; speaking and photo text if different)")
-    for k, label in (("tools_and_instruments", "tools and instruments used (or an empty list)"),
-                     ("procedures_in_use", "procedures/SOPs already followed (or an empty list)"),
-                     ("escalation", "who to escalate to (roles)")):
-        if k not in brief:
-            missing.append(label)
-    lines = [f"Role: {brief.get('role', '?')}" + (f" ({brief.get('industry')})" if brief.get("industry") else ""),
-             "Where: " + ", ".join(str(x) for x in (brief.get("region"), brief.get("country")) if x)]
+        missing.append("languages")
+    lines = [f"Purpose: {purpose or '?'}" + (f" ({brief.get('role')})" if brief.get("purpose") and brief.get("role") else "")]
+    where = ", ".join(str(x) for x in (brief.get("region"), brief.get("country")) if x)
+    if where:
+        lines.append(f"Where: {where}")
+    if records:
+        lines.append("Each entry records: " + ", ".join(str(r.get("label") if isinstance(r, dict) else r) for r in records))
     for r in resp if isinstance(resp, list) else []:
         if isinstance(r, dict):
             dec = r.get("decisions") or []
             lines.append(f"- {r.get('description')}" + (f" (decides: {', '.join(map(str, dec))})" if dec else ""))
+    if brief.get("subject"):
+        lines.append(f"Each entry is about: {brief['subject']}")
+    if brief.get("rules"):
+        lines.append("Your rules: " + "; ".join(map(str, brief["rules"] if isinstance(brief["rules"], list) else [brief["rules"]])))
     if brief.get("tools_and_instruments"):
         lines.append("Tools: " + ", ".join(str(t.get("name") if isinstance(t, dict) else t) for t in brief["tools_and_instruments"]))
     if brief.get("procedures_in_use"):
@@ -901,3 +901,97 @@ def check_excerpts(bundle: dict, fetch: Any = None, limit: int = 80, wait_s: Opt
 def pending_checks(bundle: dict) -> int:
     return sum(1 for ev in bundle.get("evidence") or [] if isinstance(ev, dict)
                for x in ev.get("excerpts") or [] if isinstance(x, dict) and x.get("check") == "pending")
+
+
+
+# ----------------------------------------------------------------------------- what changed between two versions
+def _lbl(v: Any) -> str:
+    return engine.text(v) if v else ""
+
+
+def workspace_changes(old: Optional[dict], new: dict) -> list[str]:
+    """A short, plain-language list of what changed (shown to the user before publishing an edit or an undo)."""
+    if not old:
+        return ["New workspace."]
+    out: list[str] = []
+    if _lbl(old.get("title")) != _lbl(new.get("title")):
+        out.append(f"Title: \"{_lbl(old.get('title'))}\" → \"{_lbl(new.get('title'))}\"")
+    op, np_ = old.get("profile") or {}, new.get("profile") or {}
+    for k, name in (("purpose", "Purpose"), ("role", "Role"), ("region", "Region"), ("country", "Country")):
+        if op.get(k) != np_.get(k) and (op.get(k) or np_.get(k)):
+            out.append(f"{name}: \"{op.get(k) or '—'}\" → \"{np_.get(k) or '—'}\"")
+    od = {r.get("id"): r for r in op.get("responsibilities") or [] if isinstance(r, dict)}
+    nd = {r.get("id"): r for r in np_.get("responsibilities") or [] if isinstance(r, dict)}
+    for k in nd.keys() - od.keys():
+        out.append(f"Added task: {nd[k].get('description')}")
+    for k in od.keys() - nd.keys():
+        out.append(f"Removed task: {od[k].get('description')}")
+    ow = {w.get("id"): w for w in old.get("workflows") or [] if isinstance(w, dict)}
+    nw = {w.get("id"): w for w in new.get("workflows") or [] if isinstance(w, dict)}
+    for k in nw.keys() - ow.keys():
+        out.append(f"Added form: {_lbl(nw[k].get('title')) or k}")
+    for k in ow.keys() - nw.keys():
+        out.append(f"Removed form: {_lbl(ow[k].get('title')) or k} (existing records keep their answers)")
+    for k in nw.keys() & ow.keys():
+        form = _lbl(nw[k].get("title")) or k
+        of = {f.get("id"): f for f in ow[k].get("fields") or []}
+        nf = {f.get("id"): f for f in nw[k].get("fields") or []}
+        for fid in [f.get("id") for f in nw[k].get("fields") or [] if f.get("id") not in of]:
+            out.append(f"{form}: added question \"{_lbl(nf[fid].get('label')) or fid}\" ({nf[fid].get('type')})")
+        for fid in [f.get("id") for f in ow[k].get("fields") or [] if f.get("id") not in nf]:
+            out.append(f"{form}: removed question \"{_lbl(of[fid].get('label')) or fid}\" (old records keep this answer)")
+        for fid in of.keys() & nf.keys():
+            a, b = of[fid], nf[fid]
+            bits = []
+            if _lbl(a.get("label")) != _lbl(b.get("label")):
+                bits.append(f"label \"{_lbl(a.get('label'))}\" → \"{_lbl(b.get('label'))}\"")
+            if a.get("type") != b.get("type"):
+                bits.append(f"type {a.get('type')} → {b.get('type')}")
+            if [o.get("value") for o in a.get("options") or []] != [o.get("value") for o in b.get("options") or []]:
+                bits.append("options changed")
+            if bool(a.get("required")) != bool(b.get("required")):
+                bits.append("now required" if b.get("required") else "now optional")
+            if (a.get("validation") or {}) != (b.get("validation") or {}) or a.get("unit") != b.get("unit"):
+                bits.append("limits/units changed")
+            if bits:
+                out.append(f"{form}: changed \"{_lbl(b.get('label')) or fid}\": " + ", ".join(bits))
+        orr = {r.get("id"): r for r in (ow[k].get("classification") or {}).get("rules") or []}
+        nrr = {r.get("id"): r for r in (nw[k].get("classification") or {}).get("rules") or []}
+        for rid in nrr.keys() - orr.keys():
+            out.append(f"{form}: added rule \"{_lbl(nrr[rid].get('label')) or rid}\"")
+        for rid in orr.keys() - nrr.keys():
+            out.append(f"{form}: removed rule \"{_lbl(orr[rid].get('label')) or rid}\"")
+        for rid in orr.keys() & nrr.keys():
+            if orr[rid] != nrr[rid]:
+                out.append(f"{form}: changed rule \"{_lbl(nrr[rid].get('label')) or rid}\"")
+        if (ow[k].get("metadata") or {}).get("subject_field") != (nw[k].get("metadata") or {}).get("subject_field"):
+            out.append(f"{form}: each entry is now identified by \"{(nw[k].get('metadata') or {}).get('subject_field')}\"")
+    for part, name, key in (("guides", "guide", "id"), ("evidence", "rule source", "id"), ("gaps", "gap", "topic")):
+        oi = {x.get(key): x for x in old.get(part) or [] if isinstance(x, dict)}
+        ni = {x.get(key): x for x in new.get(part) or [] if isinstance(x, dict)}
+        for k in ni.keys() - oi.keys():
+            out.append(f"Added {name}: {_lbl(ni[k].get('title')) or ni[k].get('claim') or k}")
+        for k in oi.keys() - ni.keys():
+            out.append(f"Removed {name}: {_lbl(oi[k].get('title')) or oi[k].get('claim') or k}")
+        if part == "guides":
+            for k in oi.keys() & ni.keys():
+                if oi[k] != ni[k]:
+                    out.append(f"Changed guide: {_lbl(ni[k].get('title')) or k}")
+    ok = {e.get("id"): e for e in (old.get("knowledge") or {}).get("entries") or [] if isinstance(e, dict)}
+    nk = {e.get("id"): e for e in (new.get("knowledge") or {}).get("entries") or [] if isinstance(e, dict)}
+    for k in nk.keys() - ok.keys():
+        out.append(f"Added procedure/knowledge: {_lbl(nk[k].get('title')) or k}")
+    for k in ok.keys() - nk.keys():
+        out.append(f"Removed procedure/knowledge: {_lbl(ok[k].get('title')) or k}")
+    for k in ok.keys() & nk.keys():
+        if ok[k] != nk[k]:
+            out.append(f"Changed procedure/knowledge: {_lbl(nk[k].get('title')) or k}")
+    odec = [d.get("id") for d in (old.get("report_policy") or {}).get("decision_scale") or []]
+    ndec = [d.get("id") for d in (new.get("report_policy") or {}).get("decision_scale") or []]
+    if odec != ndec:
+        out.append(f"Decisions: {', '.join(odec) or '—'} → {', '.join(ndec) or '—'}")
+    ov = len((old.get("vocabulary") or {}).get("entries") or [])
+    nv = len((new.get("vocabulary") or {}).get("entries") or [])
+    if ov != nv:
+        out.append(f"Vocabulary: {ov} → {nv} terms")
+    return out or ["No visible changes."]

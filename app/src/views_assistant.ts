@@ -2,7 +2,7 @@
 import { beginGuide, buildCorpus, newState, respond, scopeOf, type AskContext, type Corpus, type Reply, type State } from "./assistant";
 import { currentWorkspace, rememberWorkspace } from "./workspace";
 import { askAboutRecord } from "./questions";
-import { db } from "./db";
+import { db, definitionFor } from "./db";
 import { text, type Workflow } from "./engine";
 import { subjectField } from "./followups";
 import { embed, embeddingModelId, installedModels, ocr, ocrLanguages, speak, transcribe, translate, translationPairs } from "./intel";
@@ -23,7 +23,7 @@ async function loadContext(params: URLSearchParams): Promise<AskContext> {
     const c = await d.get("remote", remoteId);
     if (c) { record = { id: c.id, workflow_id: c.workflow_id, answers: c.answers, completed_at: c.completed_at }; report = c.report; }
   }
-  const workflow: Workflow | null = record ? (await d.get("workflows", record.workflow_id))?.definition ?? null : null;
+  const workflow: Workflow | null = record ? definitionFor(await d.get("workflows", record.workflow_id), (await d.get("records", record.id))?.workflow_version) ?? null : null;
   const history: AskContext["history"] = [];
   if (record && workflow) {
     const fid = subjectField(workflow);
