@@ -369,22 +369,6 @@ def record_report(rid: str, request: Request):
         _err(exc)
 
 
-@router.get("/reports")
-def list_reports(request: Request, record_id: Optional[str] = None, limit: int = Query(50, le=200)):
-    store, uid = get_store(), _uid(request)
-    rows = store.list_reports(uid, record_id, limit)
-    _label(store, uid, rows, "record_id")
-    return {"reports": rows}
-
-
-@router.get("/reports/{rep_id}")
-def get_report(rep_id: str, request: Request):
-    try:
-        return get_store().get_report(_uid(request), report_id=rep_id)
-    except Exception as exc:
-        _err(exc)
-
-
 # ----------------------------------------------------------------------------- PWA
 @router.get("/app")
 def app_root():

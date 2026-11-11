@@ -324,7 +324,6 @@ def test_reports_and_questions_from_earlier_versions_stay_readable_and_private(e
                            "VALUES ('q_1', 'alice', ?, 'Why?', 'answered', ?, 1, 1.0)", (rec["id"], json.dumps({"answer": "Because."})))
     env.store.conn.commit()
     assert env.client.get(f"{PREFIX}/records/{rec['id']}/report", headers=H()).json()["summary"] == "Older report"
-    assert env.client.get(f"{PREFIX}/reports", headers=H()).json()["reports"][0]["record_id"] == rec["id"]
     assert env.client.get(f"{PREFIX}/records/{rec['id']}/questions", headers=H()).json()["questions"][0]["answer"]["answer"] == "Because."
     assert env.client.get(f"{PREFIX}/records/{rec['id']}/report", headers=H("bob")).status_code == 404
 

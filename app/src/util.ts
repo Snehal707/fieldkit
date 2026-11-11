@@ -70,10 +70,6 @@ export function toast(msg: string, kind: "info" | "error" | "ok" = "info"): void
   setTimeout(() => t.remove(), 4000);
 }
 
-export function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
 export function isOnline(): boolean {
   return typeof navigator === "undefined" ? true : navigator.onLine;
 }

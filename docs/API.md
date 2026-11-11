@@ -77,12 +77,6 @@ The phone opens a workspace at `#/workspace/<id>`. Hermes returns that link when
 | GET | `records/{id}/questions` | Read-only. Questions asked about this entry in FieldKit before 0.3, with their status and answers. |
 | GET | `records/{id}/report` | Read-only. The latest report made before 0.3. `404` when there is none. |
 
-## Reports (read-only, before 0.3)
-| Method | Path | Query / result |
-|---|---|---|
-| GET | `reports` | `record_id`, `limit` (default 50, max 200). Reports made before 0.3. |
-| GET | `reports/{id}` | One report made before 0.3. |
-
 ## PWA
 The app is served publicly at `/dashboard-plugins/fieldkit/app_dist/index.html`, outside Hermes' `/api` login gate. The page holds no data; every data call above still requires sign-in.
 

@@ -1,26 +1,26 @@
 # FieldKit — Research notes (verified Hermes interfaces)
 
-Everything below was checked against the **installed Hermes Agent v0.23.0 source**, the version the hosted
-instance reportedly runs, and against the official docs on 2026-11-08. "Verified" means read in source
-or exercised by a test in this repository.
+Everything below was checked against the **Hermes Agent v0.23.0 source** and the official docs on 2026-11-08, and
+re-checked with **v0.23.1**: plugin validate and doctor pass, 12 tools, 0 hooks (FieldKit 0.3.2). "Verified" means read in
+source or exercised by a test in this repository.
 
-**Version 0.3.0 uses no `ctx.llm`.** FieldKit never calls a model; Hermes analyses synced data only when the user asks.
+**FieldKit 0.3.x uses no `ctx.llm`.** FieldKit never calls a model; Hermes reads synced data only when the user asks.
 
 ## Plugin packaging
 
 | Item | Finding | How verified |
 |---|---|---|
 | Manifest | `plugin.yaml` with `name`, `version`, `description`, `provides_tools`, `provides_hooks`, `requires_hermes`, `python_dependencies`, `config_keys` | `hermes plugins validate` passes |
-| Entry point | `__init__.py` defining `register(ctx)` | `hermes plugins doctor --ci` ran discovery, import and registration: 12 tools, 0 hooks (0.3.0) |
+| Entry point | `__init__.py` defining `register(ctx)` | `hermes plugins doctor --ci` ran discovery, import and registration: 12 tools, 0 hooks (0.3.2) |
 | Tools | `ctx.register_tool(name, toolset, schema, handler, check_fn=None, …, description=…)`; handler `(args: dict, **kw) -> str` (JSON) | `hermes_cli/plugins.py:463`; validator "declared tools — matches registrations" |
 | Skill | `ctx.register_skill(name, path, description=…)` → resolvable as `fieldkit:fieldkit` | `hermes_cli/plugins_content.py:32` |
 | Hooks | `on_session_start` is in `VALID_HOOKS`; callbacks must accept `**kwargs`. FieldKit 0.3.0 registers no hook | `hermes_cli/plugins.py:109`, `plugin_dev.py:476` |
 | Storage | `plugins.plugin_storage.plugin_data_dir(name)` → `<HERMES_HOME>/plugin-data/<name>/`; `plugin_db(name)` → SQLite in WAL mode, `check_same_thread=False`, and the caller owns transactions | `plugins/plugin_storage.py` |
-| `register()` side effects | Must not open files or start threads. `register()` in 0.3.0 opens no database; the store opens on first use. The doctor runs in a temporary `HERMES_HOME`, and its cleanup fails on Windows if a database is still open | Observed in an earlier version, then fixed by opening the store lazily |
+| `register()` side effects | Must not open files or start threads. `register()` in 0.3.x opens no database; the store opens on first use. The doctor runs in a temporary `HERMES_HOME`, and its cleanup fails on Windows if a database is still open | Observed in an earlier version, then fixed by opening the store lazily |
 
 ## Host LLM
 
-- Not used. Version 0.3.0 uses no `ctx.llm`, and FieldKit never calls a model.
+- Not used. FieldKit 0.3.x uses no `ctx.llm`, and FieldKit never calls a model.
 
 ## Dashboard extension
 
@@ -74,13 +74,13 @@ or exercised by a test in this repository.
 
 - FieldKit's workaround is to set `env.remotePathTemplate` to the pinned commit while building each pipeline (`app/src/intel.ts`).
 
-## Hermes facilities used (0.3.0)
+## Hermes facilities used (0.3.x)
 
 | Facility | Used for | Verification |
 |---|---|---|
 | `ctx.register_system_prompt_section("fieldkit.workspace", …)` | Each new Hermes session is told which workspaces the user has (or offered a setup), in a bounded text | Registered in `__init__.py` with a bounded text (`fieldkit_core/workspace.py`) |
 | Skills (`ctx.register_skill`) | `fieldkit` (find and read entries) and `fieldkit-workspace-builder` (set up, change, undo) | Registered in `__init__.py`; `hermes plugins validate` passes |
-| `ctx.register_tool` | 12 tools | `hermes plugins doctor . --ci`: 12 tools, 0 hooks (0.3.0) |
+| `ctx.register_tool` | 12 tools | `hermes plugins doctor . --ci`: 12 tools, 0 hooks (0.3.2) |
 | Hermes' own vision and speech-to-text tools | Used by the user's Hermes agent on photos and voice notes (`fieldkit_get_attachment` returns a local file) | Real conversation on a local test Hermes v0.23.0, 2026-11-10 (see `docs/TESTING.md`) |
 
 ## Hackathon

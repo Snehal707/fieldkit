@@ -374,23 +374,6 @@ class Store:
             self.audit(c, owner, "workflow.restore", wid, {"version": version})
         return {"restored": True, "version": version}
 
-    def publish_workflow(self, owner: Any, wid: str, version: Optional[int] = None) -> dict:
-        with self.tx() as c:
-            clause, args = self._owner_clause(owner)
-            row = c.execute(f"SELECT * FROM workflows WHERE id=? AND {clause}", (wid, *args)).fetchone()
-            if not row:
-                raise NotFound(wid)
-            v = version or row["latest_version"]
-            vrow = c.execute("SELECT definition FROM workflow_versions WHERE workflow_id=? AND version=?", (wid, v)).fetchone()
-            if not vrow:
-                raise NotFound(f"{wid}@{v}")
-            definition = dict(_uj(vrow["definition"]), status="published")
-            c.execute("UPDATE workflow_versions SET status='published', definition=? WHERE workflow_id=? AND version=?",
-                      (_j(definition), wid, v))
-            c.execute("UPDATE workflows SET published_version=?, status='published', updated_at=? WHERE id=?", (v, _now(), wid))
-            self.audit(c, owner, "workflow.publish", wid, {"version": v})
-        return definition
-
     def list_workflows(self, owner: Any, published_only: bool = False) -> list[dict]:
         clause, args = self._owner_clause(owner)
         extra = " AND published_version IS NOT NULL" if published_only else ""
@@ -439,14 +422,6 @@ class Store:
             self.audit(c, actor or owner, "pack.save", pid, {"kind": kind, "version": version})
         return {"id": pid, "kind": kind, "version": version, "sha256": sha, "size": len(body.encode())}
 
-    def list_packs(self, owner: Any, kind: Optional[str] = None) -> list[dict]:
-        clause, args = self._owner_clause(owner)
-        sql = f"SELECT id, kind, version, title, domain, languages, sha256, size, source, updated_at FROM packs WHERE {clause}"
-        if kind:
-            sql += " AND kind=?"
-            args = (*args, kind)
-        return [dict(r, languages=_uj(r["languages"]), source=_uj(r["source"])) for r in self._q(sql + " ORDER BY id", args)]
-
     def get_pack(self, owner: Any, pid: str) -> dict:
         clause, args = self._owner_clause(owner)
         rows = self._q(f"SELECT content, sha256 FROM packs WHERE id=? AND {clause}", (pid, *args))
@@ -457,13 +432,6 @@ class Store:
     def get_pack_content(self, pid: str) -> Optional[dict]:
         rows = self._q("SELECT content FROM packs WHERE id=?", (pid,))
         return _uj(rows[0]["content"]) if rows else None
-
-    def delete_pack(self, owner: Any, pid: str) -> None:
-        with self.tx() as c:
-            clause, args = self._owner_clause(owner)
-            if not c.execute(f"DELETE FROM packs WHERE id=? AND {clause}", (pid, *args)).rowcount:
-                raise NotFound(pid)
-            self.audit(c, owner, "pack.delete", pid)
 
     # ------------------------------------------------------------------ workspaces
     def save_workspace_draft(self, owner: Any, bundle: dict, validation: dict, brief_id: Optional[str] = None,
@@ -820,21 +788,6 @@ class Store:
             raise NotFound(report_id or record_id or "")
         return _uj(rows[0]["content"])
 
-    def list_reports(self, owner: Any, record_id: Optional[str] = None, limit: int = 50) -> list[dict]:
-        clause, args = self._owner_clause(owner, "r.owner_user_id")
-        sql = (f"SELECT r.id, r.record_id, r.version, r.created_at, r.generated_by, r.content, rec.workflow_id "
-               f"FROM reports r JOIN records rec ON rec.id=r.record_id WHERE {clause}")
-        if record_id:
-            sql += " AND r.record_id=?"
-            args = (*args, record_id)
-        out = []
-        for r in self._q(sql + " ORDER BY r.created_at DESC LIMIT ?", (*args, limit)):
-            content = _uj(r["content"])
-            out.append({"id": r["id"], "record_id": r["record_id"], "workflow_id": r["workflow_id"], "version": r["version"],
-                        "created_at": r["created_at"], "generated_by": r["generated_by"],
-                        "summary": preview(content.get("summary", ""), 400), "requires_review": content.get("requires_review", False)})
-        return out
-
     def record_answers(self, owner: Any, ids: list[str]) -> dict:
         """{record_id: (workflow_id, workflow_version, answers)} for building readable list labels."""
         if not ids:
@@ -889,11 +842,6 @@ class Store:
             f"SELECT id, label, last_seen FROM devices WHERE {clause} ORDER BY last_seen DESC LIMIT 20", args)]
         return {"records_by_sync_status": rec, "attachments_outstanding": att,
                 "open_conflicts": conf, "last_received_at": last, "devices": devices}
-
-    def audit_log(self, limit: int = 100) -> list[dict]:
-        return [dict(r, detail=_uj(r["detail"])) for r in
-                self._q("SELECT * FROM audit_events ORDER BY id DESC LIMIT ?", (limit,))]
-
 
 def _title(v: Any) -> str:
     if isinstance(v, dict):

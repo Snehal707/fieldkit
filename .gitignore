@@ -11,10 +11,6 @@ playwright-report/
 *.db-wal
 *.db-shm
 
-# local Claude Code configuration (not part of the plugin)
-CLAUDE.md
-.claude/
-
 tests/eval/.*.bundle.mjs
 
 # local design-tool settings (not part of the plugin)
