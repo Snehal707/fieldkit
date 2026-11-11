@@ -175,6 +175,7 @@ s.conn.commit()
     };
     r.onerror = () => fail(r.error);
   }));
+  await a.page.reload();                                  // the app reads settings at start (written here behind its back)
   await records(a.page);
   await expect(row(a.page, idB)).toHaveCount(0);
   await expect(row(a.page, idC)).toHaveCount(0);

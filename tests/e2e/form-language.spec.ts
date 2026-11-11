@@ -61,6 +61,8 @@ test("form language: Hindi offline, English fallback, switching re-labels withou
   await p.goto(APP);
   await expect(p.locator("header.top")).toBeVisible({ timeout: 15_000 });
   await seed(p);
+  await p.reload();                                      // the app reads settings at start (seeded behind its back)
+  await expect(p.locator("header.top")).toBeVisible({ timeout: 15_000 });
 
   // Hindi: start page, questions, options, yes/no answers, all marked lang="hi".
   await p.goto(`${APP}#/workflow/${WF.id}`);

@@ -9,7 +9,7 @@ import { icon } from "./icons";
 import { currentWorkspace } from "./workspace";
 import { freeRetiredModels } from "./intel";
 import {
-  authBanner, homeView, recordsView, remoteView, resultsView, runView, syncView, workflowLinkView, whoAmI, type View,
+  authBanner, homeView, recordsView, remoteView, resultsView, runView, screenKey, syncView, workflowLinkView, whoAmI, type View,
 } from "./views_core";
 import { diagnosticsView, ocrView, packsView, settingsView, translateView } from "./views_tools";
 import { workspacesView, workspaceView } from "./views_workspace";
@@ -33,11 +33,13 @@ const routes: [RegExp, View, string][] = [
 
 const app = document.getElementById("app")!;
 const title = h("h1", null, "FieldKit");
+const backBtn = h("button", { class: "back", id: "back", type: "button", hidden: true, onclick: () => goBack() },
+  icon("back", 20), h("span", null, "Back")) as HTMLButtonElement;
 const net = h("a", { class: "pill", href: "#/diagnostics", style: "color:inherit;text-decoration:none" });
 const queue = h("span", { class: "pill" });
 const main = h("main");
 const navItems: [string, string, string][] = [["#/", "home", "Home"], ["#/workspaces", "ws", "Workspace"], ["#/records", "rec", "Records"], ["#/sync", "sync", "Sync"], ["#/settings", "set", "Settings"]];
-const nav = h("nav", { class: "bottom" }, ...navItems.map(([href, ico, label]) => h("a", { href, "data-tab": ico }, icon(ico, 22), label)));
+const nav = h("nav", { class: "bottom" }, ...navItems.map(([href, ico, label]) => h("a", { href, "data-tab": ico, onclick: () => { fromTab = true; } }, icon(ico, 22), label)));
 const wsTab = nav.querySelector('a[data-tab="ws"]') as HTMLAnchorElement;
 const authSlot = h("div", { style: "max-width:720px;margin:0 auto;padding:0 1rem" });
 // Update notice: one compact, opaque line directly under the header, IN the page flow. Not position:fixed —
@@ -53,7 +55,7 @@ document.addEventListener("fieldkit:update-ready", (ev) => {
     h("button", { class: "update-close", "aria-label": "Dismiss update notice", onclick: () => clear(updateSlot) }, icon("close"))));
 });
 clear(app);
-app.append(h("header", { class: "top" }, title, h("div", { class: "status" }, queue, net)), updateSlot, authSlot, main, nav);
+app.append(h("header", { class: "top" }, backBtn, title, h("div", { class: "status" }, queue, net)), updateSlot, authSlot, main, nav);
 let authShown = false;
 onSyncState((s) => {
   // App-wide: the moment a protected request returns 401, show sign-in — on whatever screen is open.
@@ -100,11 +102,60 @@ onSyncState((s) => {
   wasRunning = s.running;
 });
 
+// ------------------------------------------------------------------ Back navigation
+// The screens visited inside the app since the last bottom-tab tap (screen keys, without refresh tokens). Back returns
+// to the previous one; with none (opened from a link, or after a reload) it goes to the screen's natural parent.
+// Bottom-tab screens are roots: no Back button there.
+const ROOTS = new Set(["#/", "#/records", "#/sync", "#/settings"]);   // + whatever screen a bottom tab opened
+// Steps skipped when going back: a form's Start page and an entry that has been completed or left.
+const SKIP_ON_BACK = /^#\/(?:workflow|run)\//;
+let trail: string[] = [];
+let fromTab = false;
+let trailFromTab = false;   // the first screen in the trail was opened by a bottom tab (a root)
+let goingBack = false;
+const scrollOf = new Map<string, number>();   // where each screen was scrolled to, restored on Back
+
+function parentOf(key: string): string {
+  const q = new URLSearchParams(key.split("?")[1] ?? "");
+  const ws = q.get("ws");
+  if (/^#\/(?:workflow|run)\//.test(key)) return ws ? `#/workspace/${encodeURIComponent(ws)}` : "#/";
+  if (/^#\/(?:results|remote)\//.test(key)) return "#/records";
+  if (key.startsWith("#/workspace/")) return "#/workspaces";
+  if (key.startsWith("#/diagnostics")) return "#/settings";
+  return "#/";
+}
+
+function goBack(): void {
+  const here = trail.pop() ?? screenKey(location.hash);
+  while (trail.length && SKIP_ON_BACK.test(trail[trail.length - 1])) trail.pop();
+  const prev = trail.length ? trail[trail.length - 1] : parentOf(here);
+  goingBack = true;
+  location.hash = prev;
+}
+
+/** Records the navigation; true when it went back (the Back button, or the browser's own Back / swipe). */
+function trackNavigation(key: string): boolean {
+  if (fromTab) { trail = [key]; trailFromTab = true; fromTab = false; goingBack = false; return false; }
+  if (goingBack) { goingBack = false; if (trail[trail.length - 1] !== key) trail.push(key); return true; }
+  if (trail.length >= 2 && trail[trail.length - 2] === key) { trail.pop(); return true; }
+  if (trail[trail.length - 1] !== key) trail.push(key);
+  return false;
+}
+
 let renderSeq = 0;
 let lastHash = "";
 async function route() {
   const hash = location.hash || "#/";
   const seq = ++renderSeq;  // renders can overlap (navigation + post-sync refresh): only the latest one is shown
+  const key = screenKey(hash);
+  const navigating = key !== screenKey(lastHash);
+  let wentBack = false;
+  if (navigating) {
+    scrollOf.set(screenKey(lastHash), window.scrollY);
+    wentBack = trackNavigation(key);
+    const isRoot = ROOTS.has(key.split("?")[0]) || (trailFromTab && trail.length === 1);
+    backBtn.hidden = isRoot;
+  }
   for (const [re, view, name] of routes) {
     const m = hash.match(re);
     if (m) {
@@ -116,13 +167,22 @@ async function route() {
       }
       void currentWorkspace().then((c) => { wsTab.setAttribute("href", c ? `#/workspace/${encodeURIComponent(c.manifest.workspace_id)}` : "#/workspaces"); }, () => undefined);
       const target = h("div");
+      // Switching screens answers at once: if the new screen takes more than a moment (network, storage), show a
+      // light placeholder instead of leaving the previous screen frozen on display.
+      const placeholder = navigating ? setTimeout(() => {
+        if (seq !== renderSeq) return;
+        clear(main);
+        main.append(h("div", { class: "card loading", "aria-busy": "true", role: "status" }, h("span", { class: "spinner", "aria-hidden": "true" }), "Loading…"));
+        window.scrollTo(0, 0);
+      }, 120) : null;
       try { await view(target, (m.groups ?? {}) as Record<string, string>); }
       catch (e) { target.append(h("div", { class: "banner bad" }, `Something went wrong: ${(e as Error).message}`)); console.error(e); }
+      if (placeholder) clearTimeout(placeholder);
       if (seq !== renderSeq) return;  // a newer render superseded this one
       const keepScroll = window.scrollY;
       clear(main);
       main.append(...Array.from(target.childNodes));
-      window.scrollTo(0, hash === lastHash ? keepScroll : 0);
+      window.scrollTo(0, hash === lastHash ? keepScroll : wentBack ? scrollOf.get(key) ?? 0 : 0);
       lastHash = hash;
       return;
     }

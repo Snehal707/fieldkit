@@ -169,7 +169,8 @@ function modelRow(m: any, have: InstalledModel | undefined, canDownload: boolean
 
 // ------------------------------------------------------------------ settings
 export const settingsView: View = async (main) => {
-  const [l, dev, st, me, caps] = await Promise.all([lang(), deviceId(), storageInfo(), isOnline() ? whoAmI() : Promise.resolve(null), capabilities()]);
+  const [l, dev, st, me, caps, statusRes] = await Promise.all([lang(), deviceId(), storageInfo(), isOnline() ? whoAmI() : Promise.resolve(null), capabilities(),
+    isOnline() ? api<any>("status").catch(() => null) : Promise.resolve(null)]);   // both Hermes requests at once
   const d = await db();
   main.append(h("div", { class: "card" }, h("h2", null, "App"),
     h("label", { class: "q" }, "Form language"),
@@ -183,7 +184,7 @@ export const settingsView: View = async (main) => {
   // ---- Hermes account + this device
   const last = await getSetting<{ user_id: string; display_name: string; provider: string; at: string } | null>("last_account", null);
   const acct = me ?? null;
-  const hstatus = acct ? await api<any>("status").catch(() => null) : null;   // which Hermes data store answered
+  const hstatus = acct ? statusRes : null;   // which Hermes data store answered
   const shownAccount = acct ?? last;
   const devName = await currentDeviceLabel();
   const nameInput = h("input", { value: devName, maxlength: 80, "aria-label": "Device name" }) as HTMLInputElement;

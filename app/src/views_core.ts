@@ -14,7 +14,13 @@ import { clear, fmtBytes, fmtTime, h, isOnline, nowIso, toast, uuid } from "./ut
 import { icon } from "./icons";
 
 export type View = (main: HTMLElement, params: Record<string, string>) => Promise<void> | void;
-export const go = (hash: string) => { location.hash = hash; };
+/** The screen part of a hash, without the "?r=…" refresh token. */
+export const screenKey = (hash: string) => (hash || "#/").replace(/([?&])r=\d+&?/, "$1").replace(/[?&]$/, "") || "#/";
+/** Navigate. Re-opening the same screen (a refresh) replaces the history entry, so Back never lands on the same screen. */
+export const go = (hash: string) => {
+  if (screenKey(hash) === screenKey(location.hash)) location.replace(hash.startsWith("#") ? hash : `#${hash}`);
+  else location.hash = hash;
+};
 export async function lang(): Promise<string> { return getSetting("lang", "en"); }
 
 const STATUS_TEXT: Record<string, string> = {
@@ -79,13 +85,17 @@ function hermesMedia(a: { id: string; mime: string; sha256?: string; status?: st
 // ------------------------------------------------------------------ readiness
 export interface Check { label: string; ok: boolean | null; detail?: string }
 
+let shellReady = false;   // once the app shell is cached it stays cached; checking it scans the cache (~50 ms on WebKit)
+
 export async function readiness(): Promise<Check[]> {
-  const wfs = await installedWorkflows();
-  const models = await installedModels();
-  const st = await storageInfo();
   const sw = !!navigator.serviceWorker?.controller;
+  const [wfs, models, persisted, shell] = await Promise.all([installedWorkflows(), installedModels(),
+    navigator.storage?.persisted?.().catch(() => null) ?? Promise.resolve(null),
+    sw && !shellReady ? shellCached() : Promise.resolve(shellReady)]);
+  if (shell) shellReady = true;
+  const st = { persisted };
   return [
-    { label: "App installed for offline opening", ok: sw && (await shellCached()), detail: sw ? "service worker active" : "open once online to install" },
+    { label: "App installed for offline opening", ok: sw && shell, detail: sw ? "service worker active" : "open once online to install" },
     { label: "Forms downloaded", ok: wfs.length > 0, detail: `${wfs.length} on this device` },
     { label: "Offline translation", ok: models.some((m) => m.capability === "translation") || null, detail: models.filter((m) => m.capability === "translation").map((m) => m.manifest.direction.join("→")).join(", ") || "optional — install in Offline Packs" },
     { label: "Offline OCR", ok: models.some((m) => m.capability === "ocr") || null, detail: models.filter((m) => m.capability === "ocr").map((m) => m.manifest.lang_code).join(", ") || "optional" },
@@ -139,7 +149,7 @@ export const homeView: View = async (main) => {
   // Same rule as the header ("N awaiting confirmation"): anything Hermes hasn't fully confirmed, media included.
   const pending = records.filter((r) => r.sync_status !== "synced").length;
   const sync = getSyncState();
-  const acct = await accountRecordsSummary(!sync.auth_required);
+  const acct = await accountRecordsSummary(false);   // the remembered list: Home never waits for the network
   const defs = new Map(wfs.map((w) => [w.id, w.definition]));
   if (!wfs.length) main.append(getStartedCard(sync.auth_required));
 
@@ -173,8 +183,15 @@ export const homeView: View = async (main) => {
     h("div", { class: "checks" }, ...checks.map(checkRow),
       h("div", { class: "row" }, h("a", { class: "btn", href: "#/packs" }, "Offline Packs"))));
   const recordsRow = statusRow({ id: "tile-records", href: "#/records", state: "ok", title: "Saved Records", sub: recordsSub(acct) });
-  recordsRow.setAttribute("data-total", acct.known ? String(acct.total) : "");
-  recordsRow.setAttribute("data-offline", String(acct.offline));
+  const paintAccount = (a: AccountSummary) => {
+    recordsRow.setAttribute("data-total", a.known ? String(a.total) : "");
+    recordsRow.setAttribute("data-offline", String(a.offline));
+    const sub = recordsRow.querySelector(".grow .muted");
+    if (sub) sub.textContent = recordsSub(a);
+  };
+  paintAccount(acct);
+  // Then refresh the account's totals from Hermes in the background and update the row in place.
+  if (!sync.auth_required && isOnline()) void accountRecordsSummary(true).then((a) => { if (recordsRow.isConnected) paintAccount(a); }, () => undefined);
   main.append(h("section", { class: "card status-card", id: "home-status" }, readinessEl,
     statusRow({ href: "#/sync", state: sync.auth_required ? "bad" : pending ? "wait" : "ok", title: "Pending Sync",
       sub: sync.auth_required ? "Sign in to Hermes to sync" : pending ? `${pending} awaiting confirmation` : "All confirmed" }),

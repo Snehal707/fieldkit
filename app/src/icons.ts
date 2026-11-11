@@ -12,6 +12,7 @@ const PATHS: Record<string, string> = {
   stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor"/>',
   pin: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
   chevron: '<path d="m9.5 6 6 6-6 6"/>',
+  back: '<path d="M15 5.5 8.5 12l6.5 6.5"/>',
   close: '<path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/>',
 };
 

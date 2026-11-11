@@ -3,7 +3,7 @@
  * navigation working when the Hermes session has expired (401 → cached shell), never caches API
  * calls, and caches pinned upstream runtime files (tesseract core / language data on jsDelivr).
  * Transformers.js keeps its own model cache ("transformers-cache"), so model weights are not duplicated here. */
-const VERSION = "190e55fdb0e1c03a";
+const VERSION = "6c0dc85b60f8fe3c";
 const SHELL = `fieldkit-shell-${VERSION}`;
 const UPSTREAM = "fieldkit-upstream-v1";
 const UPSTREAM_HOSTS = new Set(["cdn.jsdelivr.net"]);

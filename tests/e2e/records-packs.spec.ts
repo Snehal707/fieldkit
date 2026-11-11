@@ -78,6 +78,8 @@ test("records list is readable and action-free; packs list each pack once and co
   await p.goto(APP);
   await expect(p.locator("header.top")).toBeVisible({ timeout: 15_000 });
   await seed(p);
+  await p.reload();                                      // the app reads settings at start (seeded behind its back)
+  await expect(p.locator("header.top")).toBeVisible({ timeout: 15_000 });
 
   // Records: form + subject, one status each, grouped by day, no buttons on rows.
   await p.goto(`${APP}#/records`);

@@ -161,15 +161,30 @@ export function db(): Promise<IDBPDatabase<FieldKitDB>> {
 }
 
 /** Test hook: forget the cached connection (fake-indexeddb resets between tests). */
-export function _resetDbForTests(): void { dbp = null; }
+export function _resetDbForTests(): void { dbp = null; settingsCache.clear(); }
+
+// Settings are read on almost every screen and each IndexedDB read costs ~15 ms on WebKit, so they are kept in memory
+// after the first read. Every write goes through setSetting (write-through), and other open tabs of the app drop their
+// copy when one tab writes, so a cached value is never stale.
+const settingsCache = new Map<string, unknown>();
+let settingsChannel: BroadcastChannel | null = null;
+try {
+  settingsChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("fieldkit-settings") : null;
+  if (settingsChannel) settingsChannel.onmessage = (e) => { settingsCache.delete(String(e.data)); };
+} catch { settingsChannel = null; }
+const copyOf = <T>(v: T): T => (v && typeof v === "object" && typeof structuredClone === "function" ? structuredClone(v) : v);
 
 export async function getSetting<T>(key: string, fallback: T): Promise<T> {
+  if (settingsCache.has(key)) { const v = settingsCache.get(key); return v === undefined ? fallback : copyOf(v as T); }
   const row = await (await db()).get("settings", key);
-  return row ? (row.value as T) : fallback;
+  settingsCache.set(key, row ? row.value : undefined);
+  return row ? copyOf(row.value as T) : fallback;
 }
 
 export async function setSetting(key: string, value: unknown): Promise<void> {
   await (await db()).put("settings", { key, value });
+  settingsCache.set(key, copyOf(value));
+  try { settingsChannel?.postMessage(key); } catch { /* other tabs re-read on their next reload */ }
 }
 
 export async function deviceId(): Promise<string> {
