@@ -7,14 +7,17 @@
 [![PWA](https://img.shields.io/badge/PWA-offline--first-5A0FC8?logo=pwa&logoColor=white)](docs/INSTALL.md)
 [![License: MIT](https://img.shields.io/github/license/Snehal707/fieldkit)](LICENSE)
 
-**Record offline. Sync when back online. Ask your Hermes agent about what you recorded.**
+**Collect observations anywhere. Work offline. Sync with Hermes.**
 
-FieldKit is an offline observation collection and synchronisation plugin for Hermes. You describe your work to Hermes in a
-chat, and Hermes builds the forms. On your phone you fill them in with no signal. When you are back online, the entries
-and their files upload to Hermes, and you ask Hermes about them.
+FieldKit is an offline field observation plugin for Hermes Agent, designed for researchers, students, field workers, and anyone collecting information outside the office.
 
-FieldKit is not an assistant, a research tool or a decision system. It never calls a model. Hermes does any analysis,
-with its own tools, when you ask.
+Simply describe your work to Hermes, and it helps create personalized workspaces and observation forms without coding.
+
+Use the FieldKit phone app to collect observations, photographs, voice notes, and GPS data, even without internet access. When connectivity returns, FieldKit synchronizes your records and attachments to Hermes.
+
+Your observations then become accessible through Hermes, allowing you to retrieve, review, and work with the original field data using your agent's existing capabilities.
+
+**FieldKit handles data collection and synchronization. Hermes handles any AI analysis you request.**
 
 ## Demo video
 
