@@ -8,6 +8,34 @@ export function buildLocalResults(wf: Workflow, answers: Record<string, unknown>
   return { generated_at: nowIso(), source: "local", ...summarize(wf, answers, lang) };
 }
 
+/** A new entry is saved as a draft only once it holds something the user entered or captured: answers that differ
+ *  from the form's defaults (photos, voice notes and signatures are answers too). Opening a form saves nothing. */
+export function hasMeaningfulInput(answers: Record<string, unknown>, defaults: Record<string, unknown>): boolean {
+  const keys = new Set([...Object.keys(answers), ...Object.keys(defaults)]);
+  for (const k of keys) if (JSON.stringify(answers[k]) !== JSON.stringify(defaults[k])) return true;
+  return false;
+}
+
+/** Delete one unfinished entry and the files captured for it, in one transaction. A completed record is never
+ *  touched: if a record with this id exists (the entry was completed), only the stale draft row is removed. */
+export async function deleteDraft(id: string): Promise<{ deleted: boolean; files: number }> {
+  const d = await db();
+  const tx = d.transaction(["drafts", "attachments", "records"], "readwrite");
+  const draft = await tx.objectStore("drafts").get(id);
+  if (!draft) { await tx.done; return { deleted: false, files: 0 }; }
+  let files = 0;
+  if (!(await tx.objectStore("records").get(id))) {
+    for (const key of await tx.objectStore("attachments").index("by_record").getAllKeys(id)) {
+      await tx.objectStore("attachments").delete(key);
+      files++;
+    }
+  }
+  await tx.objectStore("drafts").delete(id);
+  await tx.done;
+  await refreshPending();
+  return { deleted: true, files };
+}
+
 /** Turn a finished draft into a durable local record + queued sync op, in that order. */
 export async function completeDraft(draft: Draft, wf: Workflow): Promise<LocalRecord> {
   const answers = cleanAnswers(wf, draft.answers);

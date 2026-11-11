@@ -7,7 +7,7 @@ import { computeState, ERROR_TEXT, text, type Field, type Workflow } from "./eng
 import { installedModels, ocr, ocrLanguages } from "./intel";
 import { attachmentUrl, captureGps, compressPhoto, getAttachment, hermesMediaUrl, saveAttachment, signaturePad, updateAttachment, VoiceRecorder } from "./media";
 import { installedPacks, installedWorkflows, installWorkflow, shellCached, storageInfo } from "./packs";
-import { completeDraft } from "./results";
+import { completeDraft, deleteDraft, hasMeaningfulInput } from "./results";
 import { downloadEarlierReport, getSyncState, refreshPending, resendRecords, resolveConflict, retryRecords, runSync } from "./sync";
 import { availableWorkspaces, currentWorkspace, installedWorkspaces, installWorkspace, recentActivity, summarizeLocal, workspaceForEntry, wsTitle, type Activity } from "./workspace";
 import { clear, fmtBytes, fmtTime, h, isOnline, nowIso, toast, uuid } from "./util";
@@ -103,7 +103,7 @@ function checkRow(c: Check) {
 // ------------------------------------------------------------------ home
 // A compact overview: the current workspace (forms and their Start buttons live only on the Workspace page),
 // offline readiness, synchronisation, saved records and recent activity on this phone.
-const ACTIVITY_TEXT: Record<Activity["state"], string> = { draft: "Unfinished", waiting: "Waiting to sync", synced: "Synced" };
+const ACTIVITY_TEXT: Record<Activity["state"], string> = { draft: "Unfinished", waiting: "Waiting to sync", uploading: "Files uploading", synced: "Synced" };
 
 /** A short label for an entry: the form's subject field, else its first short text answer (an asset id, a name). */
 function subjectOf(def: Workflow | undefined, answers: Record<string, unknown> | undefined): string {
@@ -337,27 +337,35 @@ export const workflowLinkView: View = async (main, p) => {
     h("button", { class: "primary", onclick: () => startWorkflow(id, startedFrom) }, "Start workflow")));
 };
 
+/** Entries opened but not yet holding any input: kept in memory only, so opening a form creates no draft. */
+const unsavedDrafts = new Map<string, Draft>();
+
 async function startWorkflow(id: string, startedFrom?: string | null) {
   const draft: Draft = { id: uuid("rec"), workflow_id: id, workflow_version: (await (await db()).get("workflows", id))!.version,
     answers: {}, started_at: nowIso(), updated_at: nowIso(), lang: await lang(),
     workspace_id: await workspaceForEntry(id, startedFrom) };
   const wf = (await (await db()).get("workflows", id))!.definition;
   for (const f of wf.fields) if (f.default !== undefined) draft.answers[f.id] = f.default;
-  await (await db()).put("drafts", draft);
-  await refreshPending();  // header immediately shows "1 not submitted"
-  go(`#/run/${draft.id}`);
+  unsavedDrafts.set(draft.id, draft);   // saved as a draft on the first real input (see runView's save)
+  go(`#/run/${draft.id}?wf=${encodeURIComponent(id)}${startedFrom ? `&ws=${encodeURIComponent(startedFrom)}` : ""}`);
 }
 
 // ------------------------------------------------------------------ runner
 export const runView: View = async (main, p) => {
   const d = await db();
-  const draft = await d.get("drafts", p.id);
+  const savedDraft = await d.get("drafts", p.id);
+  const draft = savedDraft ?? unsavedDrafts.get(p.id);
   if (!draft) {
     const rec = await d.get("records", p.id);
     if (rec) return go(`#/results/${rec.id}`);
+    // An entry that was opened but never given any input was not saved (e.g. the app was reloaded): start again.
+    const q = new URLSearchParams(location.hash.split("?")[1] ?? "");
+    if (q.get("wf")) return go(`#/workflow/${encodeURIComponent(q.get("wf")!)}${q.get("ws") ? `?ws=${encodeURIComponent(q.get("ws")!)}` : ""}`);
     main.append(h("div", { class: "banner bad" }, "Draft not found."));
     return;
   }
+  let persisted = !!savedDraft;
+  const defaults = JSON.parse(JSON.stringify(draft.answers)) as Record<string, unknown>;
   const stored = await d.get("workflows", draft.workflow_id);
   if (!stored) { main.append(h("div", { class: "banner bad" }, "This workflow is no longer on the device.")); return; }
   const wf = stored.definition;
@@ -365,7 +373,24 @@ export const runView: View = async (main, p) => {
   let showErrors = false;
   const touched = new Set<string>();
   const form = h("div");
-  const save = async () => { draft.updated_at = nowIso(); await d.put("drafts", draft); };
+  const save = async () => {
+    const first = !persisted;
+    if (first) {
+      if (!hasMeaningfulInput(draft.answers, defaults)) return;   // nothing entered yet: no draft
+      persisted = true;
+      unsavedDrafts.delete(draft.id);
+    }
+    draft.updated_at = nowIso();
+    await d.put("drafts", draft);
+    if (first) await refreshPending();   // the header now shows "1 not submitted"
+  };
+  const removeDraft = async () => {
+    if (!confirm("Delete this unfinished entry? Its answers and any photos, voice notes or signatures captured for it "
+      + "are removed from this phone. Completed records are not affected.")) return;
+    const r = await deleteDraft(draft.id);
+    toast(r.deleted ? "Unfinished entry deleted." : "This entry was already gone.", "ok");
+    go(draft.workspace_id ? `#/workspace/${encodeURIComponent(draft.workspace_id)}` : "#/");
+  };
   const set = async (fid: string, v: unknown, rerender = true) => {
     if (v === undefined || v === "" || (Array.isArray(v) && !v.length)) delete draft.answers[fid]; else draft.answers[fid] = v;
     touched.add(fid);
@@ -391,7 +416,8 @@ export const runView: View = async (main, p) => {
     form.append(
       h("div", { class: "row" },
       h("button", { class: "primary", onclick: finish }, "Complete workflow"),
-      h("span", { class: "muted" }, `Draft saved on this device · ${Object.keys(st.errors).length} item(s) to fix`)));
+      h("span", { class: "muted", id: "draft-state" }, `${persisted ? "Draft saved on this device" : "Nothing saved until you answer something"} · ${Object.keys(st.errors).length} item(s) to fix`)),
+      ...(persisted ? [h("div", { class: "row" }, h("button", { class: "danger small", id: "delete-draft", onclick: removeDraft }, "Delete draft"))] : []));
     if (keep) {
       const again = form.querySelector<HTMLInputElement | HTMLTextAreaElement>(`#${CSS.escape(keep.id)}`);
       if (again) {

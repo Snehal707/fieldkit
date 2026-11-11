@@ -33,7 +33,8 @@ describe("recent activity", () => {
     const drafts = Array.from({ length: 7 }, (_, i) => draft(`d${i}`, `2026-11-10T0${i}:00:00Z`));
     expect(recentActivity(recs, drafts, 5)).toHaveLength(7);
   });
-  it("counts a record Hermes has received (files still uploading) as synced, like Saved Records", () => {
-    expect(recentActivity([rec("r", "2026-11-10T08:00:00Z", "received")], [])[0].state).toBe("synced");
+  it("never calls a record synced while its files are still uploading (matches the header and Pending Sync)", () => {
+    expect(recentActivity([rec("r", "2026-11-10T08:00:00Z", "received")], [])[0].state).toBe("uploading");
+    for (const s of ["pending", "syncing", "error", "conflict"]) expect(recentActivity([rec("r", "2026-11-10T08:00:00Z", s)], [])[0].state).toBe("waiting");
   });
 });

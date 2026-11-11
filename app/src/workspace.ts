@@ -85,13 +85,15 @@ export async function setCurrentWorkspace(wid: string): Promise<void> { await se
 
 /** Recent activity on this phone: every unfinished entry first (they need finishing), then the newest saved
  *  entries, up to `limit` items in all (never fewer than the unfinished ones). */
-export interface Activity { id: string; workflow_id: string; href: string; when: string; state: "draft" | "waiting" | "synced" }
+/** draft: unfinished; waiting: saved, not yet received by Hermes; uploading: Hermes has the record, files still
+ *  uploading; synced: Hermes confirmed the record and every file (the header's "all confirmed" rule). */
+export interface Activity { id: string; workflow_id: string; href: string; when: string; state: "draft" | "waiting" | "uploading" | "synced" }
 export function recentActivity(records: { id: string; workflow_id: string; completed_at: string; sync_status: string }[],
   drafts: { id: string; workflow_id: string; updated_at?: string; started_at: string }[], limit = 5): Activity[] {
   const items: Activity[] = [
     ...drafts.map((d) => ({ id: d.id, workflow_id: d.workflow_id, href: `#/run/${d.id}`, when: d.updated_at || d.started_at, state: "draft" as const })),
     ...records.map((r) => ({ id: r.id, workflow_id: r.workflow_id, href: `#/results/${r.id}`, when: r.completed_at,
-      state: (r.sync_status === "synced" || r.sync_status === "received" ? "synced" : "waiting") as Activity["state"] })),
+      state: (r.sync_status === "synced" ? "synced" : r.sync_status === "received" ? "uploading" : "waiting") as Activity["state"] })),
   ];
   const newest = (x: Activity, y: Activity) => (Date.parse(y.when) || 0) - (Date.parse(x.when) || 0);
   const open = items.filter((i) => i.state === "draft").sort(newest);

@@ -159,7 +159,7 @@ ul.activity .sub-line { display: flex; flex-wrap: wrap; gap: 0 .6rem; font-size:
 ul.activity .subject { color: var(--ink); font-weight: 600; white-space: nowrap; }
 ul.activity .state { flex: none; font-size: .78rem; font-weight: 650; display: inline-flex; align-items: center; gap: .3rem; }
 ul.activity .state::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
-.state.draft { color: var(--warn); } .state.waiting { color: var(--info); } .state.synced { color: var(--ok); }
+.state.draft { color: var(--warn); } .state.waiting, .state.uploading { color: var(--info); } .state.synced { color: var(--ok); }
 ul.activity li.more a { color: var(--brand); font-weight: 600; font-size: .9rem; min-height: 40px; }
 ul.ws-list strong { display: block; }
 ul.ws-list .muted { display: block; font-size: .85rem; }
