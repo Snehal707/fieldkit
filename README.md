@@ -17,6 +17,12 @@ The demo shows FieldKit being used to document a village water pump identified a
 offline, including the pump's condition, a photograph and a voice note. Once connectivity returns, the observation
 synchronizes to Hermes, where the original field data and attachments can be retrieved.
 
+### WP-007 observation
+
+<a href="assets/wp-007-observation.png"><img src="assets/wp-007-observation.png" alt="WP-007 observation in the FieldKit phone app" width="360"></a>
+
+A recorded field observation showing the pump's condition, notes, photograph, and voice recording.
+
 ## How it works
 
 ```mermaid
