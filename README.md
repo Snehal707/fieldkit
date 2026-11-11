@@ -161,8 +161,8 @@ The phone app is served by the dashboard. For the components, the sync flow and 
 
 | Part | What it is |
 |---|---|
-| **Hermes tools** | 12 tools (see [docs/API.md](docs/API.md)): set up, change, publish and undo workspaces; read entries, attachments, sync status and conflicts; the phone link. |
-| **Skills** | `fieldkit` (find and read entries; Hermes analyses them with its own tools) and `fieldkit-workspace-builder` (set up, change and undo workspaces). |
+| **Hermes tools** | 12 tools (details in [docs/API.md](docs/API.md)):<br>**Workspaces:** `fieldkit_workspace_format`, `fieldkit_draft_workspace`, `fieldkit_publish_workspace`, `fieldkit_undo_workspace_update`, `fieldkit_get_workspace`, `fieldkit_list_workspaces`<br>**Entries:** `fieldkit_list_records`, `fieldkit_get_record`, `fieldkit_get_attachment`<br>**Sync:** `fieldkit_get_sync_status`, `fieldkit_resolve_conflict`<br>**Phone link:** `fieldkit_get_app_link` |
+| **Skills** | `fieldkit:fieldkit`: find and read entries; Hermes analyses them with its own tools.<br>`fieldkit:fieldkit-workspace-builder`: set up, change and undo workspaces. |
 | **Session note** | One short note in each new Hermes session that lists your workspaces. |
 | **Phone app (PWA)** | Installable, works offline, with a Back button on nested screens. Bottom bar: Home, Workspace, Records, Sync, Settings. Served at `/dashboard-plugins/fieldkit/app_dist/index.html`. |
 | **Dashboard tab** | Overview, Records (answers and attachments), Synchronization (devices and conflicts), Mobile Access (link and QR code). |
