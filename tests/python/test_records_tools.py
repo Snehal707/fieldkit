@@ -115,9 +115,19 @@ def test_sync_status_and_conflict_resolution_tools(store, tmp_path):
         store.sync_record("alice", "k-e2", "dev2", {"id": "rec_conf_00001", "workflow_id": "equipment-inspection",
                                                     "workflow_version": 1, "base_revision": 1, "answers": {"asset_id": "PMP-0101", "condition": "good"}})
     st = call("fieldkit_get_sync_status")
-    assert st["status"]["open_conflicts"] == 1 and "jobs" not in st["status"]
-    res = call("fieldkit_resolve_conflict", conflict_id=st["conflicts"][0]["id"], resolution="keep_server")
+    assert st["status"]["open_conflicts"] == 1 and "jobs" not in st["status"] and st["conflicts_total"] == 1
+    c = st["conflicts"][0]
+    # Each conflict can be recognised: its form, subject and exactly which answers differ.
+    assert c["record_id"] == "rec_conf_00001" and c["form_title"] == "Equipment inspection" and c["subject"] == "PMP-0101"
+    assert [(d["field_id"], d["hermes"], d["phone"]) for d in c["differences"] if d["field_id"] == "condition"] == [("condition", "fair", "good")]
+    # The wrong record is refused; without the user's confirmation nothing changes (a preview).
+    wrong = call("fieldkit_resolve_conflict", conflict_id=c["conflict_id"], record_id="rec_other_000001", resolution="keep_server")
+    assert not wrong["ok"] and "rec_conf_00001" in wrong["error"]
+    prev = call("fieldkit_resolve_conflict", conflict_id=c["conflict_id"], record_id="rec_conf_00001", resolution="use_client")
+    assert prev["ok"] and prev["preview"] and "phone" in prev["effect"] and call("fieldkit_get_sync_status")["status"]["open_conflicts"] == 1
+    res = call("fieldkit_resolve_conflict", conflict_id=c["conflict_id"], record_id="rec_conf_00001", resolution="keep_server", user_confirmed=True)
     assert res["ok"] and store.get_record(db.ALL, "rec_conf_00001")["answers"]["condition"] == "fair"
+    assert call("fieldkit_get_sync_status")["status"]["open_conflicts"] == 0
 
 
 # ----------------------------------------------------------------------------- workspace on records

@@ -104,13 +104,13 @@ Hermes registers 12 tools. They act as the Hermes instance owner. Every tool ret
 ### Sync
 | Tool | Arguments | Result |
 |---|---|---|
-| `fieldkit_get_sync_status` | | Entries received, files still uploading, open conflicts, devices |
-| `fieldkit_resolve_conflict` | `conflict_id`, `resolution` (`keep_server`, `use_client`, `merge`), `merged_answers` | The resolved conflict |
+| `fieldkit_get_sync_status` | | Entries received, files still uploading, devices, and each open conflict (up to 20) with its workspace, form, subject, date and the answers that differ (`conflicts_total` gives the full count) |
+| `fieldkit_resolve_conflict` | `conflict_id`, `record_id` (must be the conflict's record), `resolution` (`keep_server`, `use_client`, `merge`), `merged_answers`, `user_confirmed` | Without `user_confirmed: true`: a preview of the conflict and what would happen, nothing changes. With it: the resolved conflict. A `record_id` that does not match the conflict is refused. |
 
 ### Phone link
 | Tool | Arguments | Result |
 |---|---|---|
-| `fieldkit_get_app_link` | `workflow_id` (optional) | The phone app link. `absolute` is true when a full address is known. Otherwise it returns a path and a note. |
+| `fieldkit_get_app_link` | `workspace_id` or `workflow_id` (both optional) | The phone app link: with `workspace_id` it opens that workspace (the usual case), with `workflow_id` one form, with neither the app. Unknown ids are refused (a workspace id passed as `workflow_id` gets a hint). `absolute` is true when a full address is known; otherwise it returns a path and a note. |
 
 ### Workspaces
 | Tool | Arguments | Result |

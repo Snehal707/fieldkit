@@ -44,10 +44,11 @@ def _guard(fn: Callable[[dict], str]) -> Callable[..., str]:
     return handler
 
 
-def app_link(workflow_id: str | None = None) -> dict:
+def app_link(workflow_id: str | None = None, workspace_id: str | None = None) -> dict:
     # Public plugin-asset address: outside Hermes' /api auth gate, so an expired session opens the app
     # (which offers sign-in) instead of a raw 401 JSON page.
-    path = "/dashboard-plugins/fieldkit/app_dist/index.html" + (f"#/workflow/{workflow_id}" if workflow_id else "")
+    frag = f"#/workspace/{workspace_id}" if workspace_id else (f"#/workflow/{workflow_id}" if workflow_id else "")
+    path = "/dashboard-plugins/fieldkit/app_dist/index.html" + frag
     base = runtime.public_url()
     explicit = bool(str(runtime.setting("public_url", "") or "").strip())
     return {"url": f"{base}{path}" if base else path, "path": path, "absolute": bool(base),
@@ -234,17 +235,81 @@ def get_attachment(a: dict) -> str:
                     "photo, speech-to-text for a voice note).")
 
 
+def conflict_view(store: Any, owner: Any, cf: dict, cache: Optional[dict] = None) -> dict:
+    """One open conflict described so it can be recognised: which workspace, form and subject, when, from which
+    device, and exactly which answers differ between the copy on Hermes and the phone's copy."""
+    cache = {} if cache is None else cache
+    phone = (cf.get("client_payload") or {}).get("record") or {}
+    out = {"conflict_id": cf["id"], "record_id": cf["record_id"], "hermes_revision": cf.get("server_revision"),
+           "phone_edited_revision": cf.get("base_revision"), "phone_device": (cf.get("client_payload") or {}).get("device_id")}
+    try:
+        rec = store.get_record(owner, cf["record_id"])
+    except NotFound:
+        return {**out, "note": "the record is no longer on Hermes"}
+    wf = store.get_workflow_any_owner(rec["workflow_id"], rec["workflow_version"]) or {}
+    titles = cache.setdefault("_ws", {w["id"]: w["title"] for w in store.list_workspaces(published_only=False)})
+    _, subj = _subject_value(store, rec, cache)
+    labels = {f["id"]: engine.text(f.get("label")) for f in wf.get("fields") or []}
+    mine, theirs = rec.get("answers") or {}, phone.get("answers") or {}
+    diffs = [{"question": labels.get(k, k), "field_id": k, "hermes": mine.get(k), "phone": theirs.get(k)}
+             for k in sorted(set(mine) | set(theirs)) if mine.get(k) != theirs.get(k)]
+    return {**out, "workspace_id": rec.get("workspace_id"), "workspace_title": titles.get(rec.get("workspace_id")),
+            "form_id": rec["workflow_id"], "form_title": engine.text(wf.get("title")) or rec["workflow_id"],
+            "subject": subj or None, "completed_at": rec.get("completed_at"), "differences": diffs}
+
+
 def get_sync_status(a: dict) -> str:
     store = get_store()
-    return _ok(status=store.sync_status(ALL), conflicts=store.list_conflicts(ALL)[:20])
+    open_ = store.list_conflicts(ALL)
+    cache: dict = {}
+    return _ok(status=store.sync_status(ALL), conflicts_total=len(open_),
+               conflicts=[conflict_view(store, ALL, cf, cache) for cf in open_[:20]])
+
+
+RESOLUTION_EFFECT = {"keep_server": "the copy on Hermes stays; the phone's edit is discarded",
+                     "use_client": "the phone's copy replaces the copy on Hermes (as a new revision)",
+                     "merge": "merged_answers become the new revision"}
 
 
 def resolve_conflict(a: dict) -> str:
-    return _ok(result=get_store().resolve_conflict(ALL, a["conflict_id"], a["resolution"], a.get("merged_answers")))
+    """Resolve one conflict. The record must be named (so the right conflict is resolved), and nothing changes until
+    the user has confirmed: without user_confirmed it returns a preview of what would happen."""
+    store = get_store()
+    cid, rid, res = a.get("conflict_id"), a.get("record_id"), a.get("resolution")
+    cf = next((c for c in store.list_conflicts(ALL) if c["id"] == cid), None)
+    if not cf:
+        return _fail(f"no open conflict {cid!r}")
+    view = conflict_view(store, ALL, cf)
+    if not rid or rid != cf["record_id"]:
+        return _fail(f"conflict {cid} is about record {cf['record_id']} ({view.get('form_title')}, "
+                     f"{view.get('subject') or 'no subject'}), not {rid!r}. Check with the user which conflict they mean.", conflict=view)
+    if res not in RESOLUTION_EFFECT:
+        return _fail("resolution must be keep_server, use_client or merge")
+    if not a.get("user_confirmed"):
+        return _ok(preview=True, conflict=view, effect=RESOLUTION_EFFECT[res],
+                   next="Show the user this conflict (workspace, form, subject, differences) and what will happen; call "
+                        "again with user_confirmed=true only after they agree.")
+    return _ok(result=store.resolve_conflict(ALL, cid, res, a.get("merged_answers")), conflict=view, effect=RESOLUTION_EFFECT[res])
 
 
 def get_app_link(a: dict) -> str:
-    return _ok(**app_link(a.get("workflow_id")))
+    """The phone link. A workspace link (workspace_id) opens the workspace, where the user downloads it for offline
+    use; a form link (workflow_id) opens one form. Unknown ids are refused, so a link never points at nothing."""
+    store = get_store()
+    wsid, wfid = a.get("workspace_id"), a.get("workflow_id")
+    if wsid:
+        known = {w["id"]: w for w in store.list_workspaces(published_only=True)}
+        if wsid not in known:
+            return _fail(f"no published workspace {wsid!r}", workspaces=[{"id": k, "title": v["title"]} for k, v in list(known.items())[:20]])
+        return _ok(**app_link(workspace_id=wsid), workspace_title=known[wsid]["title"])
+    if wfid:
+        try:
+            store.get_workflow(ALL, wfid, published=True)
+        except NotFound:
+            hint = " (that is a workspace id: pass it as workspace_id)" if any(w["id"] == wfid for w in store.list_workspaces(published_only=True)) else ""
+            return _fail(f"no published form {wfid!r}{hint}")
+        return _ok(**app_link(workflow_id=wfid))
+    return _ok(**app_link())
 
 
 # ----------------------------------------------------------------------------- schemas
@@ -272,14 +337,18 @@ TOOLS: list[tuple[dict, Callable[[dict], str]]] = [
     (_s("fieldkit_get_attachment", "A synced photo, voice note or signature as a local file path that your own tools can "
         "open (vision, speech-to-text, OCR), with its kind, field, integrity and any text the phone already read from it.",
         {"attachment_id": STR}, ["attachment_id"]), get_attachment),
-    (_s("fieldkit_get_sync_status", "Synchronisation overview: entries received, files still uploading, open conflicts, devices.",
+    (_s("fieldkit_get_sync_status", "Synchronisation overview: entries received, files still uploading, devices, and each open "
+        "conflict with its workspace, form, subject, date and the answers that differ.",
         {}), get_sync_status),
-    (_s("fieldkit_resolve_conflict", "Resolve a synchronisation conflict with the user's choice: keep_server, use_client, "
-        "or merge (with merged_answers).",
-        {"conflict_id": STR, "resolution": {"type": "string", "enum": ["keep_server", "use_client", "merge"]}, "merged_answers": OBJ},
-        ["conflict_id", "resolution"]), resolve_conflict),
-    (_s("fieldkit_get_app_link", "The link that opens the FieldKit phone app (optionally at one form).",
-        {"workflow_id": STR}), get_app_link),
+    (_s("fieldkit_resolve_conflict", "Resolve one synchronisation conflict with the user's choice: keep_server, use_client, or "
+        "merge (with merged_answers). record_id must be the conflict's record. Without user_confirmed=true this only "
+        "previews what would happen; confirm only after the user agreed to that exact conflict.",
+        {"conflict_id": STR, "record_id": STR, "resolution": {"type": "string", "enum": ["keep_server", "use_client", "merge"]},
+         "merged_answers": OBJ, "user_confirmed": BOOL},
+        ["conflict_id", "record_id", "resolution"]), resolve_conflict),
+    (_s("fieldkit_get_app_link", "The link that opens the FieldKit phone app. Pass workspace_id to open a workspace (the "
+        "usual case: the user downloads it there for offline use), or workflow_id to open one form. Unknown ids are refused.",
+        {"workspace_id": STR, "workflow_id": STR}), get_app_link),
 ]
 
 from . import workspace_tools as _wst  # noqa: E402

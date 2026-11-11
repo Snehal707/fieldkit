@@ -74,6 +74,7 @@ export interface RemoteCopy {
   local_results: any; report: any | null; report_id?: string | null; downloaded_at: string;
   owner?: string;        // Hermes account that downloaded it; only shown to that account
   attachments?: { id: string; field_id?: string; kind?: string; mime: string; size?: number; sha256?: string; status?: string }[];   // metadata only; files load from Hermes on demand
+  definition?: any;      // the exact form version it was made with, from Hermes (labels when this phone lacks the form)
 }
 export interface StoredWorkflow {
   id: string; version: number; downloaded_at: string; definition: Workflow;

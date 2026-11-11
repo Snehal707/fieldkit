@@ -156,7 +156,10 @@ def prompt_section(store: Any) -> str:
     names = "; ".join(f"{engine.text(w['title'])} (id {w['id']}, v{w['published_version']})" for w in built[:8])
     return ("FieldKit workspaces for this user: " + names + ". Synced entries, photos and voice notes are available "
             "through the fieldkit tools (fieldkit skill); analyse them with your own tools when the user asks. To change a "
-            "workspace use the fieldkit-workspace-builder skill (show the changes, publish only after approval).")[:1500]
+            "workspace, or when the user wants to record something new on their phone (a checklist, survey, log, visit or "
+            "inspection form, even without saying FieldKit), use the fieldkit-workspace-builder skill instead of writing a "
+            "file (show the forms, publish only after approval)." + (f" They have {len(built)} workspaces; "
+            "fieldkit_list_workspaces lists all of them." if len(built) > 8 else ""))[:1500]
 
 
 def _lbl(v: Any) -> str:

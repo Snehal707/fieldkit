@@ -283,13 +283,15 @@ async function accountRecordsSummary(tryLive: boolean): Promise<AccountSummary> 
   let signedOut = false;
   const fresh = !!index && Date.now() - Date.parse(index.at) < 60_000;   // Home re-renders after every sync pass
   if (tryLive && isOnline() && !fresh) {
-    // Never hold Home hostage to a slow network: give Hermes a few seconds, else use the remembered list.
-    const timeout = new Promise<never>((_, no) => setTimeout(() => no(new Offline("timeout")), 4000));
+    // Runs in the background (Home already shows the remembered list); large accounts take several pages.
+    const timeout = new Promise<never>((_, no) => setTimeout(() => no(new Offline("timeout")), 20_000));
     try {
-      const [{ records }, who] = await Promise.race([Promise.all([fetchAllRecords((p) => api(p)), api<{ user_id: string }>("me")]), timeout]);
+      const [{ records }, who, devs] = await Promise.race([Promise.all([fetchAllRecords((p) => api(p)), api<{ user_id: string }>("me"),
+        api<{ devices: any[] }>("devices").catch(() => null)]), timeout]);
       account = who.user_id;
       const keep = index && index.user_id === account ? index.devices : [];
-      index = { user_id: account, at: nowIso(), records, devices: keep };
+      // Device names too, so records list "This phone" / the other phone's name even when opened offline.
+      index = { user_id: account, at: nowIso(), records, devices: devs ? devs.devices.map((x: any) => [x.id, x.label] as [string, string]) : keep };
       await setSetting("server_index", index);
     } catch (e) { if (e instanceof AuthRequired) signedOut = true; }
   }
@@ -931,8 +933,13 @@ async function fetchRemoteCopy(id: string, names?: Map<string, string>, owner?: 
   try { report = await api<any>(`records/${encodeURIComponent(id)}/report`); }
   catch (e) { if (!(e instanceof HttpError && e.status === 404)) throw e; }
   if (!names) names = await api<{ devices: any[] }>("devices").then((r) => new Map(r.devices.map((x: any) => [x.id, x.label] as [string, string])), () => new Map<string, string>());   // names are optional
-  const wfDef = (await d.get("workflows", rec.workflow_id))?.definition;
+  // The form it was made with: this phone's copy, else the exact version from Hermes (so labels and choices read
+  // properly even when this phone never downloaded that form).
+  const local = (await d.get("workflows", rec.workflow_id))?.definition;
+  const wfDef = local && (local.version ?? 1) === rec.workflow_version ? local
+    : await api<any>(`workflows/${encodeURIComponent(rec.workflow_id)}?version=${rec.workflow_version}`).catch(() => local);
   return { id: rec.id, workflow_id: rec.workflow_id, workflow_title: wfDef ? text(wfDef.title, await lang()) : (rec.workflow_title ?? rec.workflow_id),
+    definition: wfDef && wfDef !== local ? wfDef : undefined,
     workflow_version: rec.workflow_version, device_id: rec.device_id ?? "",
     device_label: names.get(rec.device_id) || (rec.device_id === await deviceId() ? "This device" : "Another device"),
     completed_at: rec.completed_at, received_at: rec.received_at, revision: rec.revision, analysis_status: rec.analysis_status,
@@ -1025,7 +1032,10 @@ export const recordsView: View = async (main) => {
   }
   if (live && onlineOnly.length) {
     card.append(h("div", { class: "row" }, h("button", { id: "download-all", onclick: async (ev: Event) => {
-      const btn = ev.currentTarget as HTMLButtonElement; btn.disabled = true;
+      const btn = ev.currentTarget as HTMLButtonElement;
+      if (onlineOnly.length > 50 && !confirm(`Download all ${onlineOnly.length} records to this phone? This can take a while and `
+        + "use a lot of mobile data. Each record can also be opened one at a time while online.")) return;
+      btn.disabled = true;
       let ok = 0; let failed = 0;
       for (const r of onlineOnly) {
         btn.textContent = `Downloading ${ok + failed + 1} of ${onlineOnly.length}…`;
@@ -1068,7 +1078,7 @@ export const recordsView: View = async (main) => {
       const openable = offline || live;
       const [cls, status] = statusOf(r);
       const subject = subjectFor(r);
-      const where = r.source === "This device" ? (offline ? "This phone" : "Made on this phone") : `From ${r.source}`;
+      const where = r.source === "This device" ? (offline ? "This phone" : "Made on this phone") : r.source === "Another device" ? "From another device" : `From ${r.source}`;
       const body = [
         h("span", { class: "rec-title" }, h("strong", null, r.title), subject ? h("span", { class: "subject" }, subject) : null),
         h("span", { class: "rec-meta" },
@@ -1113,9 +1123,10 @@ export const remoteView: View = async (main, p) => {
     }
   }
   const r = live ?? copy!;
-  const wf = (await d.get("workflows", r.workflow_id))?.definition;
+  const wf: Workflow | undefined = (await d.get("workflows", r.workflow_id))?.definition ?? r.definition ?? copy?.definition;
   const l = await lang();
-  main.append(h("div", { class: "card", id: "remote-record" }, h("h2", null, r.workflow_title),
+  const humanise = (k: string) => k.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+  main.append(h("div", { class: "card", id: "remote-record" }, h("h2", null, wf ? text(wf.title, l) || r.workflow_title : r.workflow_title),
     h("div", { class: "banner local" }, h("strong", null, r.device_label === "This device" ? "Saved earlier on this device" : `From ${r.device_label || "another device"}`),
       h("div", null, "In your Hermes account. Read-only here.")),
     h("dl", { class: "kv" }, h("dt", null, "Completed"), h("dd", null, fmtTime(r.completed_at)),
@@ -1125,7 +1136,7 @@ export const remoteView: View = async (main, p) => {
   const serverAtts = new Map<string, any>((live?.attachments ?? copy?.attachments ?? []).map((a) => [a.id, a]));
   for (const [k, v] of Object.entries(r.answers ?? {})) {
     const f = wf?.fields.find((x) => x.id === k);
-    let shown: string | HTMLElement = typeof v === "object" ? JSON.stringify(v) : String(v);
+    let shown: string | HTMLElement = v === null || v === undefined || v === "" ? "—" : typeof v === "boolean" ? yesNo(v, l) : typeof v === "object" ? JSON.stringify(v) : String(v);
     if (f?.type === "single_choice") shown = text(f.options?.find((o) => o.value === v)?.label, l) || String(shown);
     else if (f?.type === "multi_choice" && Array.isArray(v)) shown = v.map((x) => text(f.options?.find((o) => o.value === x)?.label, l) || String(x)).join(", ");
     else if (f?.type === "checkbox") shown = yesNo(v, l);
@@ -1143,7 +1154,7 @@ export const remoteView: View = async (main, p) => {
       }
       shown = box;
     }
-    dl.append(h("dt", { lang: f ? textLang(f.label, l) : null }, f ? text(f.label, l) : k), h("dd", null, shown));
+    dl.append(h("dt", { lang: f ? textLang(f.label, l) : null }, f ? text(f.label, l) : humanise(k)), h("dd", null, shown));
   }
   main.append(h("div", { class: "card" }, h("h2", null, "Answers"), dl));
   if (r.report) {

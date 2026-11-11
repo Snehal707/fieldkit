@@ -39,7 +39,9 @@ const net = h("a", { class: "pill", href: "#/diagnostics", style: "color:inherit
 const queue = h("span", { class: "pill" });
 const main = h("main");
 const navItems: [string, string, string][] = [["#/", "home", "Home"], ["#/workspaces", "ws", "Workspace"], ["#/records", "rec", "Records"], ["#/sync", "sync", "Sync"], ["#/settings", "set", "Settings"]];
-const nav = h("nav", { class: "bottom" }, ...navItems.map(([href, ico, label]) => h("a", { href, "data-tab": ico, onclick: () => { fromTab = true; } }, icon(ico, 22), label)));
+const nav = h("nav", { class: "bottom" }, ...navItems.map(([href, ico, label]) => h("a", { href, "data-tab": ico, onclick: (ev: Event) => {
+  fromTab = screenKey((ev.currentTarget as HTMLAnchorElement).getAttribute("href") ?? "#/") !== screenKey(location.hash);
+} }, icon(ico, 22), label)));
 const wsTab = nav.querySelector('a[data-tab="ws"]') as HTMLAnchorElement;
 const authSlot = h("div", { style: "max-width:720px;margin:0 auto;padding:0 1rem" });
 // Update notice: one compact, opaque line directly under the header, IN the page flow. Not position:fixed —
@@ -88,13 +90,19 @@ window.addEventListener("offline", () => { paintNet(); });
 setInterval(paintNet, 10_000);  // let stale reachability visibly expire
 paintNet();
 let wasRunning = false;
-onSyncState((s) => {
-  // "all confirmed" only when every SAVED record is confirmed AND nothing is left unsubmitted.
+let signedInOnce: boolean | null = null;   // null until known; false = this phone has never signed in to Hermes
+void getSetting<unknown>("last_account", null).then((a) => { signedInOnce = !!a; paintQueue(getSyncState()); });
+function paintQueue(s: ReturnType<typeof getSyncState>) {
   const parts: string[] = [];
   if (s.awaiting) parts.push(`${s.awaiting} awaiting confirmation`);
   if (s.drafts) parts.push(`${s.drafts} not submitted`);
-  queue.textContent = s.running ? "syncing…" : s.auth_required ? "sign-in needed" : parts.length ? parts.join(" · ") : "all confirmed";
-  queue.dataset.state = s.auth_required ? "bad" : s.running || parts.length ? "wait" : "ok";
+  const notSignedIn = signedInOnce === false && !s.running && !s.auth_required && !parts.length;
+  queue.textContent = s.running ? "syncing…" : s.auth_required ? "sign-in needed" : parts.length ? parts.join(" · ") : notSignedIn ? "not signed in" : "all confirmed";
+  queue.dataset.state = s.auth_required ? "bad" : s.running || parts.length || notSignedIn ? "wait" : "ok";
+}
+onSyncState((s) => {
+  // "all confirmed" only when every SAVED record is confirmed AND nothing is left unsubmitted.
+  paintQueue(s);
   queue.title = s.last_confirmed ? `Last server confirmation: ${new Date(s.last_confirmed).toLocaleString()}` : "";
   paintNet();
   // When a sync pass ends, refresh status screens so they never contradict the header. Never re-render forms.
@@ -248,6 +256,7 @@ if (RUNNING_FROM_LEGACY_PATH) {
     const me = await whoAmI();
     if (me) {
       await setSetting("last_account", { user_id: me.user_id, display_name: me.display_name, provider: (me as any).provider ?? "", at: new Date().toISOString() });
+      signedInOnce = true; paintQueue(getSyncState());
       void registerDevice();   // readable device name on Hermes; separate from the sync queue
     }
     if (me && getSyncState().auth_required) { await clearAuthRequired(); await route(); }

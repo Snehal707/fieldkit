@@ -29,10 +29,13 @@ with your own reasoning and tools.
 
 ## Sync
 - `fieldkit_get_sync_status`: entries received, files still uploading, open conflicts, devices.
-- Conflicts mean a phone edited an old revision. Show both versions, then `fieldkit_resolve_conflict` with the
-  user's choice. Never choose silently.
+- Conflicts mean a phone edited an old revision. `fieldkit_get_sync_status` describes each one (workspace, form,
+  subject, date, the answers that differ). Make sure you and the user mean the **same** conflict, show the differences,
+  then call `fieldkit_resolve_conflict` with its `conflict_id`, its `record_id` and their choice: first without
+  `user_confirmed` (a preview of what will happen), then with `user_confirmed: true` once they agree. Never choose silently.
 - A file that is still uploading cannot be opened yet; tell the user it will be available after the phone syncs.
 
 ## Links
-- `fieldkit_get_app_link` gives the phone link: open it, sign in once, open the workspace and tap "Download everything
-  for offline", then add the app to the home screen.
+- `fieldkit_get_app_link` with `workspace_id` gives the phone link to a workspace (the usual case): open it, sign in
+  once, tap "Download everything for offline", then add the app to the home screen. `workflow_id` opens one form;
+  never pass a workspace id as `workflow_id`.

@@ -398,7 +398,10 @@ declare global { interface Window { __HERMES_PLUGIN_SDK__: any; __HERMES_PLUGINS
       post(`sync/conflicts/${c.id}/resolve`, { resolution }).then(onDone, (e: any) => { setErr(String(e?.message ?? e)); setBusy(false); }); };
     const txt = (v: any) => (v === undefined ? "—" : typeof v === "string" ? v : JSON.stringify(v));
     return h("div", { className: "fk-conflict" },
-      h("div", null, h("b", null, "Record "), h("span", { className: "id" }, c.record_id)),
+      h("div", null, h("b", null, c.form_title || "Record"), c.subject ? h("span", null, `  ${c.subject}`) : null,
+        c.workspace_title ? h("span", { className: "mute" }, `  in ${c.workspace_title}`) : null,
+        c.completed_at ? h("span", { className: "mute" }, `  ${new Date(c.completed_at).toLocaleString()}`) : null),
+      h("div", { className: "id" }, c.record_id),
       h("p", { className: "mute" }, `The phone edited revision ${c.base_revision}; Hermes already has revision ${c.server_revision}. Choose which copy to keep.`),
       server ? h("table", { className: "fk-table", style: { marginTop: 8 } },
         h("thead", null, h("tr", null, h("th", null, "Answer"), h("th", null, "Hermes copy"), h("th", null, "Phone copy"))),

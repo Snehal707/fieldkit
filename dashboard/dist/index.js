@@ -2191,7 +2191,15 @@
       return h(
         "div",
         { className: "fk-conflict" },
-        h("div", null, h("b", null, "Record "), h("span", { className: "id" }, c.record_id)),
+        h(
+          "div",
+          null,
+          h("b", null, c.form_title || "Record"),
+          c.subject ? h("span", null, `  ${c.subject}`) : null,
+          c.workspace_title ? h("span", { className: "mute" }, `  in ${c.workspace_title}`) : null,
+          c.completed_at ? h("span", { className: "mute" }, `  ${new Date(c.completed_at).toLocaleString()}`) : null
+        ),
+        h("div", { className: "id" }, c.record_id),
         h("p", { className: "mute" }, `The phone edited revision ${c.base_revision}; Hermes already has revision ${c.server_revision}. Choose which copy to keep.`),
         server ? h(
           "table",

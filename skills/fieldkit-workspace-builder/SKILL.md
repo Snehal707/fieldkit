@@ -20,7 +20,10 @@ Start with one question: **what is this workspace for?** Then ask only what you 
   (e.g. consent or sign-off); never add it by default;
 - languages: the phone app supports **English and Hindi** only.
 Ask before drafting: never guess a form before the user has told you what they record. Infer small details (field ids,
-which fields are required) and show them in the summary.
+which fields are required) and show them in the summary. Add min/max limits only when the user gave them. The subject
+(`metadata.subject_field`) is a short text, number or choice question the user can search by, never GPS or media.
+If you still have open questions, ask them before drafting; a plain "yes" is not an answer to them. Publish only after
+the user has seen the drafted forms (a "yes" to your interview summary is not approval of a draft they have not seen).
 
 ## 2. Draft, show, publish
 
@@ -30,7 +33,8 @@ which fields are required) and show them in the summary.
 3. Fix any `errors` (send the whole corrected form again). `fixed_automatically` lists shape repairs FieldKit made.
 4. Show the user, in a few lines, each form and its questions. Publish with `fieldkit_publish_workspace` and
    `user_approved: true` only after they approve. Give the returned app link: on the phone, open the workspace and tap
-   "Download everything for offline".
+   "Download everything for offline". Use the `app_link` that publishing returns (a workspace link); for a link later,
+   `fieldkit_get_app_link` with `workspace_id`.
 
 ## 3. Changing a workspace (no new interview)
 

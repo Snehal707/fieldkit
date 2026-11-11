@@ -221,7 +221,7 @@ details > summary { cursor: pointer; min-height: 32px; display: list-item; paddi
 /* Label / value lists: the label column is bounded so values never wrap one character at a time. */
 dl.kv { display: grid; grid-template-columns: minmax(7.5rem, 42%) minmax(0, 1fr); margin: .2rem 0; }
 dl.kv dt, dl.kv dd { padding: .4rem 0; border-bottom: 1px solid var(--line-soft); }
-dl.kv dt { color: var(--muted); padding-right: .8rem; font-size: .9rem; }
+dl.kv dt { color: var(--muted); padding-right: .8rem; font-size: .9rem; overflow-wrap: anywhere; min-width: 0; }
 dl.kv dd { margin: 0; overflow-wrap: anywhere; }
 dl.kv dt:nth-last-child(2), dl.kv dd:last-child { border-bottom: 0; }
 

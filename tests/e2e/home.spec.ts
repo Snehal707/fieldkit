@@ -6,7 +6,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { signIn } from "./auth";
-import { downloadWorkspace, EXAMPLE_WS } from "./helpers";
+import { downloadWorkspace, EXAMPLE_WS, publishFormAsWorkspace } from "./helpers";
 
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
@@ -19,7 +19,7 @@ const localRecords = (p: Page) => p.evaluate(() => new Promise<any[]>((res) => {
   q.onsuccess = () => { const g = q.result.transaction("records").objectStore("records").getAll(); g.onsuccess = () => res(g.result); };
 }));
 
-test.beforeEach(() => { test.skip(!process.env.FIELDKIT_E2E_PASS, "set FIELDKIT_E2E_PASS"); });
+test.beforeEach(() => { test.skip(!process.env.FIELDKIT_E2E_PASS || !process.env.FIELDKIT_E2E_DATA_DIR, "set FIELDKIT_E2E_PASS and FIELDKIT_E2E_DATA_DIR"); });
 
 test("home: activity states, switching survives restart, entries under the right workspace", async () => {
   test.setTimeout(300_000);
@@ -30,8 +30,13 @@ test("home: activity states, switching survives restart, entries under the right
   p.on("dialog", (d) => d.accept());
   await p.goto(APP);
   await expect.poll(() => p.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);
+  // Its own second workspace (never relies on another test having made one).
+  const run = Date.now().toString(36);
+  const ownId = publishFormAsWorkspace({ id: `home-visit-${run}`, title: { en: "Home visit" }, languages: ["en"], metadata: { subject_field: "household_id" },
+    fields: [{ id: "household_id", type: "text", label: { en: "Household ID" }, required: true }, { id: "notes", type: "multiline", label: { en: "Notes" } }] },
+    `e2e-visits-home-${run}`);
   const list = (await (await ctx.request.get(`${BASE}/api/plugins/fieldkit/workspaces`)).json()).workspaces;
-  const own = list.find((w: any) => String(w.id).startsWith("e2e-visits-"));
+  const own = list.find((w: any) => w.id === ownId);
   expect(own, "an own workspace to test with").toBeTruthy();
   await downloadWorkspace(p, APP);
   await downloadWorkspace(p, APP, own.id);

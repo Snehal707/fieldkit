@@ -1,9 +1,10 @@
 // Workspace screens: the list (on this phone and available on Hermes) and one workspace (purpose, forms, counts).
-import { api, HttpError } from "./api";
+import { api, AuthRequired, HttpError } from "./api";
+import { signIn } from "./config";
 import { db } from "./db";
 import { text } from "./engine";
 import { installedWorkflows } from "./packs";
-import { h, isOnline, toast } from "./util";
+import { clear, h, isOnline, toast } from "./util";
 import { go, lang, type View } from "./views_core";
 import { availableWorkspaces, currentWorkspace, installedWorkspace, installedWorkspaces, installWorkspace, setCurrentWorkspace, summarizeLocal, wsTitle } from "./workspace";
 
@@ -66,9 +67,23 @@ export const workspaceView: View = async (main, p) => {
     }
   } }, m ? "Update from Hermes" : "Download everything for offline");
   if (!m) {
-    main.append(h("div", { class: "card" }, h("h2", null, "Workspace"),
+    // Not downloaded yet: say which workspace this is (from Hermes), or ask to sign in first.
+    const heading = h("h2", null, "Workspace");
+    const about = h("div");
+    const card = h("div", { class: "card", id: "ws-preview" }, heading, about,
       h("p", null, isOnline() ? "Not on this device yet." : "Not on this device yet. Connect to the internet to download it."),
-      isOnline() ? btn : null, status));
+      isOnline() ? btn : null, status);
+    main.append(card);
+    if (isOnline()) {
+      try {
+        const info = await api<any>(`workspaces/${encodeURIComponent(wid)}`);
+        heading.textContent = text(info.title, l) || "Workspace";
+        if (info.profile?.purpose) about.append(h("p", { class: "muted" }, String(info.profile.purpose)));
+      } catch (e) {
+        if (e instanceof AuthRequired) { clear(card); card.append(heading, h("p", null, "Sign in to Hermes to download this workspace."), h("div", { class: "row" }, h("button", { class: "primary", onclick: () => signIn(`#/workspace/${wid}`) }, "Sign in"))); }
+        else if (e instanceof HttpError && e.status === 404) { about.append(h("p", { class: "muted" }, "This workspace isn't published on Hermes.")); btn.disabled = true; }
+      }
+    }
     return;
   }
   await setCurrentWorkspace(wid);

@@ -252,7 +252,14 @@ def sync_status(request: Request):
 
 @router.get("/sync/conflicts")
 def list_conflicts(request: Request):
-    return {"conflicts": get_store().list_conflicts(_uid(request))}
+    """Open conflicts, each with its workspace, form, subject and date so it can be recognised."""
+    from fieldkit_core.tools import conflict_view
+    store, uid, cache = get_store(), _uid(request), {}
+    out = []
+    for cf in store.list_conflicts(uid):
+        v = conflict_view(store, uid, cf, cache)
+        out.append({**cf, **{k: v.get(k) for k in ("workspace_id", "workspace_title", "form_id", "form_title", "subject", "completed_at")}})
+    return {"conflicts": out}
 
 
 @router.post("/sync/conflicts/{cid}/resolve")

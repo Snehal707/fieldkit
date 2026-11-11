@@ -50,7 +50,8 @@ EXAMPLE = {
 RULES = ("Use the user's own words, units and categories; ask, never invent. Label text in every workspace language. "
          "Choice fields need options [{value, label}]. Conditions use field ids of the same form: numbers compare with "
          "numbers, checkbox with true/false, choices with an option value. Set metadata.subject_field to the field that "
-         "identifies what an entry is about (a site, person, asset, plot...), if there is one. Notes and issues are "
+         "identifies what an entry is about (a site, person, asset, plot...): a short text, number or choice question, never "
+         "GPS or media. Add min/max limits only when the user gave them; never guess ranges. Notes and issues are "
          "ordinary fields (multiline text, choices). Media: photo, audio (voice note), gps; add a signature field only when "
          "the user asks for one (consent, sign-off).")
 
@@ -352,6 +353,11 @@ def check_form(form: Any) -> list[dict]:
     sf = (form.get("metadata") or {}).get("subject_field")
     if sf and sf not in kinds:
         errs.append({"path": "metadata/subject_field", "error": f"{sf!r} is not a field of this form", "hint": ""})
+    elif sf and (types := {f.get("id"): f.get("type") for f in form.get("fields") or [] if isinstance(f, dict)}).get(sf) in (
+            "gps", "photo", "audio", "signature", "multiline"):
+        errs.append({"path": "metadata/subject_field", "error": f"subject field {sf!r} is a {types[sf]} question",
+                     "hint": "the subject must name what an entry is about (a code, name, site or ID the user can search "
+                             "for): use a short text, number or choice question"})
     return errs
 
 

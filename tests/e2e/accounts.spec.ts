@@ -123,6 +123,7 @@ s.conn.commit()
 
   // A downloads everything for offline (B's record + its report).
   await records(A.page);
+  A.page.once("dialog", (d) => d.accept());               // large accounts ask before downloading everything
   await A.page.locator("#download-all").click();
   // Downloads every entry of the account one by one (hundreds on a long-used test Hermes): wait until it is done.
   await expect(A.page.locator(".toast", { hasText: /now available offline|downloaded/ })).toBeVisible({ timeout: 300_000 });
