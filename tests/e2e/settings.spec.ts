@@ -84,7 +84,7 @@ for (const mode of ["protected", "declined", "unsupported"] as const) {
   });
 }
 
-test("the install card is honest; no read-aloud or speech settings remain", async () => {
+test("the install card is accurate; no read-aloud or speech settings remain", async () => {
   test.skip(!PASS, "set FIELDKIT_E2E_PASS");
   const { ctx, page } = await open("declined");
   await expect(page.locator("#voices-card")).toHaveCount(0);

@@ -100,7 +100,7 @@ export function unifiedRecords(local: LocalLike[], server: ServerLike[], copies:
   return [...out.values()].sort((a, b) => b.sortKey - a.sortKey).map(({ sortKey: _s, ...rest }) => rest);
 }
 
-// ------------------------------------------------------------------ honest load errors
+// ------------------------------------------------------------------ clear load errors
 export type ProblemKind = "offline" | "unreachable" | "signed-out" | "server-outdated" | "server-error";
 export interface LoadProblem { kind: ProblemKind; message: string }
 

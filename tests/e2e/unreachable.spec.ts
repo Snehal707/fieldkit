@@ -15,7 +15,7 @@ const APP = `${BASE}/dashboard-plugins/fieldkit/app_dist/index.html`;
 const API = `${BASE}/api/plugins/fieldkit`;
 const isApi = (u: URL) => u.pathname.startsWith("/api/plugins/fieldkit/") && !u.pathname.startsWith("/api/plugins/fieldkit/app/");
 
-test("network up but Hermes unreachable or captive portal: honest status, nothing lost, then confirmed", async () => {
+test("network up but Hermes unreachable or captive portal: clear status, nothing lost, then confirmed", async () => {
   test.skip(!PASS, "set FIELDKIT_E2E_PASS");
   // Playwright's route() cannot intercept requests from a service-worker-controlled page in WebKit, so the
   // outage cannot be simulated there (requests really reach the server). Covered on Chromium and a real iPhone.

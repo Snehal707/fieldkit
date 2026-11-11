@@ -60,7 +60,7 @@ describe("one Saved Records list for the whole account", () => {
   });
 });
 
-describe("load problems are reported honestly", () => {
+describe("load problems are reported clearly", () => {
   it("never calls an HTTP error 'offline'; offline only when the device is offline", async () => {
     const { describeLoadProblem } = await import("../../app/src/device");
     const { AuthRequired, HttpError, Offline } = await import("../../app/src/api");

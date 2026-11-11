@@ -910,7 +910,7 @@ async function currentAccountId(): Promise<string> {
   return (await getSetting<{ user_id?: string } | null>("last_account", null))?.user_id ?? "";
 }
 
-/** Turn a failed request into an honest message; on a 404, ask Hermes which FieldKit server version it runs. */
+/** Turn a failed request into a clear message; on a 404, ask Hermes which FieldKit server version it runs. */
 async function problemFor(e: unknown): Promise<LoadProblem> {
   let serverVersion = "";
   if (e instanceof HttpError && e.status === 404) {

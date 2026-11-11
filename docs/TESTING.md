@@ -258,7 +258,7 @@ Offline testing on a real iPhone found the problems below. Each was reproduced o
   - Recording uses MP4/AAC on Apple devices and WebM elsewhere, and only formats the device can play back. Recording is one complete file (no 1-second slices).
   - Results shows per-kind counts, field names and upload status. Transcripts are editable. Signatures show their time.
   - Records from other devices (`#/remote`) load photos, voice notes and signatures on demand from Hermes (needs internet, hash-verified).
-  - **Honesty:** the exact iOS mechanism could not be reproduced on desktop WebKit. The fixes target the known iOS causes (IndexedDB-backed Blob object URLs, WebM playback).
+  - **Limits of this test:** the exact iOS mechanism could not be reproduced on desktop WebKit. The fixes target the known iOS causes (IndexedDB-backed Blob object URLs, WebM playback).
 - **Signatures, linking and analysis (the server side):**
   - A signature PNG was counted as a photo ("2 photo(s) attached but NOT analysed") and sent to the vision model.
   - Attachments are now classified by the workflow field they answer: photo, voice note (`audio`) or signature. Only photos go to the vision model, and counts are per kind.
@@ -398,7 +398,7 @@ local score was inconsistent with the evidence.
 
 ### Phase D: reports that help decide (0.2.5)
 - **Report v2** (`fieldkit_core/decision.py`, `analysis.py`): a decision on the workspace's scale (or the default
-  stop / act soon / monitor / no action) with rationale, honest confidence, deadline and escalation; issues that cite
+  stop / act soon / monitor / no action) with rationale, stated confidence, deadline and escalation; issues that cite
   record evidence (field, attachment, local finding, previous record, follow-up check) and interpret it; ordered next
   actions with who, by when and **how to verify it worked**, marked as from a workspace guide/knowledge entry or as an AI
   suggestion; what is uncertain and how to resolve it; differences from the phone's findings; checks for next time;
@@ -511,7 +511,7 @@ local score was inconsistent with the evidence.
      (14 fields), 1 guide (21 nodes), 4 knowledge entries, 6 vocabulary terms, 4 intents, 5 gaps, traceability.
      Every FieldKit call took 0.01-0.04 s. One item was rejected (the guide: `title`/`start`/`workflow_id` written
      inside `nodes`); Hermes fixed it from the error and hint and resubmitted. First `fieldkit_build_workspace`:
-     **valid, 0 errors** (0.04 s). Hermes then showed an honest review (verified / supported / gaps) and asked
+     **valid, 0 errors** (0.04 s). Hermes then showed a review (verified / supported / gaps) and asked
      before publishing. The model provider returned "at capacity" several times; the turn recovered.
   3. *New chat (resume):* "I'm back... double-check the quotes". Hermes called `fieldkit_workspace_build_status`,
      found the saved build and continued. With PDF checks enabled, the rebuild fetched and extracted all 5 PDFs in

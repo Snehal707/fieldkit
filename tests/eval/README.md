@@ -3,7 +3,7 @@
 These scripts measure how accurate FieldKit's optional on-device packs are: OCR and translation. They were
 written for the real-iPhone findings in [docs/TESTING.md](../../docs/TESTING.md).
 
-**Honesty notes**
+**Notes on these results**
 - All test material is **synthetic**: `sharp` makes the photos and the sentences were written by the maintainers. No
   real user data is used.
 - Each sentence has **one hand-written reference**. Scores are a guide, not a benchmark.
