@@ -1,4 +1,4 @@
-# Hackathon submission (0.3.1)
+# Hackathon submission (0.3.2)
 
 **Event:** Hermes Agent Plugin Hackathon. The deadline is reported as **Nov 11 2026, 5 PM ET**. Confirm it against the official Nous Research announcement before submitting.
 
@@ -51,7 +51,7 @@ Repository must be public; `sha` must be the full 40-character commit; `version`
 name: fieldkit
 repo: https://github.com/Snehal707/fieldkit
 sha: "<40-char commit sha>"
-version: "0.3.1"
+version: "0.3.2"
 requires_hermes: ">=0.23.0"
 description: "Offline observation forms set up by Hermes in a short chat (questions, choices, photos, voice notes, GPS, signatures; English and Hindi), with secure, idempotent sync; your Hermes agent reads the synced entries with its own tools when you ask."
 network_disclosure: "The phone app downloads pinned on-device model files (translation and OCR) from huggingface.co and cdn.jsdelivr.net only when the user installs one of those packs. The backend makes no third-party calls and no model calls."
@@ -79,7 +79,7 @@ Skills: `fieldkit` (find and read entries) and `fieldkit-workspace-builder` (set
 ## Checklist before submitting
 - [ ] Confirm the deadline (reported as Nov 11 2026, 5 PM ET) and the submission format (catalog PR, form, or both) against the official announcement.
 - [ ] Push to the public GitHub repo at https://github.com/Snehal707/fieldkit.
-- [ ] Run `hermes plugins validate .` and `hermes plugins doctor . --ci` on the final commit. Both passed on 0.3.1 with Hermes v0.23.1 on a local test Hermes (12 tools, 0 hooks). Re-run on the exact commit you submit.
+- [ ] Run `hermes plugins validate .` and `hermes plugins doctor . --ci` on the final commit. Both passed on 0.3.2 with Hermes v0.23.1 on a local test Hermes (12 tools, 0 hooks). Re-run on the exact commit you submit.
 - [ ] Run the Python, TypeScript and Playwright suites on the final commit (see [docs/TESTING.md](TESTING.md)).
 - [ ] Run `npm run build` and commit `dashboard/dist` and `dashboard/app_dist`.
 - [x] Real iPhone + hosted Hermes + Hermes mobile app: offline recording, sync, media and Saved Records (owner, 0.2.4).

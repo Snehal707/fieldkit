@@ -4,4 +4,4 @@ Imported under the stable absolute name ``fieldkit_core`` by both the Hermes plu
 repo root) and the dashboard backend (``dashboard/plugin_api.py``) so both share one module instance per process.
 """
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"

@@ -1,4 +1,4 @@
-# FieldKit plugin API (0.3.1)
+# FieldKit plugin API (0.3.2)
 
 Base path: `/api/plugins/fieldkit/`.
 - Every route needs a Hermes dashboard session (cookie), or the session token on a loopback dashboard.

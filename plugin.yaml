@@ -1,5 +1,5 @@
 name: fieldkit
-version: "0.3.1"
+version: "0.3.2"
 description: "FieldKit: create and edit offline observation forms through Hermes conversations, collect entries with photos, voice notes, GPS and signatures on a phone with no internet (installable PWA, optional offline OCR and translation), sync securely when back online, and give your Hermes agent the synced entries and files to work with."
 author: "FieldKit contributors"
 license: MIT

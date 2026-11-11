@@ -20,20 +20,26 @@ Start with one question: **what is this workspace for?** Then ask only what you 
   (e.g. consent or sign-off); never add it by default;
 - languages: the phone app supports **English and Hindi** only.
 Ask before drafting: never guess a form before the user has told you what they record. Infer small details (field ids,
-which fields are required) and show them in the summary. Add min/max limits only when the user gave them. The subject
+which fields are required) and show them in the summary. Min/max limits block saving, so add them only for values the
+user said cannot occur at all; never guess them. A normal, safe or expected range ("should be 2 to 6 °C") is not a limit:
+readings outside it must still be recordable, so put it in the question's `help` text (e.g. "Normal: 2-6 °C"). The subject
 (`metadata.subject_field`) is a short text, number or choice question the user can search by, never GPS or media.
 If you still have open questions, ask them before drafting; a plain "yes" is not an answer to them. Publish only after
 the user has seen the drafted forms (a "yes" to your interview summary is not approval of a draft they have not seen).
 
 ## 2. Draft, show, publish
 
+The tools are named with underscores (`fieldkit_workspace_format`, `fieldkit_draft_workspace`, ...); `fieldkit:...` names
+are skills, not tools. If a tool is not loaded yet, find it with tool search by its exact name.
+
 1. `fieldkit_workspace_format` once, for the form schema and an example.
 2. `fieldkit_draft_workspace` with `workspace_id` (lowercase slug), `title`, `purpose` (the user's words), `languages`
    and `forms` (one form per kind of entry; set `metadata.subject_field`). Label text in every chosen language.
 3. Fix any `errors` (send the whole corrected form again). `fixed_automatically` lists shape repairs FieldKit made.
-4. Show the user, in a few lines, each form and its questions. Publish with `fieldkit_publish_workspace` and
-   `user_approved: true` only after they approve. Give the returned app link: on the phone, open the workspace and tap
-   "Download everything for offline". Use the `app_link` that publishing returns (a workspace link); for a link later,
+4. Show the user each form and its questions (type, choices, units), then ask "Publish this?". Publish with
+   `fieldkit_publish_workspace` and `user_approved: true` only when they answer that question with yes. If they ask to
+   see the forms, or to change something, show or change it and ask again; that is not approval. Give the returned app link: on the phone, open the workspace and tap
+   "Download everything for offline". Copy `app_link.url` from the publish result exactly, character for character (never build or shorten it); for a link later,
    `fieldkit_get_app_link` with `workspace_id`.
 
 ## 3. Changing a workspace (no new interview)

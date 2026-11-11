@@ -1,4 +1,4 @@
-# Third-party components and asset provenance (0.3.1)
+# Third-party components and asset provenance (0.3.2)
 
 FieldKit commits **no compiled binaries, WebAssembly or model weights**. `scripts/postbuild-app.mjs` fails the
 build if any ELF, Mach-O, PE or WASM file would ship.

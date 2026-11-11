@@ -773,3 +773,20 @@ devices, the workspace preview before download) have **not yet been checked on a
 
 **NOT verified:** the phone-app changes after 35f9ab8 on a real iPhone, and Android Chrome. 0.3.1 (version bump,
 "Export data" wording, a test that skills name only registered tools) adds no new behaviour.
+
+### 0.3.2: approval, normal ranges and links (2026-11-11)
+
+Three Hermes behaviours seen in real conversations on the local test Hermes, fixed in the builder skill, the
+`fieldkit_publish_workspace` description, the form rules and the link result:
+- Hermes published when the user asked to *see* the forms. Now it shows every form and question, asks "Publish this?"
+  and publishes only on a yes to that question.
+- A normal range ("should be 2 to 6 °C") became a hard min/max, so an out-of-range reading could not be saved. Now a
+  normal, safe or expected range goes into the question's help text ("Normal: 2-8 °C"); min/max only for values that
+  cannot occur ("can't be negative" became min 0; "moisture 0 to 100 %" became 0-100).
+- Hermes once wrote the link as `C:/dashboard-plugins/...` from the bare `path` returned next to the full `url`. Now a
+  known address returns only the full `url`, publishing builds the link like `fieldkit_get_app_link`, and the skills say
+  to copy the `url` exactly.
+
+Retested in 9 real conversations (gateway restarted on the new code): approval waited for an explicit yes in all of
+them (including "show me the forms" and "add a field, then show me again"); every number field followed the range rule;
+after the link fix, all 4 links given were the full `http://.../#/workspace/<id>` link. On 0.3.2: Python 118 passed, TypeScript 126, typecheck clean, validate + doctor (12 tools, 0 hooks), Chromium full suite 37 passed.

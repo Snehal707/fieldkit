@@ -53,3 +53,13 @@ def test_subject_question_must_be_searchable(env):
     assert any("subject field" in e["error"] for e in bad)
     assert not [e for e in forms.check_form(dict(base, metadata={"subject_field": "code"})) if "subject" in e["error"]]
     assert "never guess ranges" in forms.RULES and "never" in forms.RULES
+    assert "not a limit" in forms.RULES and "help text" in forms.RULES          # normal ranges never block saving
+
+
+def test_published_link_is_the_full_workspace_url_only(env, monkeypatch):
+    # A bare path next to the full link was once passed on by Hermes as "C:/dashboard-plugins/...".
+    from fieldkit_core import tools
+    monkeypatch.setenv("FIELDKIT_PUBLIC_URL", "https://fk.example.com")
+    link = tools.app_link(workspace_id="road-survey")
+    assert link == {**link, "url": "https://fk.example.com/dashboard-plugins/fieldkit/app_dist/index.html#/workspace/road-survey",
+                    "absolute": True} and "path" not in link

@@ -51,7 +51,8 @@ def app_link(workflow_id: str | None = None, workspace_id: str | None = None) ->
     path = "/dashboard-plugins/fieldkit/app_dist/index.html" + frag
     base = runtime.public_url()
     explicit = bool(str(runtime.setting("public_url", "") or "").strip())
-    return {"url": f"{base}{path}" if base else path, "path": path, "absolute": bool(base),
+    # With a known address only the full url is returned: a bare path next to it got passed on as the link.
+    return {"url": f"{base}{path}" if base else path, **({} if base else {"path": path}), "absolute": bool(base),
             "source": "public_url setting" if explicit else ("detected from dashboard/app traffic" if base else "none"),
             "note": "" if base else "Open the FieldKit dashboard tab once over https (or set plugins.entries.fieldkit."
                                    "settings.public_url) so Hermes can return a full link."}

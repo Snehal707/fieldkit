@@ -1,4 +1,4 @@
-# FieldKit architecture (0.3.1)
+# FieldKit architecture (0.3.2)
 
 FieldKit is an offline observation collection and synchronisation plugin for Hermes. One repository, three parts, one
 database. FieldKit never calls a model: it has no model client, runs no background worker, registers no hooks and

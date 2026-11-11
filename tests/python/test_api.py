@@ -86,7 +86,7 @@ def test_unauthenticated_is_401(env):
 def test_me_and_status(env):
     assert env.client.get(f"{PREFIX}/me", headers=H()).json()["user_id"] == "alice"
     st = env.client.get(f"{PREFIX}/status", headers=H()).json()
-    assert st["plugin"] == "fieldkit" and st["version"] == "0.3.1"
+    assert st["plugin"] == "fieldkit" and st["version"] == "0.3.2"
     assert not {"analysis_mode", "llm_available", "worker", "jobs", "auto_analyze"} & set(st)
 
 

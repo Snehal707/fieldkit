@@ -1,4 +1,4 @@
-# Installing FieldKit (0.3.1)
+# Installing FieldKit (0.3.2)
 
 Requires **Hermes Agent ≥ 0.23.0** with the web dashboard.
 

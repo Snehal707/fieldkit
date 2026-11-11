@@ -83,7 +83,7 @@ VISITS = {"id": "home-visit", "title": {"en": "Home visit"}, "languages": ["en"]
 # ----------------------------------------------------------------------------- registration
 def test_manifest_matches_registration(ctx):
     manifest = yaml.safe_load((ROOT / "plugin.yaml").read_text(encoding="utf-8"))
-    assert manifest["name"] == "fieldkit" and manifest["version"] == "0.3.1"
+    assert manifest["name"] == "fieldkit" and manifest["version"] == "0.3.2"
     assert sorted(manifest["provides_tools"]) == sorted(ctx.tools) == sorted(tools.TOOL_NAMES)
     assert len(ctx.tools) == 12
     assert sorted(ctx.skills) == ["fieldkit", "fieldkit-workspace-builder"]

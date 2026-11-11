@@ -115,9 +115,8 @@ def publish(a: dict) -> str:
     out = ws.publish(store, a["workspace_id"], a.get("version"), actor=ALL)
     new_bundle = store.get_workspace_version(a["workspace_id"], out["version"])["bundle"]
     out["changes"] = ws.workspace_changes(prev, new_bundle)
-    link = app_link()
-    link["url"] = link["url"] + f"#/workspace/{a['workspace_id']}"
-    return _ok(**out, app_link=link, next="Give the user the app link. On the phone: open the workspace and tap "
+    link = app_link(workspace_id=a["workspace_id"])
+    return _ok(**out, app_link=link, next="Give the user app_link.url exactly as returned. On the phone: open the workspace and tap "
                "'Update from Hermes' (or 'Download everything for offline' the first time). Old entries keep their version.")
 
 
@@ -196,7 +195,8 @@ TOOLS = [
          "remove_forms": {"type": "array", "items": STR}, "workflow_refs": {"type": "array", "items": STR},
          "changelog": {"type": "array", "items": STR}}, ["workspace_id"]), draft),
     (_s("fieldkit_publish_workspace", "Publish a valid workspace draft so the user's phone can download it for offline use. "
-        "Requires user_approved=true after the user saw what changes.",
+        "Requires user_approved=true, set only when the user explicitly said to publish after seeing the drafted forms "
+        "and their questions. A request to see or change the forms, or a yes to something else, is not approval.",
         {"workspace_id": STR, "version": INT, "user_approved": BOOL}, ["workspace_id", "user_approved"]), publish),
     (_s("fieldkit_undo_workspace_update", "Undo the last published change to a workspace. An explicit user request ('undo "
         "my last workspace update') is the approval: call with user_confirmed=true and tell them what changed back. If it "

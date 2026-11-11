@@ -38,4 +38,5 @@ with your own reasoning and tools.
 ## Links
 - `fieldkit_get_app_link` with `workspace_id` gives the phone link to a workspace (the usual case): open it, sign in
   once, tap "Download everything for offline", then add the app to the home screen. `workflow_id` opens one form;
-  never pass a workspace id as `workflow_id`.
+  never pass a workspace id as `workflow_id`. Give the returned `url` exactly as it is; if `absolute` is false, say the full
+  address is not known yet (the returned `note` says how to fix that) instead of adding a host yourself.

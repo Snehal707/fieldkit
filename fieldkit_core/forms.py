@@ -51,7 +51,9 @@ RULES = ("Use the user's own words, units and categories; ask, never invent. Lab
          "Choice fields need options [{value, label}]. Conditions use field ids of the same form: numbers compare with "
          "numbers, checkbox with true/false, choices with an option value. Set metadata.subject_field to the field that "
          "identifies what an entry is about (a site, person, asset, plot...): a short text, number or choice question, never "
-         "GPS or media. Add min/max limits only when the user gave them; never guess ranges. Notes and issues are "
+         "GPS or media. validation min/max block saving: use them only for values that cannot be entered at all (as the user "
+         "said); never guess ranges. A normal, safe or expected range is not a limit (out-of-range readings must still be "
+         "recordable): put it in the question's help text instead, e.g. \"Normal: 2-8 °C\". Notes and issues are "
          "ordinary fields (multiline text, choices). Media: photo, audio (voice note), gps; add a signature field only when "
          "the user asks for one (consent, sign-off).")
 
