@@ -2,6 +2,19 @@
 
 Requires **Hermes Agent ≥ 0.23.0** with the web dashboard.
 
+Steps at a glance:
+
+```mermaid
+flowchart TB
+    A["Install the plugin"] --> B["Enable the plugin"]
+    B --> C["Restart the dashboard and gateway<br/>(after an update)"]
+    C --> D["Set up a workspace by chat"]
+    D --> E["Open the link on the phone"]
+    E --> F["Sign in"]
+    F --> G["Download everything for offline"]
+    G --> H["Add to Home Screen"]
+```
+
 ## 1. Install the plugin
 ```bash
 hermes plugins install Snehal707/fieldkit        # or: copy this repo to $HERMES_HOME/plugins/fieldkit

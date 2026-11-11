@@ -4,13 +4,18 @@ FieldKit is an offline observation collection and synchronisation plugin for Her
 database. FieldKit never calls a model: it has no model client, runs no background worker, registers no hooks and
 makes no outbound calls from the server. Hermes reads synchronised data when the user asks.
 
-```text
- Hermes chat (Mobile, chat or dashboard) ──▶ Hermes agent ──tools and skills──▶ FieldKit plugin (Python)
-                                                                                  │ fieldkit_core
- Hermes dashboard ── /api/plugins/fieldkit/ (plugin_api.py, auth-gated) ◀──────────┤  SQLite:
-   │ FieldKit tab (dashboard/dist)                                                 │  <HERMES_HOME>/plugin-data/fieldkit/data.db
-   └── /dashboard-plugins/fieldkit/app_dist/  → phone app (PWA, public static)
- Phone: installed PWA ── IndexedDB + Cache API
+```mermaid
+flowchart TB
+    User["User"] -->|"chat"| Chat["Hermes chat<br/>Mobile, chat or dashboard"]
+    Chat --> Agent["Hermes agent"]
+    Agent -->|"tools and skills"| Core["FieldKit plugin<br/>fieldkit_core (Python)"]
+    Core --> DB[("SQLite<br/>#lt;HERMES_HOME#gt;/plugin-data/fieldkit/data.db")]
+    Core --> Files["Attachments on disk"]
+    Dash["Hermes dashboard<br/>FieldKit tab (dashboard/dist)"] -->|"plugin_api.py"| API["/api/plugins/fieldkit<br/>auth-gated"]
+    API --> Core
+    Dash -->|"serves /dashboard-plugins/fieldkit/app_dist/<br/>public static"| PWA["Phone app<br/>installed PWA"]
+    PWA --> Store["IndexedDB and Cache API"]
+    PWA <-->|"download workspaces, upload entries and files"| API
 ```
 
 The phone never talks to Hermes Mobile. Both reach the same Hermes instance: chat through the agent and FieldKit's
@@ -89,6 +94,36 @@ tools, the phone through the authenticated plugin API.
 5. Restore: if Hermes lacks a form version the phone has (for example after its data was reset), the phone sends it back
    with `POST workflows/restore`. The same id and version are never overwritten.
 
+Sync, step by step:
+
+```mermaid
+sequenceDiagram
+    participant P as Phone
+    participant S as Plugin API
+    Note over P: Entry and outbox operation saved in IndexedDB in one transaction
+    Note over P: Each operation keeps its idempotency key
+    P->>S: POST sync/records with idempotency key and base_revision
+    alt Record accepted
+        S-->>P: 200 record stored, sync_status received
+    else Stale base_revision with different content
+        S-->>P: 409 conflict recorded, server never overwrites
+    else Session expired
+        S-->>P: 401
+        Note over P: Queue pauses, nothing is dropped, Sign in is shown
+    end
+    loop Each declared file
+        P->>S: PUT attachments/{id} with raw body
+        S->>S: Check SHA-256 against declared value
+        alt Hash matches
+            S-->>P: Stored, status stored
+        else Hash does not match
+            S-->>P: 422
+        end
+    end
+    Note over S: Last file stored, record is complete
+    Note over P: Phone marks the entry synced
+```
+
 **Synchronised never means processed.** Syncing only uploads. Saved Records lists every entry of the account across
 devices, page by page.
 
@@ -108,6 +143,26 @@ Set up by chat: purpose, languages, forms (fieldkit-workspace-builder)
   → phone shows Update available
   → fieldkit_undo_workspace_update → the earlier version is republished as a new version
 ```
+
+Workspace lifecycle:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Draft
+    state "Draft (fieldkit_draft_workspace)" as Draft
+    state "Published version N (fieldkit_publish_workspace)" as PubN
+    state "Draft for an edit" as EditDraft
+    state "Published version N+1" as PubN1
+    state "Published as a new version, content of N" as Undo
+    Draft --> PubN: user approves
+    PubN --> EditDraft: change by chat
+    EditDraft --> PubN1: user approves
+    PubN1 --> EditDraft: change by chat
+    PubN1 --> Undo: fieldkit_undo_workspace_update
+    Undo --> EditDraft: change by chat
+```
+
+Entries keep the form version they were recorded with, in every state above.
 
 Rules:
 - Every change is a new version. Publishing needs the user's approval (`user_approved`).
