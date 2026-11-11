@@ -1,5 +1,12 @@
 # FieldKit for Hermes Agent
 
+[![Version](https://img.shields.io/badge/version-0.3.2-blue)](plugin.yaml)
+[![Hermes Agent](https://img.shields.io/badge/Hermes%20Agent-%E2%89%A50.23.0-6b4fbb)](plugin.yaml)
+[![Python](https://img.shields.io/badge/Python-%E2%89%A53.10-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](package.json)
+[![PWA](https://img.shields.io/badge/PWA-offline--first-5A0FC8?logo=pwa&logoColor=white)](docs/INSTALL.md)
+[![License: MIT](https://img.shields.io/github/license/Snehal707/fieldkit)](LICENSE)
+
 **Record offline. Sync when back online. Ask your Hermes agent about what you recorded.**
 
 FieldKit is an offline observation collection and synchronisation plugin for Hermes. You describe your work to Hermes in a
