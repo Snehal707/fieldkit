@@ -61,11 +61,12 @@ export interface UnifiedRecord {
   id: string; title: string; when: string; availability: Availability;
   source: string;        // readable: "This device" or another device's name — never an id
   href: string; syncNote?: string; hasReport?: boolean;
+  subject?: string;      // a short label from the answers (asset id, household, farm…), when the form has one
 }
 
-export interface LocalLike { id: string; workflow_title: string; completed_at: string; sync_status: string }
-export interface ServerLike { id: string; workflow_title?: string; workflow_id: string; completed_at?: string; received_at?: number; device_id?: string; report_id?: string | null }
-export interface CopyLike { id: string; workflow_title: string; completed_at?: string; received_at?: number; device_label: string; report: unknown }
+export interface LocalLike { id: string; workflow_title: string; completed_at: string; sync_status: string; subject?: string }
+export interface ServerLike { id: string; workflow_title?: string; workflow_id: string; completed_at?: string; received_at?: number; device_id?: string; report_id?: string | null; subject?: string }
+export interface CopyLike { id: string; workflow_title: string; completed_at?: string; received_at?: number; device_label: string; report: unknown; subject?: string }
 
 /**
  * Merge this device's records, the account's records on Hermes and offline copies into ONE list, one entry per
@@ -79,7 +80,7 @@ export function unifiedRecords(local: LocalLike[], server: ServerLike[], copies:
     const confirmed = r.sync_status === "synced" || r.sync_status === "received";
     out.set(r.id, { id: r.id, title: r.workflow_title, when: r.completed_at, sortKey: ts(r.completed_at),
       availability: confirmed ? "on-device" : "waiting", source: "This device", href: `#/results/${r.id}`,
-      syncNote: confirmed ? undefined : r.sync_status });
+      syncNote: confirmed ? undefined : r.sync_status, subject: r.subject || undefined });
   }
   const copyById = new Map(copies.map((c) => [c.id, c]));
   for (const r of server) {
@@ -88,12 +89,13 @@ export function unifiedRecords(local: LocalLike[], server: ServerLike[], copies:
     out.set(r.id, { id: r.id, title: r.workflow_title ?? r.workflow_id, when: r.completed_at ?? "", sortKey: ts(r.completed_at, r.received_at),
       availability: kept ? "kept-offline" : "needs-internet",
       source: r.device_id === thisDeviceId ? "This device" : (deviceNames.get(r.device_id ?? "") || "Another device"),
-      href: `#/remote/${r.id}`, hasReport: !!r.report_id });
+      href: `#/remote/${r.id}`, hasReport: !!r.report_id, subject: r.subject || kept?.subject || undefined });
   }
   for (const c of copies) {   // copies whose record is no longer in the (possibly stale/offline) server list
     if (out.has(c.id)) continue;
     out.set(c.id, { id: c.id, title: c.workflow_title, when: c.completed_at ?? "", sortKey: ts(c.completed_at, c.received_at),
-      availability: "kept-offline", source: c.device_label || "Another device", href: `#/remote/${c.id}`, hasReport: !!c.report });
+      availability: "kept-offline", source: c.device_label || "Another device", href: `#/remote/${c.id}`, hasReport: !!c.report,
+      subject: c.subject || undefined });
   }
   return [...out.values()].sort((a, b) => b.sortKey - a.sortKey).map(({ sortKey: _s, ...rest }) => rest);
 }

@@ -329,7 +329,7 @@ export const workflowLinkView: View = async (main, p) => {
       return;
     }
   }
-  if (!stored) { main.append(h("div", { class: "banner warn" }, `Workflow "${id}" is not on this device. Connect to the internet to download it.`)); return; }
+  if (!stored) { main.append(h("div", { class: "banner warn" }, `The form "${id}" is not on this device. Open your workspace while online and tap Update from Hermes.`)); return; }
   const l = await lang();
   const wf = stored.definition;
   main.append(h("div", { class: "card", lang: textLang(wf.title, l) }, h("h2", null, text(wf.title, l)), h("p", null, text(wf.description, l)),
@@ -670,6 +670,21 @@ export const resultsView: View = async (main, p) => {
       h("strong", null, rec.sync_status === "synced" ? "Saved to Hermes — confirmed" : "Received by Hermes — files still uploading"),
       h("div", { class: "muted" }, `Confirmed by Hermes ${fmtTime(rec.server_ack?.received_at)}`),
       h("div", { class: "muted" }, "Ask your Hermes agent about this entry in chat: it can read the answers, photos and voice notes.")));
+    if (rec.sync_status === "synced" && isOnline()) {
+      // Only when Hermes confirms, right now, that it still has this record: a record Hermes lost is never removed.
+      const slot = h("div", { class: "row", id: "remove-slot" });
+      main.append(slot);
+      void api(`records/${encodeURIComponent(rec.id)}`).then(() => {
+        slot.append(h("button", { class: "danger small", id: "remove-from-device", onclick: async () => {
+          if (!confirm("Remove this record from this phone? It stays in your Hermes account.")) return;
+          try { await api(`records/${encodeURIComponent(rec.id)}`); }
+          catch { toast("Kept on this phone: Hermes couldn't confirm it has this record right now.", "error"); return; }
+          await deleteRecord(rec.id);
+          toast("Removed from this phone. It's still in your Hermes account.", "ok");
+          go(`#/records?r=${Date.now()}`);
+        } }, "Remove from device"));
+      }, () => { /* offline, signed out or Hermes lacks it: no removal offered */ });
+    }
   }
 
   // Saved responses + media
@@ -949,7 +964,7 @@ export const recordsView: View = async (main) => {
   const onlineOnly = list.filter((r) => r.availability === "needs-internet");
 
   const card = h("div", { class: "card", id: "saved-records" },
-    h("p", { class: "muted" }, "Every record in your Hermes account, from all your devices. Records marked “Available offline” open without internet."));
+    h("p", { class: "muted" }, "Every record in your Hermes account, from all your devices. Tap one to open it."));
   if (problem) {
     card.append(h("div", { class: `banner ${problem.kind === "offline" ? "local" : "warn"}`, id: "records-note", "data-problem": problem.kind },
       h("strong", null, problem.kind === "offline" ? "Offline" : "Couldn't load your account's records"),
@@ -1003,34 +1018,52 @@ export const recordsView: View = async (main) => {
       go(`#/records?r=${Date.now()}`);
     } }, `Download all for offline (${onlineOnly.length})`)));
   }
-  card.append(list.length ? h("ul", { class: "clean", id: "records-list" }, ...list.map((r) => {
-    const offline = r.availability !== "needs-internet";
-    const openable = offline || live;
-    const rec = localById.get(r.id);
-    return h("li", { "data-record-id": r.id, "data-availability": r.availability },
-      openable ? h("a", { href: r.href }, h("strong", null, r.title)) : h("strong", null, r.title), " ",
-      h("span", { class: `badge ${offline ? "avail-offline" : "avail-online"}` }, AVAIL_TEXT[r.availability]),
-      r.availability === "waiting" ? h("span", null, " ", h("span", { class: "badge avail-waiting" },
-        r.syncNote === "error" ? "Not accepted — open to retry" : r.syncNote === "conflict" ? "Conflict — needs your decision" : "Waiting to sync")) : null,
-      h("div", { class: "muted" }, [r.source === "This device" ? "This device" : `From ${r.source}`, fmtTime(r.when),
-        r.syncNote ? STATUS_TEXT[r.syncNote] : null, r.hasReport ? "earlier report available" : null]
-        .filter(Boolean).join(" · ")),
-      h("div", { class: "row" },
-        r.availability === "needs-internet" && live ? h("button", { onclick: async (ev: Event) => {
-          (ev.currentTarget as HTMLButtonElement).disabled = true;
-          try { await d.put("remote", await fetchRemoteCopy(r.id, names, account)); toast("Available offline.", "ok"); }
-          catch (e) { toast(e instanceof AuthRequired ? "Sign in to Hermes first." : `Couldn't download: ${(e as Error).message}`, "error"); }
-          go(`#/records?r=${Date.now()}`);
-        } }, "Make available offline") : null,
-        r.availability === "kept-offline" ? h("button", { onclick: async () => {
-          await d.delete("remote", r.id); toast("Removed from this device. It's still in your Hermes account.", "ok"); go(`#/records?r=${Date.now()}`);
-        } }, "Remove offline copy") : null,
-        // Only when the list just loaded from Hermes includes it: a record Hermes no longer has must never be removed.
-        rec?.sync_status === "synced" && live && serverIds.has(r.id) ? h("button", { class: "danger", onclick: async () => {
-          if (!confirm("Remove this record from this device? It stays in your Hermes account.")) return;
-          await deleteRecord(r.id); toast("Removed from this device. It's still in your Hermes account.", "ok"); go(`#/records?r=${Date.now()}`);
-        } }, "Remove from device") : null));
-  })) : h("p", { class: "muted", id: "records-empty" }, live ? `Hermes has no records for this account yet${account ? ` (Account ID ${account})` : ""}.` : "No records stored on this device. Your account's records will appear here once they can be loaded from Hermes."));
+  // One line per record: what it is (form + subject), one status, where it is, when. Actions live on the record's
+  // own page (tap the row): "Make available offline", "Remove offline copy", "Remove from device".
+  const defs = new Map((await d.getAll("workflows")).map((w) => [w.id, w.definition]));
+  const subjectFor = (r: { id: string; subject?: string }) => {
+    if (r.subject) return r.subject;
+    const own = localById.get(r.id) ?? copies.find((c) => c.id === r.id);
+    return own ? subjectOf(defs.get((own as any).workflow_id), (own as any).answers) : "";
+  };
+  const statusOf = (r: (typeof list)[number]): [string, string] => {
+    const s = localById.get(r.id)?.sync_status;
+    if (!s || s === "synced") return ["synced", "Synced"];
+    if (s === "received") return ["uploading", "Files uploading"];
+    if (s === "error") return ["bad", "Not accepted — open to retry"];
+    if (s === "conflict") return ["bad", "Conflict — open to resolve"];
+    return ["waiting", "Waiting to sync"];
+  };
+  const dayOf = (iso: string) => {
+    const t = new Date(iso);
+    if (Number.isNaN(t.getTime())) return "Earlier";
+    const today = new Date(); const y = new Date(); y.setDate(today.getDate() - 1);
+    return t.toDateString() === today.toDateString() ? "Today" : t.toDateString() === y.toDateString() ? "Yesterday"
+      : t.toLocaleDateString([], { day: "numeric", month: "short", year: t.getFullYear() === today.getFullYear() ? undefined : "numeric" });
+  };
+  const timeOf = (iso: string) => { const t = new Date(iso); return Number.isNaN(t.getTime()) ? "" : t.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); };
+  const groups = new Map<string, typeof list>();
+  for (const r of list) { const k = dayOf(r.when); if (!groups.has(k)) groups.set(k, []); groups.get(k)!.push(r); }
+  card.append(list.length ? h("div", { id: "records-list" }, ...[...groups.entries()].map(([day, rows]) => h("section", { class: "rec-day" },
+    h("h3", null, day),
+    h("ul", { class: "records" }, ...rows.map((r) => {
+      const offline = r.availability !== "needs-internet";
+      const openable = offline || live;
+      const [cls, status] = statusOf(r);
+      const subject = subjectFor(r);
+      const where = r.source === "This device" ? (offline ? "This phone" : "Made on this phone") : `From ${r.source}`;
+      const body = [
+        h("span", { class: "rec-title" }, h("strong", null, r.title), subject ? h("span", { class: "subject" }, subject) : null),
+        h("span", { class: "rec-meta" },
+          h("span", { class: `rec-status ${cls}` }, status),
+          h("span", { class: offline ? "avail-offline" : "avail-online" }, AVAIL_TEXT[r.availability]),
+          h("span", { class: "muted" }, where),
+          h("span", { class: "muted" }, timeOf(r.when)),
+          r.hasReport ? h("span", { class: "muted" }, "Earlier report") : null),
+      ];
+      return h("li", { "data-record-id": r.id, "data-availability": r.availability },
+        openable ? h("a", { href: r.href }, ...body, icon("chevron", 16)) : h("div", { class: "rec-off" }, ...body));
+    }))))) : h("p", { class: "muted", id: "records-empty" }, live ? `Hermes has no records for this account yet${account ? ` (Account ID ${account})` : ""}.` : "No records stored on this device. Your account's records will appear here once they can be loaded from Hermes."));
   main.append(card);
   // Quietly refresh offline copies whose record changed on Hermes (e.g. a report arrived after it was downloaded).
   if (live) {

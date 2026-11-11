@@ -84,46 +84,59 @@ export const ocrView: View = async (main) => {
 export const packsView: View = async (main) => {
   const [wfs, models] = await Promise.all([installedWorkflows(), installedModels()]);
   const l = await lang();
-  const onDevice = h("div");
-  main.append(h("div", { class: "card" }, h("h2", null, "On this device"),
-    h("h3", null, "Forms"), wfs.length ? h("ul", { class: "clean" }, ...wfs.map((w) => h("li", { class: "row" },
-      h("span", { class: "grow" }, `${text(w.definition.title, l)} · v${w.version}`),
-      h("button", { class: "danger", onclick: async () => { try { await removeWorkflow(w.id); go(`#/packs?r=${Date.now()}`); } catch (e) { toast((e as Error).message, "error"); } } }, "Remove"))))
-      : h("p", { class: "muted" }, "None. Forms come with your workspace (Workspace tab)."),
-    h("h3", null, "Offline OCR and translation"), onDevice));
-  const paintOnDevice = (list: typeof models) => {
-    clear(onDevice);
-    onDevice.append(list.length ? h("ul", { class: "clean" }, ...list.map((m) => h("li", { class: "row", "data-on-device": m.id },
-      h("span", { class: "grow" }, `${m.title}`, h("div", { class: "muted" }, `${m.verified ? "✔" : "⚠"} ${m.verify_detail ?? ""} · installed ${fmtTime(m.installed_at)}`)),
-      h("button", { class: "danger", onclick: async () => { await removeModel(m.id); go(`#/packs?r=${Date.now()}`); } }, "Remove"))))
-      : h("p", { class: "muted" }, "None"));
-  };
-  paintOnDevice(models);
-  const onInstalled = async () => paintOnDevice(await installedModels());
-  document.addEventListener("fieldkit:model-installed", onInstalled);
-  window.addEventListener("hashchange", () => document.removeEventListener("fieldkit:model-installed", onInstalled), { once: true });
+  // Forms come with the workspace and are updated there; listed here only so storage is visible (never removed here).
+  main.append(h("div", { class: "card", id: "packs-forms" }, h("h2", null, "Forms"),
+    h("p", { class: "muted" }, "Managed by your workspace. Update them from the Workspace page."),
+    wfs.length ? h("ul", { class: "clean" }, ...wfs.map((w) => h("li", null, text(w.definition.title, l), h("span", { class: "muted" }, `  version ${w.version}`))))
+      : h("p", { class: "muted" }, "None yet. Forms come with your workspace (Workspace tab).")));
 
-  const avail = h("div", { class: "card" }, h("h2", null, "Optional offline packs"),
+  const card = h("div", { class: "card", id: "packs-models" }, h("h2", null, "OCR and translation"),
     h("p", { class: "muted" }, "Read text from a photo (OCR) and translate sentences without internet. Downloaded once from their pinned "
       + "upstream sources; use Wi-Fi."));
-  main.append(avail);
-  if (!isOnline()) { avail.append(h("p", { class: "muted" }, "Connect to the internet to download packs.")); return; }
-  let cat;
-  try { cat = await fetchCatalog(); } catch (e) {
-    if (e instanceof AuthRequired) { avail.append(await signInBanner()); return; }
-    avail.append(h("p", { class: "muted" }, describeLoadProblem(e, isOnline()).message.replace("your records", "the catalog")),
-      h("button", { onclick: () => go(`#/packs?r=${Date.now()}`) }, "Try again")); return;
+  main.append(card);
+  let cat: any = null;
+  let note: HTMLElement | null = null;
+  if (!isOnline()) note = h("p", { class: "muted" }, "Offline: connect to the internet to download more packs.");
+  else {
+    try { cat = await fetchCatalog(); } catch (e) {
+      if (e instanceof AuthRequired) note = await signInBanner();
+      else note = h("div", null, h("p", { class: "muted" }, describeLoadProblem(e, isOnline()).message.replace("your records", "the catalog")),
+        h("button", { onclick: () => go(`#/packs?r=${Date.now()}`) }, "Try again"));
+    }
   }
-  avail.append(h("ul", { class: "clean" }, ...cat.models.packs.map((m: any) => modelRow(m, models.find((x) => x.id === m.id)))));
+  // Each pack once: from the catalog when it loaded, else the packs already on this device.
+  const rows: any[] = cat ? cat.models.packs : models.map((m) => ({ ...m.manifest, id: m.id, title: m.title, capability: m.capability, version: m.version }));
+  card.append(rows.length ? h("ul", { class: "clean packs" }, ...rows.map((m) => modelRow(m, models.find((x) => x.id === m.id), !!cat)))
+    : h("p", { class: "muted" }, "None on this device."));
+  if (note) card.append(note);
 };
 
-function modelRow(m: any, have: InstalledModel | undefined) {
-  const installed = !!have;
+function modelRow(m: any, have: InstalledModel | undefined, canDownload: boolean) {
   const outdated = !!have && (have.version ?? 1) < (m.version ?? 1);
   const prog = h("progress", { max: 100, value: 0, style: "display:none" }) as HTMLProgressElement;
-  const status = h("div", { class: "muted" }, `${m.license} · ${fmtBytes(m.download_size)}${m.quality_note ? ` · ${m.quality_note}` : ""}`,
-    outdated ? h("div", { class: "banner warn", "data-model-update": m.id }, `Update available: ${m.update_note || "improved version"}. The installed version keeps working until you update.`) : null);
-  const b = h("button", { class: installed ? "" : "primary", onclick: async () => {
+  const facts = [m.license, m.download_size ? fmtBytes(m.download_size) : "", m.quality_note].filter(Boolean).join(", ");
+  const status = h("div", { class: "muted" }, facts);
+  const state = h("div", { class: "pack-state" });
+  const li = h("li", { "data-pack": m.id });
+  const paint = (inst: InstalledModel | undefined) => {
+    clear(state);
+    if (inst) li.setAttribute("data-on-device", m.id); else li.removeAttribute("data-on-device");
+    if (inst) {
+      state.append(h("span", { class: inst.verified ? "ok" : "wait" }, inst.verified ? `Installed, self-test passed (${fmtTime(inst.installed_at)})`
+        : `Installed, but its self-test did not pass${inst.verify_detail ? `: ${inst.verify_detail}` : ""}`));
+      if (outdated) state.append(h("div", { class: "banner warn", "data-model-update": m.id },
+        `Update available: ${m.update_note || "improved version"}. The installed version keeps working until you update.`));
+    }
+  };
+  const remove = h("button", { class: "danger small", "data-remove": m.id, onclick: async () => {
+    if (!confirm(`Remove “${m.title}” from this phone? You can download it again later (${m.download_size ? fmtBytes(m.download_size) : "needs internet"}).`)) return;
+    await removeModel(m.id);
+    toast(`${m.title} removed from this phone.`, "ok");
+    go(`#/packs?r=${Date.now()}`);
+  } }, "Remove");
+  // Install when missing; Update when a newer version exists; Reinstall only when the installed copy failed its self-test.
+  const action = !have ? "Install" : outdated ? "Update" : !have.verified ? "Reinstall" : "";
+  const b = h("button", { class: "primary small", "data-model": m.id, hidden: !action || !canDownload, onclick: async () => {
     b.disabled = true; prog.style.display = "block";
     const totals = new Map<string, [number, number]>();
     const onProgress = (p: any) => {
@@ -136,21 +149,22 @@ function modelRow(m: any, have: InstalledModel | undefined) {
     try {
       const fn = m.capability === "translation" ? installTranslation : installOcr;
       const r = await fn(m, onProgress);
-      status.textContent = `Installed and self-tested on this device · ${r.verify_detail}`;
-      // The label used to be computed only when the screen was drawn, so a model installed while the
-      // screen stayed open kept saying "Install". Reflect the new (already persisted) state right away.
-      b.textContent = "Reinstall";
-      b.className = "";
+      status.textContent = `Installed and self-tested on this device: ${r.verify_detail}`;
+      // Reflect the new (already persisted) state right away, without reloading the screen.
+      b.hidden = true;
       b.setAttribute("data-installed", "true");
+      remove.hidden = false;
+      paint((await installedModels()).find((x) => x.id === m.id));
+      prog.style.display = "none";
       document.dispatchEvent(new CustomEvent("fieldkit:model-installed", { detail: { id: m.id } }));
       toast(`${m.title} ready offline`, "ok");
-    } catch (e) { status.textContent = `Install failed: ${(e as Error).message}`; }
-    b.disabled = false;
-  } }, outdated ? "Update" : installed ? "Reinstall" : "Install");
-  if (outdated) b.className = "primary";
-  b.setAttribute("data-model", m.id);
-  if (installed) b.setAttribute("data-installed", "true");
-  return h("li", null, h("div", { class: "row" }, h("strong", { class: "grow" }, m.title), b), status, prog);
+    } catch (e) { status.textContent = `Install failed: ${(e as Error).message}`; b.disabled = false; }
+  } }, action || "Install");
+  if (have) b.setAttribute("data-installed", "true");
+  remove.hidden = !have;
+  paint(have);
+  li.append(h("div", { class: "row" }, h("strong", { class: "grow" }, m.title), b, remove), status, state, prog);
+  return li;
 }
 
 // ------------------------------------------------------------------ settings

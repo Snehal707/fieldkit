@@ -26,13 +26,14 @@ test("offline translation (en→hi) and OCR after cold restart with no network",
   console.log("phase: install", new Date().toISOString());
   await expect(page.locator("li", { hasText: "English → Hindi translation" }).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.locator("text=Not yet available")).toHaveCount(0);   // no placeholder packs
-  for (const title of ["English → Hindi translation", "OCR — English"]) {
-    const item = page.locator("li", { hasText: title }).filter({ has: page.getByRole("button", { name: /install/i }) });
+  for (const id of ["translate-en-hi", "ocr-eng"]) {
+    const item = page.locator(`li[data-pack="${id}"]`);
     if (process.env.FIELDKIT_E2E_SKIP_INSTALL) break;
-    await item.getByRole("button", { name: /install/i }).click();
+    if (await item.getAttribute("data-on-device")) continue;               // already installed in this profile
+    await item.locator(`button[data-model="${id}"]`).click();
     await expect(item.locator("text=Installed and self-tested on this device")).toBeVisible({ timeout: 600_000 });
   }
-  const verify = await page.locator("li", { hasText: "English → Hindi translation" }).filter({ has: page.getByRole("button", { name: /install/i }) }).innerText();
+  const verify = await page.locator('li[data-pack="translate-en-hi"]').innerText();
   console.log("translation install:", verify.replace(/\s+/g, " ").slice(0, 300));
   await ctx.close();
 

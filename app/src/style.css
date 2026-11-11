@@ -20,6 +20,7 @@ html, body { margin: 0; background: var(--bg); color: var(--ink);
 body { padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
 a { color: var(--brand); text-underline-offset: 2px; }
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+[hidden] { display: none !important; }   /* the hidden attribute always wins over component display rules */
 ::selection { background: color-mix(in srgb, var(--brand) 28%, transparent); color: inherit; }
 input, textarea { caret-color: var(--brand); }
 .ico { display: inline-flex; line-height: 0; flex: none; }
@@ -165,6 +166,29 @@ ul.ws-list strong { display: block; }
 ul.ws-list .muted { display: block; font-size: .85rem; }
 ul.ws-list .open-link { flex: none; color: var(--brand); font-weight: 650; font-size: .9rem; }
 ul.ws-list li[data-current] a { font-weight: 500; }
+
+/* ---------------------------------------------------------------- Saved Records: one line per record, grouped by day */
+.rec-day h3 { font-size: .8rem; font-weight: 650; color: var(--muted); margin: 1rem 0 .1rem; }
+.rec-day:first-child h3 { margin-top: .4rem; }
+ul.records { list-style: none; padding: 0; margin: 0; }
+ul.records li + li { border-top: 1px solid var(--line-soft); }
+ul.records a, ul.records .rec-off { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: .6rem;
+  padding: .6rem 0; min-height: var(--tap); color: var(--ink); text-decoration: none; }
+ul.records .ico { grid-row: 1 / span 2; grid-column: 2; color: var(--muted); }
+.rec-title { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-title strong { font-size: .97rem; }
+.rec-title .subject { margin-left: .45rem; font-weight: 650; color: var(--ink); }
+.rec-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .1rem .7rem; font-size: .8rem; margin-top: .15rem; }
+.rec-meta .avail-offline { color: var(--ok); } .rec-meta .avail-online { color: var(--info); }
+.rec-status { display: inline-flex; align-items: center; gap: .3rem; font-weight: 650; }
+.rec-status::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+.rec-status.synced { color: var(--ok); } .rec-status.waiting, .rec-status.uploading { color: var(--info); } .rec-status.bad { color: var(--bad); }
+
+/* ---------------------------------------------------------------- Offline Packs */
+ul.packs li { padding: .75rem 0; }
+ul.packs .row { margin-top: 0; }
+.pack-state { font-size: .85rem; margin-top: .2rem; }
+.pack-state .banner { margin: .4rem 0 0; }
 
 /* ---------------------------------------------------------------- bottom navigation */
 nav.bottom { position: fixed; bottom: 0; left: 0; right: 0; z-index: 5; background: var(--card); border-top: 1px solid var(--line);

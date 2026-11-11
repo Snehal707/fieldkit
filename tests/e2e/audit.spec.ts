@@ -117,13 +117,18 @@ test("a record Hermes rejected can be retried; removal never deletes what Hermes
   await expect.poll(async () => (await serverIds(A.ctx)).includes(rejected), { timeout: 60_000, intervals: [1_000] }).toBe(true);
   await A.page.goto(`${APP}#/results/${rejected}?r=${Date.now()}`);
   await expect(A.page.locator("text=Saved to Hermes — confirmed")).toBeVisible({ timeout: 30_000 });
+  await expect(A.page.locator("#remove-from-device")).toBeVisible({ timeout: 15_000 });   // offered: Hermes has it
 
   // 4. Hermes loses a confirmed record: no "Remove from device" for it, and Free up space keeps it.
   dropRecord(rejected);
   await A.page.goto(`${APP}#/records?r=${Date.now()}`);
   const row = A.page.locator(`#records-list li[data-record-id="${rejected}"]`);
   await expect(row).toHaveAttribute("data-availability", "on-device", { timeout: 20_000 });
-  await expect(row.getByRole("button", { name: "Remove from device" })).toHaveCount(0);
+  await expect(row.getByRole("button")).toHaveCount(0);                                   // no actions on list rows
+  await A.page.goto(`${APP}#/results/${rejected}?r=${Date.now()}`);
+  await expect(A.page.locator("#remove-slot")).toBeAttached({ timeout: 15_000 });
+  await A.page.waitForTimeout(3_000);                                                       // Hermes answered 404
+  await expect(A.page.locator("#remove-from-device")).toHaveCount(0);
   await A.page.goto(`${APP}#/settings?r=${Date.now()}`);
   await A.page.locator("#free-space-card").getByRole("button", { name: "Remove confirmed records" }).click();
   await expect(A.page.locator(".toast", { hasText: "Kept" })).toBeVisible();

@@ -1,5 +1,5 @@
 // UI regressions (v0.1.6):
-// 1. Offline Packs: a model installed while the screen is open flips to "Reinstall" immediately, appears in
+// 1. Offline Packs: a model installed while the screen is open shows as installed (with Remove) immediately, appears in
 //    "On this device", stays installed after reload (IndexedDB), and works offline after a cold restart.
 // 2. Update notice from a REAL service-worker update: compact, opaque, in page flow under the header, never
 //    overlapping content, the bottom nav or a focused input; one instance; fits a 320 px wide screen.
@@ -24,7 +24,7 @@ async function signedIn(profile: string, opts: object = {}) {
   return { ctx, page };
 }
 
-test("installed models flip to Reinstall immediately, persist, and work offline", async () => {
+test("installed models show as installed immediately, persist, and work offline", async () => {
   test.skip(!PASS || !process.env.FIELDKIT_E2E_MODELS, "set FIELDKIT_E2E_PASS and FIELDKIT_E2E_MODELS=1");
   test.setTimeout(1_200_000);
   const profile = process.env.FIELDKIT_E2E_PROFILE ?? mkdtempSync(join(tmpdir(), "fieldkit-ui-"));
@@ -38,12 +38,16 @@ test("installed models flip to Reinstall immediately, persist, and work offline"
     await btn.click();
     const row = page.locator("li", { has: btn });
     await expect(row.locator("text=Installed and self-tested on this device")).toBeVisible({ timeout: 900_000 });
-    await expect(btn).toHaveText("Reinstall");                        // no reload needed
+    await expect(btn).toBeHidden();                                   // no reload needed: no Install/Reinstall any more
     await expect(btn).toHaveAttribute("data-installed", "true");
-    await expect(page.locator(`[data-on-device="${ids[t]}"]`)).toBeVisible();  // "On this device" updated too
+    await expect(page.locator(`button[data-remove="${ids[t]}"]`)).toBeVisible();
+    await expect(page.locator(`[data-on-device="${ids[t]}"]`)).toBeVisible();
   }
   await page.reload();
-  for (const t of titles) await expect(page.locator(`button[data-model="${ids[t]}"]`)).toHaveText("Reinstall");
+  for (const t of titles) {
+    await expect(page.locator(`[data-on-device="${ids[t]}"]`)).toContainText("Installed, self-test passed");
+    await expect(page.locator(`button[data-model="${ids[t]}"]`)).toBeHidden();
+  }
   await ctx.close();
 
   ctx = await engine.launchPersistentContext(profile, { offline: true, viewport: { width: 390, height: 844 } });
