@@ -398,6 +398,6 @@ def app_files(path: str):
         headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net; "
             "worker-src 'self' blob:; connect-src 'self' https://huggingface.co https://*.hf.co https://cdn-lfs.hf.co "
-            "https://cdn.jsdelivr.net https://tessdata.projectnaptha.com blob: data:; img-src 'self' blob: data:; "
+            "https://cdn.jsdelivr.net blob: data:; img-src 'self' blob: data:; "
             "media-src 'self' blob:; style-src 'self' 'unsafe-inline'")
     return FileResponse(target, media_type=media, headers=headers)
