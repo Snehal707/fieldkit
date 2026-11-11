@@ -96,7 +96,7 @@ s.conn.commit()
     await expect(row(me.page, theirs)).toHaveCount(1);
     await expect(row(me.page, mine)).toHaveAttribute("data-availability", "on-device");
     await expect(row(me.page, mine)).toContainText("Available offline");
-    await expect(row(me.page, mine)).toContainText("This device");
+    await expect(row(me.page, mine)).toContainText("This phone");
     await expect(row(me.page, theirs)).toHaveAttribute("data-availability", "needs-internet");
     await expect(row(me.page, theirs)).toContainText("Needs internet");
     await expect(row(me.page, theirs)).toContainText(`From ${otherName}`);
