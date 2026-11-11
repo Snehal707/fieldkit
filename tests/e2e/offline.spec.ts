@@ -6,7 +6,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { signIn } from "./auth";
-import { downloadWorkspace, startEntry } from "./helpers";
+import { allServerIds, downloadWorkspace, startEntry } from "./helpers";
 
 // FIELDKIT_E2E_BROWSER=webkit runs the same test on WebKit (Safari's engine).
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
@@ -33,7 +33,7 @@ test("install online, then work fully offline after a cold restart, then sync", 
   // ---------- 1. online setup
   let ctx = await launch(false);
   await login(ctx);
-  const baseline = (await (await ctx.request.get(`${API}/records?limit=500`)).json()).records.length;
+  const baseline = (await allServerIds(ctx.request, API)).length;
   let page = await ctx.newPage();
   await page.goto(APP);
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);
@@ -103,8 +103,9 @@ test("install online, then work fully offline after a cold restart, then sync", 
   // re-run sync: still exactly one server record (idempotent)
   await page.goto(`${APP}#/sync`);
   await page.getByRole("button", { name: /Sync now/ }).click();
-  const recs = (await (await ctx.request.get(`${API}/records?limit=500`)).json()).records;
+  const recs = await allServerIds(ctx.request, API);
   expect(recs).toHaveLength(baseline + 1);  // exactly one new server record, even after a forced re-sync
+  expect(recs.filter((r) => r === recordId)).toHaveLength(1);
   const full = await (await ctx.request.get(`${API}/records/${recordId}`)).json();
   expect(full.sync_status).toBe("complete");
   expect(full.revision).toBe(1);

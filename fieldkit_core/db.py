@@ -774,11 +774,9 @@ class Store:
             d.pop("local_results", None)
         return d
 
-    def list_records(self, owner: Any, workflow_id: Optional[str] = None, limit: int = 50, full: bool = False,
-                     since: Optional[str] = None, until: Optional[str] = None) -> list[dict]:
-        """Newest first. ``since``/``until`` filter on when the entry was completed on the phone (ISO date/time)."""
+    def _records_where(self, owner: Any, workflow_id: Optional[str], since: Optional[str], until: Optional[str]) -> tuple[str, tuple]:
         clause, args = self._owner_clause(owner)
-        sql = f"SELECT * FROM records WHERE {clause}"
+        sql = f" WHERE {clause}"
         if workflow_id:
             sql += " AND workflow_id=?"
             args = (*args, workflow_id)
@@ -788,8 +786,20 @@ class Store:
         if until:
             sql += " AND COALESCE(completed_at, created_local_at, '') <= ?"
             args = (*args, until)
-        sql += " ORDER BY received_at DESC LIMIT ?"
-        return [self._record_dict(r, full) for r in self._q(sql, (*args, max(1, min(limit, 500))))]
+        return sql, args
+
+    def count_records(self, owner: Any, workflow_id: Optional[str] = None, since: Optional[str] = None,
+                      until: Optional[str] = None) -> int:
+        where, args = self._records_where(owner, workflow_id, since, until)
+        return self._q(f"SELECT COUNT(*) n FROM records{where}", args)[0]["n"]
+
+    def list_records(self, owner: Any, workflow_id: Optional[str] = None, limit: int = 50, full: bool = False,
+                     since: Optional[str] = None, until: Optional[str] = None, offset: int = 0) -> list[dict]:
+        """Newest first, in a stable order (received time, then id) so pages never skip or repeat a record.
+        ``since``/``until`` filter on when the entry was completed on the phone (ISO date/time)."""
+        where, args = self._records_where(owner, workflow_id, since, until)
+        sql = f"SELECT * FROM records{where} ORDER BY received_at DESC, id DESC LIMIT ? OFFSET ?"
+        return [self._record_dict(r, full) for r in self._q(sql, (*args, max(1, min(limit, 500)), max(0, int(offset))))]
 
     def get_record(self, owner: Any, rid: str) -> dict:
         clause, args = self._owner_clause(owner)

@@ -83,8 +83,7 @@ c.commit()
   await expect(A.page.locator("#records-missing")).toHaveAttribute("data-missing", "1");
   await expect(A.page.locator("#records-missing")).toContainText("Hermes doesn't have 1 record(s) from this device");
   await A.page.locator("#resend-missing").click();
-  await expect.poll(async () => (await (await A.ctx.request.get(`${API}/records?limit=500`)).json()).records.some((r: any) => r.id === id),
-    { timeout: 60_000, intervals: [1_000] }).toBe(true);
+  await expect.poll(async () => (await A.ctx.request.get(`${API}/records/${id}`)).status(), { timeout: 60_000, intervals: [1_000] }).toBe(200);
   const back = await (await A.ctx.request.get(`${API}/workflows/${WF_ID}?version=1`)).json();
   expect(back.version).toBe(1);                                         // the exact version the record was made with
   // Restored only so the record could upload again: never published (publishing goes through Hermes, with approval).

@@ -11,7 +11,7 @@ import { enqueueRecord, getSyncState, runSync } from "./sync";
 import { clear, fmtBytes, fmtTime, h, isOnline, toast } from "./util";
 import { icon } from "./icons";
 import { go, lang, signInBanner, whoAmI, type View } from "./views_core";
-import { currentDeviceLabel, describeLoadProblem, registerDevice } from "./device";
+import { currentDeviceLabel, describeLoadProblem, fetchAllRecords, registerDevice } from "./device";
 import { languageLabel, requestOutcome, requestProtection, storageMessage, storageState } from "./storage";
 
 // ------------------------------------------------------------------ translate
@@ -254,7 +254,7 @@ export const settingsView: View = async (main) => {
       if (!confirm(`Remove up to ${synced.length} record(s) from this device? They stay in your Hermes account.`)) return;
       btn.disabled = true;
       let onServer: Set<string>;
-      try { onServer = new Set((await api<{ records: { id: string }[] }>("records?limit=500")).records.map((r) => r.id)); }
+      try { onServer = new Set((await fetchAllRecords((p) => api(p))).records.map((r) => r.id)); }
       catch (e) {
         toast(e instanceof AuthRequired ? "Sign in to Hermes first, so FieldKit can check what Hermes has." : `Nothing removed: ${describeLoadProblem(e, isOnline()).message}`, "error");
         btn.disabled = false; return;

@@ -115,8 +115,14 @@ def list_records(a: dict) -> str:
             return _fail(f"unknown workspace {wid!r}")
         wfs = [w.get("id") for w in b.get("workflows") or []] + list(b.get("workflow_refs") or [])
     rows = []
-    for w in wfs:
-        rows += store.list_records(ALL, w, 500, full=True, since=a.get("since"), until=a.get("until"))
+    for w in wfs:   # every matching record, page by page (not only the newest 500)
+        offset = 0
+        while True:
+            page = store.list_records(ALL, w, 500, full=True, since=a.get("since"), until=a.get("until"), offset=offset)
+            rows += page
+            if len(page) < 500:
+                break
+            offset += len(page)
     rows.sort(key=lambda r: r.get("received_at") or 0, reverse=True)
     cache: dict = {}
     subject = str(a.get("subject") or "").strip().lower()

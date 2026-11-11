@@ -1,10 +1,21 @@
 // Shared steps for the E2E suite: the example workspaces are seeded into the test Hermes by global-setup.ts.
-import { expect, type Page } from "@playwright/test";
+import { expect, type APIRequestContext, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 
 export const EXAMPLE_WS = "starter-equipment-inspection";
 export const EXAMPLE_FORM = "equipment-inspection";
+
+/** Every record id of the signed-in account on Hermes, page by page (the server sends at most 500 per request). */
+export async function allServerIds(request: APIRequestContext, api: string): Promise<string[]> {
+  const ids: string[] = [];
+  for (let offset: number | null = 0; offset !== null;) {
+    const body: any = await (await request.get(`${api}/records?limit=500&offset=${offset}`)).json();
+    ids.push(...body.records.map((r: any) => r.id));
+    offset = body.next_offset ?? null;
+  }
+  return ids;
+}
 
 /** Download a workspace (manifest + forms) for offline use, from its page. */
 export async function downloadWorkspace(page: Page, app: string, wid = EXAMPLE_WS): Promise<void> {

@@ -2,7 +2,7 @@
 import { api, AuthRequired, HttpError, Offline } from "./api";
 import { APP_VERSION, signIn } from "./config";
 import { db, definitionFor, deleteRecord, deviceId, getSetting, setSetting, type Attachment, type Draft, type LocalRecord, type RemoteCopy, type StoredReport } from "./db";
-import { describeLoadProblem, missingOnServer, unifiedRecords, type Availability, type LoadProblem, type ServerLike } from "./device";
+import { describeLoadProblem, fetchAllRecords, missingOnServer, unifiedRecords, type Availability, type LoadProblem, type ServerLike } from "./device";
 import { computeState, ERROR_TEXT, text, type Field, type Workflow } from "./engine";
 import { installedModels, ocr, ocrLanguages } from "./intel";
 import { attachmentUrl, captureGps, compressPhoto, getAttachment, hermesMediaUrl, saveAttachment, signaturePad, updateAttachment, VoiceRecorder } from "./media";
@@ -269,7 +269,7 @@ async function accountRecordsSummary(tryLive: boolean): Promise<AccountSummary> 
     // Never hold Home hostage to a slow network: give Hermes a few seconds, else use the remembered list.
     const timeout = new Promise<never>((_, no) => setTimeout(() => no(new Offline("timeout")), 4000));
     try {
-      const [{ records }, who] = await Promise.race([Promise.all([api<{ records: ServerLike[] }>("records?limit=500"), api<{ user_id: string }>("me")]), timeout]);
+      const [{ records }, who] = await Promise.race([Promise.all([fetchAllRecords((p) => api(p)), api<{ user_id: string }>("me")]), timeout]);
       account = who.user_id;
       const keep = index && index.user_id === account ? index.devices : [];
       index = { user_id: account, at: nowIso(), records, devices: keep };
@@ -920,7 +920,7 @@ export const recordsView: View = async (main) => {
   let partial: LoadProblem | null = null;      // the list loaded, but device names didn't
   // Only the record list is required. Device names and the identity check are optional extras: their failure
   // must never hide records that did load (v0.2.0 bug: a 404 on `devices` emptied the list and said "Offline").
-  const [recRes, devRes, whoRes] = await Promise.allSettled([api<{ records: ServerLike[] }>("records?limit=500"),
+  const [recRes, devRes, whoRes] = await Promise.allSettled([fetchAllRecords((p) => api(p)),
     api<{ devices: any[] }>("devices"), api<{ user_id: string }>("me")]);
   if (recRes.status === "fulfilled") {
     live = true;
@@ -965,7 +965,7 @@ export const recordsView: View = async (main) => {
     // Records Hermes confirmed earlier but no longer has for this account: its FieldKit data was reset, or the
     // host answered from another machine with its own data. They are still on this device; offer to upload again.
     const serverRecs = recRes.status === "fulfilled" ? recRes.value.records : [];
-    const missing = missingOnServer(local, serverRecs.map((r) => r.id), serverRecs.length < 500);
+    const missing = missingOnServer(local, serverRecs.map((r) => r.id), recRes.status === "fulfilled" && recRes.value.complete);
     if (missing.length) {
       const st = await api<{ store?: { store_id?: string; records_for_you?: number }; instance?: { machine?: string } }>("status").catch(() => null);
       const where = st?.store?.store_id ? ` (Hermes data store ${st.store.store_id}${st.instance?.machine ? ` on ${st.instance.machine}` : ""})` : "";

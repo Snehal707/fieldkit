@@ -127,6 +127,33 @@ export function describeLoadProblem(e: unknown, browserOnline: boolean, serverVe
  * Records this device saved and Hermes CONFIRMED earlier, but that are missing from the account's list now.
  * Only meaningful when the server list is complete (not truncated by the limit).
  */
+/** One page of the account's records as the server sends it (``total``/``next_offset`` since FieldKit 0.3.1). */
+export interface RecordPage { records: ServerLike[]; total?: number; next_offset?: number | null }
+
+/**
+ * Every record in the account, page by page (the server sends at most 500 at a time). ``complete`` is true only when
+ * the list was read to the end, so callers never treat a partial list as the whole account (e.g. never report records
+ * as missing on Hermes from a partial list). Duplicates (a record arriving while paging) are dropped; an older server
+ * without paging gives one page, complete only if it held fewer than a full page.
+ */
+export async function fetchAllRecords(get: (path: string) => Promise<RecordPage>, pageSize = 500, maxPages = 200):
+    Promise<{ records: ServerLike[]; complete: boolean; total: number }> {
+  const seen = new Map<string, ServerLike>();
+  let offset = 0;
+  for (let i = 0; i < maxPages; i++) {
+    const page = await get(`records?limit=${pageSize}&offset=${offset}`);
+    const before = seen.size;
+    for (const r of page.records ?? []) if (!seen.has(r.id)) seen.set(r.id, r);
+    if (page.next_offset === undefined) {         // a server from before paging: one page only
+      return { records: [...seen.values()], complete: (page.records ?? []).length < pageSize, total: seen.size };
+    }
+    if (page.next_offset === null) return { records: [...seen.values()], complete: true, total: Math.max(page.total ?? 0, seen.size) };
+    if (seen.size === before || page.next_offset <= offset) break;   // no progress: stop instead of looping
+    offset = page.next_offset;
+  }
+  return { records: [...seen.values()], complete: false, total: seen.size };
+}
+
 export function missingOnServer(local: LocalLike[], serverIds: Iterable<string>, listComplete: boolean): LocalLike[] {
   if (!listComplete) return [];
   const have = new Set(serverIds);

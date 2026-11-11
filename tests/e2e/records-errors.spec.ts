@@ -7,6 +7,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { signIn } from "./auth";
+import { allServerIds } from "./helpers";
 
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
@@ -28,7 +29,7 @@ test.beforeAll(async () => {
     record: { id: `rec_err${Date.now()}`, workflow_id: "equipment-inspection", workflow_version: 1, base_revision: 0,
       answers: { asset_id: "ERR-0001" }, created_local_at: new Date().toISOString(), completed_at: new Date().toISOString() } } });
   expect(synced.ok(), await synced.text()).toBe(true);
-  serverCount = (await (await ctx.request.get(`${API}/records?limit=500`)).json()).records.length;
+  serverCount = (await allServerIds(ctx.request, API)).length;
   page = await ctx.newPage();
   await page.goto(APP);
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller), { timeout: 30_000 }).toBe(true);

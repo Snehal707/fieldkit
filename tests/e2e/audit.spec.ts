@@ -11,7 +11,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { signIn } from "./auth";
-import { downloadWorkspace, EXAMPLE_FORM, EXAMPLE_WS, publishFormAsWorkspace, startEntry } from "./helpers";
+import { allServerIds, downloadWorkspace, EXAMPLE_FORM, EXAMPLE_WS, publishFormAsWorkspace, startEntry } from "./helpers";
 
 const engine = process.env.FIELDKIT_E2E_BROWSER === "webkit" ? webkit : chromium;
 const BASE = process.env.FIELDKIT_E2E_BASE ?? "http://127.0.0.2:9300";
@@ -56,7 +56,7 @@ async function complete(page: Page, asset: string, form = EXAMPLE_FORM, wid = EX
   return page.url().split("#/results/")[1].split("?")[0];
 }
 
-const serverIds = async (ctx: BrowserContext) => (await (await ctx.request.get(`${API}/records?limit=500`)).json()).records.map((r: any) => r.id) as string[];
+const serverIds = (ctx: BrowserContext) => allServerIds(ctx.request, API);
 
 test.beforeEach(() => { test.skip(!PASS || !DATA_DIR, "set FIELDKIT_E2E_PASS and FIELDKIT_E2E_DATA_DIR"); });
 test.afterAll(() => {

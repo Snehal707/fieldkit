@@ -265,12 +265,16 @@ def resolve_conflict(cid: str, request: Request, resolution: str = Body(...), me
 
 # ----------------------------------------------------------------------------- records & reports
 @router.get("/records")
-def list_records(request: Request, workflow_id: Optional[str] = None, limit: int = Query(50, le=500)):
+def list_records(request: Request, workflow_id: Optional[str] = None, limit: int = Query(50, ge=1, le=500),
+                 offset: int = Query(0, ge=0)):
+    """One page of the user's records, newest first. ``total`` is the full count and ``next_offset`` the offset of the
+    next page (null on the last page), so clients can load every record however many there are."""
     store = get_store()
     uid = _uid(request)
-    rows = store.list_records(uid, workflow_id, limit)
+    rows = store.list_records(uid, workflow_id, limit, offset=offset)
     _label(store, uid, rows, "id")   # lets other devices and the dashboard show readable names
-    return {"records": rows}
+    total = store.count_records(uid, workflow_id)
+    return {"records": rows, "total": total, "next_offset": offset + len(rows) if offset + len(rows) < total else None}
 
 
 def _subject(wf: Optional[dict], answers: dict) -> str:
