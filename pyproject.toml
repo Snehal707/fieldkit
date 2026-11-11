@@ -1,7 +1,7 @@
 [project]
 name = "hermes-fieldkit"
 version = "0.3.2"
-description = "FieldKit: offline field workflows for Hermes Agent"
+description = "FieldKit: offline observation forms for Hermes Agent"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = ["jsonschema>=4.17,<5"]

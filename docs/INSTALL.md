@@ -7,8 +7,7 @@ Steps at a glance:
 ```mermaid
 flowchart TB
     A["Install the plugin"] --> B["Enable the plugin"]
-    B --> C["Restart the dashboard and gateway<br/>(after an update)"]
-    C --> D["Set up a workspace by chat"]
+    B --> D["Set up a workspace by chat<br/>in a new Hermes session"]
     D --> E["Open the link on the phone"]
     E --> F["Sign in"]
     F --> G["Download everything for offline"]
@@ -19,7 +18,7 @@ flowchart TB
 ```bash
 hermes plugins install Snehal707/fieldkit        # or: copy this repo to $HERMES_HOME/plugins/fieldkit
 hermes plugins enable fieldkit
-hermes plugins show fieldkit                     # 12 tools, 0 hooks, dashboard tab, api: plugin_api.py
+hermes plugins show fieldkit                     # Status: enabled
 ```
 The repo ships its built front-ends (`dashboard/dist/`, `dashboard/app_dist/`), so no Node.js is needed on the host.
 To build them yourself, see [Building from source](#building-from-source).
@@ -66,7 +65,7 @@ plugins:
 6. Install the app:
    - iPhone Safari: Share → **Add to Home Screen**.
    - On iOS the installed app has its own storage, separate from Safari. Open it and sign in once from inside it.
-7. Check **Home → Offline readiness**: the first three checks should be marked as ready.
+7. **Home** should say **Ready to work offline**. Tap it to see each check.
 
 **Installed from the old address?** If you added FieldKit to your Home Screen from `/api/plugins/fieldkit/app/`, the app
 asks you to re-add it. Open the new address in Safari → Share → **Add to Home Screen**, sign in once inside the new icon,
@@ -85,8 +84,8 @@ the status pill to open **Connection diagnostics**, which runs a live connection
 ## 5. Set up a workspace
 In Hermes (Mobile, chat or dashboard), say: "Set up FieldKit for my work."
 1. Hermes asks what the workspace is for, which languages you use (English or Hindi), and what each entry records.
-2. It shows you a summary of the forms and their questions.
-3. It publishes only after you approve, and returns an app link.
+2. It shows you each form and its questions, and asks "Publish this?".
+3. It publishes only after you say yes, and returns the workspace link.
 4. Open the link on your phone and tap **Download everything for offline**.
 
 To change the workspace later, ask in chat, for example "add a question about the door seal" or "remove the GPS field".

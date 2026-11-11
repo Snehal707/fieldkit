@@ -24,7 +24,7 @@ flowchart LR
 ```bash
 hermes plugins install Snehal707/fieldkit && hermes plugins enable fieldkit
 ```
-Restart the Hermes dashboard. Then, in Hermes (Mobile, chat or dashboard):
+No restart is needed. Then, in a new Hermes session (Mobile, chat or dashboard):
 
 > "Set up FieldKit for my work."
 
@@ -77,7 +77,7 @@ added only when you ask for one (for example consent or sign-off).
   your phone.
 
 ### 2. Record offline (phone)
-- Forms with conditions, validation, units, photos (compressed), voice notes, GPS and signatures. Drafts save as you type.
+- Forms with conditions, validation, units, photos (compressed), voice notes, GPS and signatures. A draft is saved as soon as you start answering.
 - Each entry keeps the form version it was made with.
 - Optional tools, installed from **Offline Packs**: **Scan text** (OCR in English or Hindi; also **Extract text** on a
   photo inside a form) and **Translate** (English ↔ Hindi).

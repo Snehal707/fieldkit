@@ -2,7 +2,7 @@
   "name": "fieldkit",
   "version": "0.3.2",
   "private": true,
-  "description": "FieldKit: offline field workflows for Hermes Agent (PWA + dashboard tab)",
+  "description": "FieldKit: offline observation forms for Hermes Agent (phone app + dashboard tab)",
   "license": "MIT",
   "type": "module",
   "scripts": {

@@ -54,13 +54,14 @@ The phone opens a workspace at `#/workspace/<id>`. Hermes returns that link when
 **Error responses:**
 - `409 {conflict: {conflict_id, record_id, base_revision, server_revision, server_answers}}`: the base revision is stale and the content differs. The conflict is recorded; the server never overwrites.
 - `422`: invalid record, unknown `workflow_id` or `workflow_version`, or an invalid attachment declaration.
+- `413`: the request body is over 2 MB. Answers over 512 KB return `422`.
 - `404`: the record id belongs to another user.
 
 **Related routes:**
 - `PUT attachments/{id}`: the raw body, with `Content-Type` set to an allowed type (`image/jpeg`, `image/png`, `image/webp`, `audio/webm`, `audio/ogg`, `audio/mp4`, `audio/mpeg`, `audio/wav`, `audio/x-wav`). Other types return `415`. Max 15 MB (`413`). The SHA-256 must equal the declared value (`422` otherwise). Repeating the same upload returns `duplicate: true`. Response: the same fields as the sync response, plus `attachment_id` and `status: "stored"`.
 - `GET attachments/{id}`: the file, with `X-FieldKit-SHA256`. Only for stored files of the caller.
 - `GET sync/status`: `{records_by_sync_status, attachments_outstanding, open_conflicts, last_received_at, devices}`.
-- `GET sync/conflicts`: `{conflicts: [...]}`.
+- `GET sync/conflicts`: `{conflicts: [...]}`. Each open conflict also has `workspace_id`, `workspace_title`, `form_id`, `form_title`, `subject` and `completed_at`, so it can be recognised.
 - `POST sync/conflicts/{id}/resolve`: body `{resolution: keep_server | use_client | merge, merged_answers?}`. Returns `{conflict_id, resolution, record_id, revision}`.
 
 ## Devices
@@ -73,7 +74,7 @@ The phone opens a workspace at `#/workspace/<id>`. Hermes returns that link when
 | Method | Path | Query / result |
 |---|---|---|
 | GET | `records` | `workflow_id`, `limit` (default 50, max 500), `offset` (default 0). Returns `records`, `total` and `next_offset` (`null` on the last page). Summaries include `workflow_title` and `subject`. |
-| GET | `records/{id}` | The full entry: answers, `revision`, sync fields, and attachments. Each attachment has `kind` (`photo`, `audio` for a voice note, or `signature`), `field_label`, `captured_at`, `signed_at` (signatures), `phone_transcript` and `phone_ocr_text` (text the phone read, if any). Also `attachment_counts` (`{photo, audio, signature}`) and `attachment_summary` (for example "1 photo · 1 voice note"). |
+| GET | `records/{id}` | The full entry: answers, `revision`, sync fields, and attachments. Each attachment has `kind` (`photo`, `audio` for a voice note, or `signature`), `field_label`, `captured_at`, `signed_at` (signatures), `phone_ocr_text` (text the phone read with OCR, if any) and `phone_transcript` (only on entries from before 0.3). Also `attachment_counts` (`{photo, audio, signature}`) and `attachment_summary` (for example "1 photo · 1 voice note"). |
 | GET | `records/{id}/questions` | Read-only. Questions asked about this entry in FieldKit before 0.3, with their status and answers. |
 | GET | `records/{id}/report` | Read-only. The latest report made before 0.3. `404` when there is none. |
 

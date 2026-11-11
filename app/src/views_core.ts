@@ -793,7 +793,7 @@ const INTEGRITY_TEXT: Record<string, string> = {
   not_uploaded: "not uploaded yet",
 };
 
-/** Report section listing the record's files as evidence: voice-note transcripts and signatures with integrity. */
+/** Report (before 0.3) section listing the record's files as evidence: voice-note transcripts and signatures with integrity. */
 function evidenceSection(att: any): HTMLElement {
   const sec = h("div", { class: "evidence", id: "report-evidence" }, h("h3", null, "Evidence"), h("p", { class: "muted", "data-summary": att.summary }, att.summary));
   const vn = att.voice_notes;
@@ -815,7 +815,7 @@ function evidenceSection(att: any): HTMLElement {
   return sec;
 }
 
-/** Body of a Hermes report — shared by this device's records and records from other devices. Report v2 (0.2.5) leads
+/** Body of a report made before 0.3 (read-only; shown under "From an earlier FieldKit version"). Report v2 (0.2.5) leads
  *  with the decision, then ordered actions (who, by when, how to verify, how to do it offline), interpreted issues with
  *  their evidence, what is uncertain, and the checks for next time. v1 reports keep their original layout. */
 export function reportBody(box: HTMLElement, r: any, uiLang = "en"): void {

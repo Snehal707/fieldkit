@@ -170,6 +170,9 @@ Rules:
 - Entries keep the form version and answers they were made with, including answers to questions that were later removed.
 - A workspace can refer to a form that already exists by its id (`workflow_refs`), so one form can serve several workspaces.
 - Workspace validation runs on each draft and again on publish.
+- The question that identifies an entry (`metadata.subject_field`) must be short text, a number or a choice, never GPS or media.
+- A normal, safe or expected range goes into the question's help text, so any reading can still be saved. `min`/`max`
+  are only for values that cannot occur.
 
 Approval before publishing relies on Hermes asking the user. FieldKit cannot see whether the user replied in between.
 

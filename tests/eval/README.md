@@ -1,7 +1,7 @@
 # Offline model evaluation (OCR and translation)
 
 These scripts measure how accurate FieldKit's optional on-device packs are: OCR and translation. They were
-written for the real-iPhone findings in [docs/TESTING.md](../../docs/TESTING.md).
+written while fixing OCR and translation problems found on a real iPhone (see [docs/TESTING.md](../../docs/TESTING.md)).
 
 **Notes on these results**
 - All test material is **synthetic**: `sharp` makes the photos and the sentences were written by the maintainers. No
@@ -9,7 +9,8 @@ written for the real-iPhone findings in [docs/TESTING.md](../../docs/TESTING.md)
 - Each sentence has **one hand-written reference**. Scores are a guide, not a benchmark.
 - Results come from **desktop CPUs**. Translation was measured in Node with the same ONNX files the app
   downloads, not in a browser. OCR was run in Chromium and WebKit.
-- **None of these results were measured on an iPhone.** Speed and memory on a phone are unverified.
+- These scores were measured on desktop, not on the phone. OCR and translation themselves were checked on the owner's
+  iPhone.
 
 ## What each script does
 
@@ -59,6 +60,9 @@ The browser breakdown for the small-print rows is not separated in these results
 | en→hi, dictionary-term sentences | 30.8 | 49.6 |
 | hi→en, general | 61.2 | 62.1 |
 | hi→en, dictionary-term sentences | 48.9 | 63.7 |
+
+The dictionary-term rows use `translation_terms.json`. In the app, term protection applies only on a phone that still
+has a dictionary pack from before 0.3; Hindi sentence endings and sentence splitting apply to every translation.
 
 Other measurements: fp32 en→hi scored 44.6 against 41.5 for q8, at four times the download. NLLB-600M (895 MB) and
 M2M100 (632 MB) are too large for a phone web app, so OPUS-MT stays. Transformers.js 4.3.1 beam search is effectively

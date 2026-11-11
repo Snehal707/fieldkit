@@ -87,14 +87,14 @@ FIELDKIT_E2E_PASS=<password> FIELDKIT_E2E_DATA_DIR=<HERMES_HOME>/plugin-data/fie
   - The record survives a full browser restart. After reconnecting, it syncs with no user action.
 - **Network "up" but Hermes unreachable:** a captive portal answers API calls with `200 text/html`, and the header shows "no Hermes connection". When the outage lifts, the record is confirmed **once**.
 - **Session cookies deleted, online:** navigation still opens the cached app, and the banner says "Sign in to Hermes to continue syncing". After signing in, the server holds **exactly one** record, also after a forced re-sync.
-- **Sign-in:** signed out, Home offers **Sign in**. The Hermes login page returns the browser to FieldKit, showing "Signed in as …". Home then offers **Download all 3 workflow(s)**.
+- **Sign-in:** signed out, Home offers **Sign in**. The Hermes login page returns the browser to FieldKit, showing "Signed in as …". Home then offers to download the workspaces for offline use.
 - Hermes sends `Vary: Origin`. FieldKit's own app files are cached with `ignoreVary`, so an offline launch does not depend on the browser's HTTP cache.
 
 **Saved Records** is described in its own section below.
 
 ## Model results (`models.spec.ts`)
 
-Run on 2026-11-08 with Hermes v0.23.0. The packs were re-checked offline on 0.3.0 (2026-11-10) in Chromium and WebKit.
+First run on 2026-11-08 with Hermes v0.23.0. Passed again offline on the 0.3.2 build (2026-11-11) in Chromium and WebKit.
 
 - **Online install:** English→Hindi translation downloads the pinned ONNX weights (~110 MB), runs a self-test, and verifies the size and SHA-256 of the cached weights ("pinned files verified"). OCR English loads and runs its self-test.
 - **Browser closed, then reopened with the network disabled:**
@@ -147,7 +147,6 @@ Accuracy numbers come from synthetic material, not real users' recordings or pho
 - Each file on Hermes is byte-identical (SHA-256) and linked to the same visit and field.
 - A deliberately damaged device copy is restored from Hermes.
 - A drawn signature is saved and viewable, including from a second install.
-- A second test checks Hermes speech-to-text on a real WAV. It needs `FIELDKIT_E2E_SPEECH_WAV` and `FIELDKIT_E2E_SPEECH_TEXT`.
 
 ## Saved Records (`accounts.spec.ts`, `records-errors.spec.ts`, `restore.spec.ts`)
 
@@ -171,8 +170,8 @@ The simulated-failure cases use `route()`, so they run in Chromium only.
 
 **Close-up photos (2026-11-11):** photo fields offer "Choose from Photos" as well as "Take photo", so a close-up taken with the Camera app can be attached. Verified locally in Chromium and WebKit, and checked by the owner on the iPhone.
 
-**Still open:**
-- Measured error rates on real people's speech and real photos. The numbers in this file come from synthetic voices and photos. Dim, shaky photos are still poor, and handwriting is not supported.
+**Note:** the accuracy numbers in this file come from synthetic photos and text. Dim, shaky photos are still read poorly,
+and handwriting is not supported.
 
 ## Device checklist
 
@@ -182,7 +181,7 @@ Run on each phone over HTTPS:
 3. **Offline Packs (optional):** install English→Hindi translation and OCR English (Hindi→English and OCR Hindi if needed).
 4. Install the PWA:
    - iOS: Share → Add to Home Screen. Open the installed app and sign in again inside it.
-5. Home: Offline readiness marks the app, workspace and packs as ready.
+5. Home says **Ready to work offline**. Tap it to see each check (app, workspace, packs).
 6. Turn on airplane mode. Swipe the app away completely, then reopen it from the home screen.
 7. Use Translate ("The pump is vibrating."), and Scan text on a printed label or Extract text on a photo inside a form.
 8. Record an entry in the workspace's form:
@@ -200,7 +199,7 @@ Record: device model, OS and browser version, which steps passed, timings for tr
 
 ## Final audit and fixes (2026-11-11, commit 5d77969)
 
-Run on a disposable local test Hermes v0.23.1 (Windows 11, model `openai/gpt-5.4-mini` via Nous), with phone-sized browsers. This was not the hosted Hermes and not the owner's iPhone.
+Run on a disposable local test Hermes v0.23.1 (Windows 11, model `openai/gpt-5.4-mini` via Nous), with phone-sized browsers.
 
 | Check | Result |
 |---|---|

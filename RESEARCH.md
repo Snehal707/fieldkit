@@ -14,7 +14,7 @@ source or exercised by a test in this repository.
 | Entry point | `__init__.py` defining `register(ctx)` | `hermes plugins doctor --ci` ran discovery, import and registration: 12 tools, 0 hooks (0.3.2) |
 | Tools | `ctx.register_tool(name, toolset, schema, handler, check_fn=None, …, description=…)`; handler `(args: dict, **kw) -> str` (JSON) | `hermes_cli/plugins.py:463`; validator "declared tools — matches registrations" |
 | Skill | `ctx.register_skill(name, path, description=…)` → resolvable as `fieldkit:fieldkit` | `hermes_cli/plugins_content.py:32` |
-| Hooks | `on_session_start` is in `VALID_HOOKS`; callbacks must accept `**kwargs`. FieldKit 0.3.0 registers no hook | `hermes_cli/plugins.py:109`, `plugin_dev.py:476` |
+| Hooks | `on_session_start` is in `VALID_HOOKS`; callbacks must accept `**kwargs`. FieldKit 0.3.x registers no hook | `hermes_cli/plugins.py:109`, `plugin_dev.py:476` |
 | Storage | `plugins.plugin_storage.plugin_data_dir(name)` → `<HERMES_HOME>/plugin-data/<name>/`; `plugin_db(name)` → SQLite in WAL mode, `check_same_thread=False`, and the caller owns transactions | `plugins/plugin_storage.py` |
 | `register()` side effects | Must not open files or start threads. `register()` in 0.3.x opens no database; the store opens on first use. The doctor runs in a temporary `HERMES_HOME`, and its cleanup fails on Windows if a database is still open | Observed in an earlier version, then fixed by opening the store lazily |
 
@@ -53,7 +53,7 @@ source or exercised by a test in this repository.
   - Fix: onnxruntime-web's documented export condition `onnxruntime-web-use-extern-wasm`, so Transformers.js loads the pinned upstream copy at setup time.
 - Setup-time downloads are allowed only from the upstream official source, pinned and disclosed. See `fieldkit_core/models.json` and `THIRD_PARTY.md`.
 - The install scanner's `inline_shell_exec` rule (`` !`…` ``, the SKILL.md shell syntax) also scans bundled JS. Vite 8's default minifier rewrites `"…!"` strings as template literals and trips it. FieldKit minifies with esbuild, and the build fails if the pattern appears anywhere in the bundle. Result: security scan **safe**.
-- GitHub secret scanning flagged the Transformers.js class name `Mistral3ForConditionalGeneration` (32 alphanumerics after "mistral3") as a "Mistral AI API key". It is a false positive: **this repository contains no credentials**, and the plugin makes no model calls. The build writes it as `Mistral3ForConditionalGeneration` (`F` = "F", the same name to JavaScript), and the build fails if any such pattern reappears. Both browser E2E suites pass on the patched bundle.
+- GitHub secret scanning flagged the Transformers.js class name `Mistral3ForConditionalGeneration` (32 alphanumerics after "mistral3") as a "Mistral AI API key". It is a false positive: **this repository contains no credentials**, and the plugin makes no model calls. The build writes it as `Mistral3ForConditionalGeneration` (`F` is "F", so JavaScript reads the same name), and the build fails if any such pattern reappears. Both browser E2E suites pass on the patched bundle.
 - No self-updating code and no `eval`. The PWA updates only when the plugin is updated; the service worker reports a new build and the user reloads.
 
 ## Offline translation and OCR: candidates checked
@@ -68,7 +68,7 @@ source or exercised by a test in this repository.
 **Translation and Transformers.js findings (0.2.4 measurements, `tests/eval`, Node):**
 - **NLLB-600M (895 MB) and M2M100 (632 MB) are too large** for a phone web app, so OPUS-MT stays.
 - **fp32 translation is not worth it:** en→hi fp32 44.6 chrF vs q8 41.5, at four times the download.
-- **Beam search is effectively greedy** in Transformers.js 4.3.1. Quality gains come from dictionary terminology instead (`app/src/translate_prep.ts`).
+- **Beam search is effectively greedy** in Transformers.js 4.3.1. `app/src/translate_prep.ts` splits sentences and fixes Hindi sentence endings; its term protection applies only to dictionary packs a phone installed before 0.3.
 
 **Transformers.js 4.3.1 bug found:** `get_tokenizer_files()` calls `get_file_metadata(modelId, "tokenizer_config.json", {})` without the revision. Offline, it therefore looks up the `main` URL, misses the pinned cache, and tries the network.
 
@@ -85,5 +85,5 @@ source or exercised by a test in this repository.
 
 ## Hackathon
 
-- Deadline reported as **2026-11-11 17:00 ET** in a news article (coinfomania). I found no official Nous announcement, so **verify before submitting**.
+- Deadline reported as **2026-11-11 17:00 ET** (2026-11-12 03:30 IST). Confirm it against the official announcement.
 - Submission is a PR adding `plugin-catalog/fieldkit.yaml` to `NousResearch/hermes-agent`, with a public repo, a full 40-character `sha`, a quoted `version`, and `hermes plugins validate` passing.

@@ -12,7 +12,7 @@ entries and their photos and voice notes with its own tools, when you ask.
 
 FieldKit never calls a model. It is not an assistant, a research tool or a decision system.
 
-- Workspaces are set up, changed and undone by chat. Hermes publishes only after you approve.
+- Workspaces are set up, changed and undone by chat. Hermes publishes only after you say yes to the forms it showed you.
 - Each entry keeps the form version it was made with, so old entries stay readable after a change.
 - The phone app works offline and can be installed on the home screen. Optional offline OCR and English ↔ Hindi translation.
 - One plugin, with unlimited workspaces.
@@ -24,11 +24,12 @@ Steps 1–7 are the core demo. Step 8 is optional.
 conversations, which built 39 workspaces, and 1,272 synced entries with 1,599 files, all matching on Hermes. Earlier, on
 v0.23.0 (2026-11-10), with real conversations: setting up a workspace, editing it and undoing an edit by chat, and asking
 about a synced visit with a photo. **Real iPhone (owner):** the owner tested everything on a real iPhone with the hosted Hermes and the Hermes Agent mobile
-app (iOS), and it all works. The hosted Hermes was also checked on commit 5d77969: all 12 tools, workspace links and
+app (iOS), and it all works. 0.3.2 was retested in real conversations on the local test Hermes: Hermes publishes only after
+a yes, normal ranges become help text, and links are copied exactly. The hosted Hermes was also checked on commit 5d77969: all 12 tools, workspace links and
 existing data.
 
-1. **Set up for my work (Hermes Mobile or chat).** "Set up FieldKit for my work." Hermes asks what you record, shows a summary
-   of the forms, and publishes after you approve. It returns a tappable app link.
+1. **Set up for my work (Hermes Mobile or chat).** "Set up FieldKit for my work." Hermes asks what you record, shows each
+   form and its questions, and asks "Publish this?". After your yes it publishes and returns the workspace link.
    - Tools: `fieldkit_workspace_format` → `fieldkit_draft_workspace` → `fieldkit_publish_workspace`.
 2. **Download on the phone.** Open the link over HTTPS and sign in. Tap **Download everything for offline**. In **Offline Packs**, install the translation and OCR packs if you want them.
 3. **Install and go offline.** Share → **Add to Home Screen**, then sign in once inside the installed app. Turn on airplane mode, with Wi-Fi and mobile data both off. Reopen FieldKit from the home screen.
@@ -74,11 +75,10 @@ Skills: `fieldkit` (find and read entries) and `fieldkit-workspace-builder` (set
 
 ## Checklist before submitting
 - [ ] Confirm the deadline (reported as Nov 11 2026, 5 PM ET) and the submission format (catalog PR, form, or both) against the official announcement.
-- [ ] Push to the public GitHub repo at https://github.com/Snehal707/fieldkit.
+- [x] Push to the public GitHub repo at https://github.com/Snehal707/fieldkit.
 - [ ] Run `hermes plugins validate .` and `hermes plugins doctor . --ci` on the final commit. Both passed on 0.3.2 with Hermes v0.23.1 on a local test Hermes (12 tools, 0 hooks). Re-run on the exact commit you submit.
 - [ ] Run the Python, TypeScript and Playwright suites on the final commit (see [docs/TESTING.md](TESTING.md)).
 - [ ] Run `npm run build` and commit `dashboard/dist` and `dashboard/app_dist`.
-- [x] Real iPhone + hosted Hermes + Hermes mobile app: offline recording, sync, media and Saved Records (owner, 0.2.4).
 - [x] Everything on the owner's iPhone with the hosted Hermes and the Hermes Agent mobile app (iOS) (owner, 2026-11-11).
 - [x] Hosted Hermes on commit 5d77969: 12 tools, workspace links and existing data checked (owner, 2026-11-11).
 - [ ] Record the demo video (3–4 minutes).
