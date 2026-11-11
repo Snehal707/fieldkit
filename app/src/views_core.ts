@@ -3,7 +3,7 @@ import { api, AuthRequired, HttpError, Offline } from "./api";
 import { APP_VERSION, signIn } from "./config";
 import { db, definitionFor, deleteRecord, deviceId, getSetting, setSetting, type Attachment, type Draft, type LocalRecord, type RemoteCopy, type StoredReport } from "./db";
 import { describeLoadProblem, fetchAllRecords, missingOnServer, unifiedRecords, type Availability, type LoadProblem, type ServerLike } from "./device";
-import { computeState, ERROR_TEXT, text, type Field, type Workflow } from "./engine";
+import { computeState, ERROR_TEXT, text, textLang, yesNo, yesNoLang, type Field, type Workflow } from "./engine";
 import { installedModels, ocr, ocrLanguages } from "./intel";
 import { attachmentUrl, captureGps, compressPhoto, getAttachment, hermesMediaUrl, saveAttachment, signaturePad, updateAttachment, VoiceRecorder } from "./media";
 import { installedPacks, installedWorkflows, installWorkflow, shellCached, storageInfo } from "./packs";
@@ -332,7 +332,7 @@ export const workflowLinkView: View = async (main, p) => {
   if (!stored) { main.append(h("div", { class: "banner warn" }, `Workflow "${id}" is not on this device. Connect to the internet to download it.`)); return; }
   const l = await lang();
   const wf = stored.definition;
-  main.append(h("div", { class: "card" }, h("h2", null, text(wf.title, l)), h("p", null, text(wf.description, l)),
+  main.append(h("div", { class: "card", lang: textLang(wf.title, l) }, h("h2", null, text(wf.title, l)), h("p", null, text(wf.description, l)),
     h("p", { class: "muted" }, `Version ${stored.version} · ${wf.fields.length} questions · stored on this device`),
     h("button", { class: "primary", onclick: () => startWorkflow(id, startedFrom) }, "Start workflow")));
 };
@@ -369,7 +369,7 @@ export const runView: View = async (main, p) => {
   const stored = await d.get("workflows", draft.workflow_id);
   if (!stored) { main.append(h("div", { class: "banner bad" }, "This workflow is no longer on the device.")); return; }
   const wf = stored.definition;
-  const l = draft.lang;
+  const l = await lang();   // shown in the current Form language; the entry's own language (draft.lang) is kept as recorded
   let showErrors = false;
   const touched = new Set<string>();
   const form = h("div");
@@ -431,7 +431,7 @@ export const runView: View = async (main, p) => {
     const req = st.required.includes(f.id);
     const errs = (showErrors || touched.has(f.id)) ? (st.errors[f.id] ?? []) : [];
     const msgs = st.messages[f.id] ?? [];
-    const box = h("div", { class: "field card", id: `f-${f.id}` });
+    const box = h("div", { class: "field card", id: `f-${f.id}`, lang: textLang(f.label, l) });
     if (f.type === "instruction") {
       box.append(h("div", { class: "banner hermes" }, text(f.label, l)));
       return box;
@@ -457,9 +457,9 @@ export const runView: View = async (main, p) => {
         oninput: (e: Event) => { const s = (e.target as HTMLInputElement).value; set(f.id, s === "" ? undefined : Number(s), false); }, onchange: () => render(false) });
       case "date": return h("input", { id, type: "date", value: (v as string) ?? "", onchange: (e: Event) => set(f.id, (e.target as HTMLInputElement).value) });
       case "time": return h("input", { id, type: "time", value: (v as string) ?? "", onchange: (e: Event) => set(f.id, (e.target as HTMLInputElement).value) });
-      case "checkbox": return h("div", { class: "choices row" },
-        ...[["Yes", true], ["No", false]].map(([lab, val]) => h("label", null,
-          h("input", { type: "radio", name: id, checked: v === val, onchange: () => set(f.id, val) }), String(lab))),
+      case "checkbox": return h("div", { class: "choices row", lang: yesNoLang(l) },
+        ...[true, false].map((val) => h("label", null,
+          h("input", { type: "radio", name: id, checked: v === val, onchange: () => set(f.id, val) }), yesNo(val, l))),
         v !== undefined ? h("button", { onclick: () => set(f.id, undefined) }, "Clear") : null);
       case "single_choice": return h("div", { class: "choices" }, ...(f.options ?? []).map((o) => h("label", null,
         h("input", { type: "radio", name: id, checked: v === o.value, onchange: () => set(f.id, o.value) }), text(o.label, l))));
@@ -640,11 +640,11 @@ export const resultsView: View = async (main, p) => {
   const wf = definitionFor(await d.get("workflows", rec.workflow_id), rec.workflow_version);
   const stored = await d.get("reports", rec.id);
   const atts = await d.getAllFromIndex("attachments", "by_record", rec.id);
-  const l = rec.lang;
+  const l = await lang();   // shown in the current Form language; the record's stored answers and language are unchanged
   const lr = rec.local_results;
   const synced = rec.sync_status === "synced" || rec.sync_status === "received";
 
-  main.append(h("div", { class: "card" }, h("h2", null, rec.workflow_title),
+  main.append(h("div", { class: "card" }, h("h2", { lang: wf ? textLang(wf.title, l) : null }, wf ? text(wf.title, l) : rec.workflow_title),
     h("dl", { class: "kv" }, h("dt", null, "Completed"), h("dd", null, fmtTime(rec.completed_at)),
       h("dt", null, "Questions answered"), h("dd", null, `${lr.questions_answered} of ${lr.questions_visible}`),
       h("dt", null, "Validation"), h("dd", null, lr.validation.complete ? "All required answers valid" : "Incomplete")),
@@ -679,9 +679,10 @@ export const resultsView: View = async (main, p) => {
     if (f.type === "instruction" || !(f.id in rec.answers)) continue;
     const v = rec.answers[f.id] as any;
     let shown: string;
-    if (["single_choice"].includes(f.type)) shown = text(f.options?.find((o) => o.value === v)?.label, l) || String(v);
+    let valueLang: string | null = null;
+    if (["single_choice"].includes(f.type)) { const o = f.options?.find((x) => x.value === v); shown = text(o?.label, l) || String(v); valueLang = o ? textLang(o.label, l) : null; }
     else if (f.type === "multi_choice") shown = (v as any[]).map((x) => text(f.options?.find((o) => o.value === x)?.label, l) || String(x)).join(", ");
-    else if (f.type === "checkbox") shown = v ? "Yes" : "No";
+    else if (f.type === "checkbox") { shown = yesNo(v, l); valueLang = yesNoLang(l); }
     else if (f.type === "gps") shown = `${v.lat}, ${v.lon} (±${v.accuracy ?? "?"} m, ${v.source})`;
     else if (["photo", "audio"].includes(f.type)) {
       const list = (Array.isArray(v) ? v : [v]).filter(Boolean);
@@ -689,7 +690,7 @@ export const resultsView: View = async (main, p) => {
     }
     else if (f.type === "signature") shown = v?.signed_at ? `Signed ${fmtTime(v.signed_at)}` : "Signed";
     else shown = `${v}${f.unit ? ` ${f.unit}` : ""}`;
-    dl.append(h("dt", null, text(f.label, l)), h("dd", { style: "white-space:pre-wrap" }, shown));
+    dl.append(h("dt", { lang: textLang(f.label, l) }, text(f.label, l)), h("dd", { style: "white-space:pre-wrap", lang: valueLang }, shown));
   }
   resp.append(dl);
   // Only files the record's answers actually reference (a removed photo's leftovers are not "attachments").
@@ -1077,7 +1078,7 @@ export const remoteView: View = async (main, p) => {
     let shown: string | HTMLElement = typeof v === "object" ? JSON.stringify(v) : String(v);
     if (f?.type === "single_choice") shown = text(f.options?.find((o) => o.value === v)?.label, l) || String(shown);
     else if (f?.type === "multi_choice" && Array.isArray(v)) shown = v.map((x) => text(f.options?.find((o) => o.value === x)?.label, l) || String(x)).join(", ");
-    else if (f?.type === "checkbox") shown = v ? "Yes" : "No";
+    else if (f?.type === "checkbox") shown = yesNo(v, l);
     else if (f?.type === "gps" && v && typeof v === "object") shown = `${(v as any).lat}, ${(v as any).lon} (±${(v as any).accuracy ?? "?"} m)`;
     else if ((f && ["photo", "audio", "signature"].includes(f.type)) || ([v].flat() as any[]).some((x) => x?.attachment_id && serverAtts.has(x.attachment_id))) {
       // Media answers; when this phone doesn't have the form, the kind comes from Hermes' attachment details.
@@ -1092,7 +1093,7 @@ export const remoteView: View = async (main, p) => {
       }
       shown = box;
     }
-    dl.append(h("dt", null, f ? text(f.label, l) : k), h("dd", null, shown));
+    dl.append(h("dt", { lang: f ? textLang(f.label, l) : null }, f ? text(f.label, l) : k), h("dd", null, shown));
   }
   main.append(h("div", { class: "card" }, h("h2", null, "Answers"), dl));
   if (r.report) {
@@ -1111,6 +1112,7 @@ export const remoteView: View = async (main, p) => {
 
 export const syncView: View = async (main) => {
   const d = await db();
+  const l = await lang();
   const recs = await d.getAll("records");
   const wfs = new Map((await d.getAll("workflows")).map((w) => [w.id, w.definition]));
   const ops = await d.getAll("outbox");
@@ -1133,7 +1135,7 @@ export const syncView: View = async (main) => {
     waiting.length ? h("ul", { class: "clean" }, ...waiting.map((r) => h("li", null, h("a", { href: `#/results/${r.id}` }, r.workflow_title),
       h("div", { class: "muted" }, `${r.sync_status === "error" ? "Hermes didn't accept it" : STATUS_TEXT[r.sync_status]}${r.sync_error ? ` — ${r.sync_error}` : ""}`),
       r.sync_status === "error" ? retryButton(r.id, "#/sync") : null,
-      r.conflict ? conflictBox(r, wfs.get(r.workflow_id)) : null))) : h("p", { class: "muted" }, "Everything on this device has been received by Hermes.")));
+      r.conflict ? conflictBox(r, wfs.get(r.workflow_id), l) : null))) : h("p", { class: "muted" }, "Everything on this device has been received by Hermes.")));
 };
 
 /** "Try again" for a record Hermes rejected: puts back its workflow version if Hermes lacks it, then re-queues it. */
@@ -1151,15 +1153,15 @@ function retryButton(id: string, back: string): HTMLElement {
   } }, "Try again");
 }
 
-function conflictBox(r: LocalRecord, wf?: Workflow) {
+function conflictBox(r: LocalRecord, wf: Workflow | undefined, l: string) {
   const keys = [...new Set([...Object.keys(r.answers), ...Object.keys(r.conflict!.server_answers)])]
     .filter((k) => JSON.stringify(r.answers[k]) !== JSON.stringify(r.conflict!.server_answers[k]));
-  const label = (k: string) => { const f = wf?.fields.find((x) => x.id === k); return f ? text(f.label, r.lang) : k; };
+  const label = (k: string) => { const f = wf?.fields.find((x) => x.id === k); return f ? text(f.label, l) : k; };
   const show = (k: string, v: unknown) => {
     if (v === undefined || v === null || v === "") return "(empty)";
     const f = wf?.fields.find((x) => x.id === k);
-    if (f?.type === "single_choice") return text(f.options?.find((o) => o.value === v)?.label, r.lang) || String(v);
-    if (f?.type === "checkbox") return v ? "Yes" : "No";
+    if (f?.type === "single_choice") return text(f.options?.find((o) => o.value === v)?.label, l) || String(v);
+    if (f?.type === "checkbox") return yesNo(v, l);
     return typeof v === "object" ? JSON.stringify(v) : String(v);
   };
   return h("div", { class: "banner bad" }, h("strong", null, "This record was changed on another device."),

@@ -99,6 +99,20 @@ export function text(v: Label | undefined | null, lang = "en", fallback = "en"):
   return "";
 }
 
+/** The language ``text(v, lang)`` actually shows: ``lang`` when the label has it, else the fallback (English), else
+ *  the label's first language. Used to mark form text with the right ``lang`` attribute for screen readers. */
+export function textLang(v: Label | undefined | null, lang = "en", fallback = "en"): string {
+  if (!v || typeof v !== "object") return fallback;
+  if (v[lang]) return lang;
+  if (v[fallback]) return fallback;
+  return Object.keys(v)[0] ?? fallback;
+}
+
+/** Answer words for a yes/no question, in the form language; English when the language has none. */
+export const YES_NO: Record<string, [string, string]> = { en: ["Yes", "No"], hi: ["हाँ", "नहीं"] };
+export const yesNoLang = (lang: string): string => (YES_NO[lang] ? lang : "en");
+export function yesNo(v: unknown, lang: string): string { const [yes, no] = YES_NO[yesNoLang(lang)]; return v ? yes : no; }
+
 export function visibleFields(wf: Workflow, answers: Answers): string[] {
   return wf.fields.filter((f) => evaluate(f.visible_if, answers)).map((f) => f.id);
 }
