@@ -48,9 +48,9 @@ def _visit(store, tmp_path, rid, asset="PMP-0101", owner="alice", workspace_id=N
         rec["workspace_id"] = workspace_id
     ack = store.sync_record(owner, "k-" + rid, "dev", rec)
     if photo:
-        store.store_attachment(owner, f"att_{rid[-6:]}_ph", JPEG, "image/jpeg", tmp_path / "att")
+        store.store_attachment(owner, f"att_{rid[-6:]}_ph", JPEG, "image/jpeg", tmp_path / "attachments")
     if voice:
-        store.store_attachment(owner, f"att_{rid[-6:]}_vn", WEBM, "audio/webm", tmp_path / "att")
+        store.store_attachment(owner, f"att_{rid[-6:]}_vn", WEBM, "audio/webm", tmp_path / "attachments")
     return ack
 
 

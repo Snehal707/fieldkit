@@ -85,8 +85,10 @@ c.commit()
   await A.page.locator("#resend-missing").click();
   await expect.poll(async () => (await (await A.ctx.request.get(`${API}/records?limit=500`)).json()).records.some((r: any) => r.id === id),
     { timeout: 60_000, intervals: [1_000] }).toBe(true);
-  const back = await (await A.ctx.request.get(`${API}/workflows/${WF_ID}`)).json();
+  const back = await (await A.ctx.request.get(`${API}/workflows/${WF_ID}?version=1`)).json();
   expect(back.version).toBe(1);                                         // the exact version the record was made with
+  // Restored only so the record could upload again: never published (publishing goes through Hermes, with approval).
+  expect((await A.ctx.request.get(`${API}/workflows/${WF_ID}`)).status()).toBe(404);
 
   await records(A.page);
   await expect(A.page.locator("#records-missing")).toHaveCount(0);

@@ -28,12 +28,16 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from fieldkit_core import __version__, engine, media, runtime  # noqa: E402
-from fieldkit_core.db import ALL, Conflict, Invalid, NotFound, data_dir, get_store  # noqa: E402
+from fieldkit_core.db import ALL, Conflict, Invalid, NotFound, contained, data_dir, get_store  # noqa: E402
 
 router = APIRouter()
 APP_DIR = Path(__file__).resolve().parent / "app_dist"
 MODELS_FILE = _ROOT / "fieldkit_core" / "models.json"
 MAX_ATTACHMENT = 15 * 1024 * 1024
+MAX_SYNC_BODY = 2 * 1024 * 1024          # one record revision as JSON (answers are capped at 512 KB inside)
+# Stored files are only ever images or audio; never let a browser sniff or run them as anything else.
+ATTACHMENT_HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox",
+                      "Cross-Origin-Resource-Policy": "same-origin", "Referrer-Policy": "no-referrer"}
 ATTACHMENT_MIME = {"image/jpeg", "image/png", "image/webp", "audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg",
                    "audio/wav", "audio/x-wav"}
 
@@ -44,13 +48,35 @@ def _observe_origin(request: Request) -> None:
     links without configuration. Only called for authenticated requests."""
     try:
         h = request.headers
-        proto = (h.get("x-forwarded-proto") or request.url.scheme).split(",")[0].strip()
-        host = (h.get("x-forwarded-host") or h.get("host") or request.url.netloc).split(",")[0].strip()
+        proto = (h.get("x-forwarded-proto") or request.url.scheme).split(",")[0].strip().lower()
+        # The Host header the browser sent is what the user actually reached. X-Forwarded-Host can be sent by any
+        # client, so it is only used when Host is a loopback/private address, i.e. a reverse proxy rewrote it.
+        host = (h.get("host") or request.url.netloc).strip().lower()
+        fwd = (h.get("x-forwarded-host") or "").split(",")[0].strip().lower()
+        if fwd and _is_internal_host(host):
+            host = fwd
+        if proto not in ("http", "https") or not _HOST_RE.fullmatch(host):
+            return
         path = request.url.path
         prefix = path.split("/api/plugins/fieldkit", 1)[0] if "/api/plugins/fieldkit" in path else ""
         runtime.record_observed_url(f"{proto}://{host}{prefix}")
     except Exception:
         pass
+
+
+_HOST_RE = __import__("re").compile(r"[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[0-9]{1,5})?|\[[0-9a-f:.]+\](?::[0-9]{1,5})?")
+
+
+def _is_internal_host(host: str) -> bool:
+    import ipaddress
+    name = host.rsplit(":", 1)[0].strip("[]") if host.count(":") <= 1 or host.startswith("[") else host
+    if name in ("localhost", ""):
+        return True
+    try:
+        ip = ipaddress.ip_address(name)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private or ip.is_link_local
 
 
 def current_user(request: Request) -> dict:
@@ -150,14 +176,32 @@ def model_catalog(request: Request):
 
 
 # ----------------------------------------------------------------------------- sync
-@router.post("/sync/records")
-def sync_record(request: Request, payload: dict = Body(...)):
-    uid = _uid(request)
-    store = get_store()
-    get_store().touch_user(uid)
+async def _bounded_json(request: Request, limit: int) -> Any:
+    """The request body as JSON, refusing anything larger than ``limit`` bytes before it is buffered."""
+    if int(request.headers.get("content-length") or 0) > limit:
+        raise HTTPException(413, f"request too large (limit {limit // 1024} KB)")
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > limit:
+            raise HTTPException(413, f"request too large (limit {limit // 1024} KB)")
     try:
-        resp = store.sync_record(uid, str(payload.get("idempotency_key", "")), str(payload.get("device_id") or "unknown")[:64],
-                                 payload.get("record") or {})
+        return json.loads(bytes(body) or b"null")
+    except ValueError:
+        raise HTTPException(422, "body must be JSON") from None
+
+
+@router.post("/sync/records")
+async def sync_record(request: Request):
+    uid = _uid(request)
+    payload = await _bounded_json(request, MAX_SYNC_BODY)
+    if not isinstance(payload, dict):
+        raise HTTPException(422, "body must be a JSON object")
+    store = get_store()
+    try:
+        await asyncio.to_thread(store.touch_user, uid)
+        resp = await asyncio.to_thread(store.sync_record, uid, str(payload.get("idempotency_key", "")),
+                                       str(payload.get("device_id") or "unknown")[:64], payload.get("record") or {})
     except Conflict as c:
         return JSONResponse({"conflict": c.payload}, status_code=409)
     except Exception as exc:
@@ -191,10 +235,14 @@ def get_attachment(aid: str, request: Request):
     uid = _uid(request)
     try:
         a = get_store().get_attachment(uid, aid)
+        path = contained(a["path"], data_dir() / "attachments")
+    except Invalid:
+        raise HTTPException(404, "Not found") from None
     except Exception as exc:
         _err(exc)
-    return FileResponse(a["path"], media_type=a["mime"] or "application/octet-stream",
-                        headers={"X-FieldKit-SHA256": a["sha256"], "Cache-Control": "private, max-age=3600"})
+    mime = a["mime"] if a["mime"] in ATTACHMENT_MIME else "application/octet-stream"
+    return FileResponse(path, media_type=mime,
+                        headers={"X-FieldKit-SHA256": a["sha256"], "Cache-Control": "private, max-age=3600", **ATTACHMENT_HEADERS})
 
 
 @router.get("/sync/status")

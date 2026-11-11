@@ -90,8 +90,11 @@ def annotate(record: dict, wf: Optional[dict], lang: str = "en") -> dict:
 def readable_copy(stored_path: str, aid: str, mime: str, export_dir: Path) -> str:
     """A copy of a stored attachment with the right file extension (stored files have none, and tools such as
     speech-to-text pick the decoder by extension). Re-created if missing; never modifies the stored file."""
+    from .db import Invalid, contained, is_safe_id
+    if not is_safe_id(aid):
+        raise Invalid("unsafe attachment id")
     export_dir.mkdir(parents=True, exist_ok=True)
-    target = export_dir / f"{aid}{EXT.get(mime.split(';')[0].strip().lower(), '')}"
+    target = contained(export_dir / f"{aid}{EXT.get(mime.split(';')[0].strip().lower(), '')}", export_dir)
     if not target.exists() or target.stat().st_size != Path(stored_path).stat().st_size:
         tmp = target.with_suffix(target.suffix + ".part")
         shutil.copyfile(stored_path, tmp)

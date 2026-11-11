@@ -15,7 +15,7 @@ import re
 from typing import Any, Callable, Optional
 
 from . import engine, media, runtime
-from .db import ALL, Conflict, Invalid, NotFound, data_dir, get_store
+from .db import ALL, Conflict, Invalid, NotFound, contained, data_dir, get_store
 
 TOOLSET = "fieldkit"
 
@@ -211,8 +211,12 @@ def get_attachment(a: dict) -> str:
         if declared:
             return _fail("this file has not finished uploading from the phone yet", status=declared[0]["status"])
         raise
-    integrity = media.verify_file(att["path"], att.get("sha256"))
-    path = media.readable_copy(att["path"], att["id"], att.get("mime") or "", data_dir() / "exports")
+    try:
+        stored = str(contained(att["path"], data_dir() / "attachments"))
+    except Invalid:
+        return _fail("this file is not stored in FieldKit's attachments folder, so it is not opened")
+    integrity = media.verify_file(stored, att.get("sha256"))
+    path = media.readable_copy(stored, att["id"], att.get("mime") or "", data_dir() / "exports")
     rec = store.get_record(ALL, att["record_id"])
     wf = store.get_workflow_any_owner(rec["workflow_id"], rec["workflow_version"]) or {}
     info = next((x for x in media.classify(rec, wf) if x["id"] == att["id"]), {})

@@ -196,9 +196,9 @@ def test_app_link_detected_from_authenticated_traffic(env, monkeypatch):
     # unauthenticated requests never record anything
     env.client.get(f"{PREFIX}/status", headers={"Host": "evil.example", "X-Forwarded-Proto": "https"})
     assert rt.observed_url() == ""
-    # behind a reverse proxy, under a path prefix
-    env.client.get(f"/hermes{PREFIX}/status".replace("/hermes", ""), headers={**H(), "X-Forwarded-Proto": "https",
-                   "X-Forwarded-Host": "hermes.example.org"})
+    # behind a reverse proxy that rewrites Host to its upstream address (X-Forwarded-Host is used only then)
+    env.client.get(f"/hermes{PREFIX}/status".replace("/hermes", ""), headers={**H(), "Host": "127.0.0.1:9119",
+                   "X-Forwarded-Proto": "https", "X-Forwarded-Host": "hermes.example.org"})
     link = tools.app_link("equipment-inspection")
     assert link["url"] == "https://hermes.example.org/dashboard-plugins/fieldkit/app_dist/index.html#/workflow/equipment-inspection"
     assert link["source"] == "detected from dashboard/app traffic"
@@ -284,7 +284,7 @@ def test_restore_workflow_version_puts_back_exact_version_and_enables_resync(env
     assert r.status_code == 200 and r.json() == {"restored": True, "version": 3}
     again = env.client.post(f"{PREFIX}/workflows/restore", headers=H(), json={"definition": dict(wf, title={"en": "Tampered"})})
     assert again.json() == {"restored": False, "version": 3}          # never overwrites an existing version
-    got = env.client.get(f"{PREFIX}/workflows/{wf['id']}", headers=H()).json()
+    got = env.client.get(f"{PREFIX}/workflows/{wf['id']}?version=3", headers=H()).json()   # restored, not published
     assert got["version"] == 3 and got["title"] == wf["title"]
     assert _sync(env, rec).status_code == 200                          # the record can now be uploaded again
     # Another user cannot add versions to alice's workflow, and invalid definitions are rejected.

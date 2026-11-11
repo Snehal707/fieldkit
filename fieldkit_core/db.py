@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -179,6 +180,30 @@ def content_hash(answers: Any, local_results: Any = None) -> str:
     return hashlib.sha256(_j({"a": answers}).encode()).hexdigest()
 
 
+# Client-chosen identifiers that become file names (attachment ids) must be plain tokens: letters, digits, "_" and
+# "-" only. Every id the phone has ever generated ("att_" + hex) matches; anything else is refused.
+SAFE_ID = re.compile(r"[A-Za-z0-9_-]{8,64}")
+# Limits on what one synced record may carry (real records are a few hundred bytes with a handful of files).
+MAX_ANSWERS_BYTES = 512 * 1024
+MAX_LOCAL_RESULTS_BYTES = 512 * 1024
+MAX_ATTACHMENTS_PER_RECORD = 100
+
+
+def is_safe_id(value: Any) -> bool:
+    return isinstance(value, str) and SAFE_ID.fullmatch(value) is not None
+
+
+def contained(path: Path | str, base: Path | str) -> Path:
+    """``path`` resolved, if it lies inside ``base`` (resolved); otherwise :class:`Invalid`. Guards every file
+    path built from, or stored for, an attachment."""
+    p, b = Path(path).resolve(), Path(base).resolve()
+    try:
+        p.relative_to(b)
+    except ValueError:
+        raise Invalid("file path outside the FieldKit attachments folder") from None
+    return p
+
+
 def data_dir() -> Path:
     try:
         from plugins.plugin_storage import plugin_data_dir  # type: ignore
@@ -321,31 +346,31 @@ class Store:
 
     def restore_workflow_version(self, owner: str, definition: dict) -> dict:
         """Put back one exact workflow version that this database lacks (e.g. after its data was reset), using the
-        copy a device downloaded earlier. Never overwrites an existing version and never touches a workflow owned by
-        another user. Returns {"restored": bool, "version": n}."""
+        copy a device downloaded earlier, so that device's records can be uploaded again. Never overwrites an existing
+        version, never touches a workflow owned by another user, and never publishes: a version newer than the
+        workflow's latest is refused (new versions are published only through Hermes, with the user's approval), and
+        the published version is never changed. Returns {"restored": bool, "version": n}."""
         wid = definition.get("id")
         version = definition.get("version")
         if not isinstance(wid, str) or not wid or not isinstance(version, int) or isinstance(version, bool) or not 1 <= version <= 100000:
             raise Invalid("definition needs an id and an integer version")
         now = _now()
-        definition = dict(definition, status="published")
+        definition = dict(definition, status="restored")
         with self.tx() as c:
             row = c.execute("SELECT * FROM workflows WHERE id=?", (wid,)).fetchone()
             if row and row["owner_user_id"] not in (owner, "owner", "local"):
                 raise NotFound(wid)
             if c.execute("SELECT 1 FROM workflow_versions WHERE workflow_id=? AND version=?", (wid, version)).fetchone():
                 return {"restored": False, "version": version}
-            if row:
-                latest = max(row["latest_version"], version)
-                published = max(row["published_version"] or 0, version)
-                c.execute("UPDATE workflows SET latest_version=?, published_version=?, status='published', updated_at=? WHERE id=?",
-                          (latest, published, now, wid))
-            else:
+            if row and version > row["latest_version"]:
+                raise Invalid(f"version {version} is newer than this workflow's latest ({row['latest_version']}): "
+                              "new versions are published through Hermes, not restored")
+            if not row:   # the whole workflow was lost (data reset): back as an unpublished record of that version
                 c.execute("INSERT INTO workflows(id, owner_user_id, title, domain, latest_version, published_version, status, "
                           "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                          (wid, owner, _title(definition.get("title")), definition.get("domain", ""), version, version, "published", now, now))
+                          (wid, owner, _title(definition.get("title")), definition.get("domain", ""), version, None, "draft", now, now))
             c.execute("INSERT INTO workflow_versions(workflow_id, version, definition, status, created_at, created_by) "
-                      "VALUES (?,?,?,?,?,?)", (wid, version, _j(definition), "published", now, str(owner)))
+                      "VALUES (?,?,?,?,?,?)", (wid, version, _j(definition), "restored", now, str(owner)))
             self.audit(c, owner, "workflow.restore", wid, {"version": version})
         return {"restored": True, "version": version}
 
@@ -534,6 +559,13 @@ class Store:
         answers = rec.get("answers")
         if not isinstance(answers, dict):
             raise Invalid("record.answers must be an object")
+        if len(_j(answers).encode("utf-8")) > MAX_ANSWERS_BYTES:
+            raise Invalid(f"record.answers is too large (limit {MAX_ANSWERS_BYTES // 1024} KB)")
+        if len(_j(rec.get("local_results") or {}).encode("utf-8")) > MAX_LOCAL_RESULTS_BYTES:
+            raise Invalid(f"record.local_results is too large (limit {MAX_LOCAL_RESULTS_BYTES // 1024} KB)")
+        atts = rec.get("attachments")
+        if atts is not None and (not isinstance(atts, list) or len(atts) > MAX_ATTACHMENTS_PER_RECORD):
+            raise Invalid(f"record.attachments must be a list of at most {MAX_ATTACHMENTS_PER_RECORD} files")
         base = int(rec.get("base_revision") or 0)
         local_results = rec.get("local_results") or {}
         chash = content_hash(answers)
@@ -612,8 +644,8 @@ class Store:
     @staticmethod
     def _declare_attachment(c, owner: str, rid: str, a: dict) -> None:
         aid, sha = a.get("id"), a.get("sha256")
-        if not isinstance(aid, str) or not (8 <= len(aid) <= 64) or not isinstance(sha, str) or len(sha) != 64:
-            raise Invalid("attachment needs id (8-64 chars) and sha256 (64 hex)")
+        if not is_safe_id(aid) or not isinstance(sha, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", sha):
+            raise Invalid("attachment needs an id of 8-64 letters, digits, '_' or '-', and a sha256 (64 hex)")
         existing = c.execute("SELECT record_id, owner_user_id, sha256 FROM attachments WHERE id=?", (aid,)).fetchone()
         if existing:
             if existing["owner_user_id"] != owner or existing["record_id"] != rid or existing["sha256"] != sha:
@@ -695,6 +727,8 @@ class Store:
         return out
 
     def store_attachment(self, owner: str, aid: str, body: bytes, mime: str, base_dir: Path) -> dict:
+        if not is_safe_id(aid):
+            raise NotFound(str(aid)[:64])   # never a valid declared id (also covers rows declared before 0.3.1)
         sha = hashlib.sha256(body).hexdigest()
         with self.tx() as c:
             row = c.execute("SELECT * FROM attachments WHERE id=? AND owner_user_id=?", (aid, owner)).fetchone()
@@ -707,8 +741,8 @@ class Store:
             if row["sha256"] != sha:
                 raise Invalid("sha256 mismatch: upload corrupted or incomplete")
             user_dir = base_dir / hashlib.sha256(owner.encode()).hexdigest()[:16]
+            path = contained(user_dir / aid, base_dir)
             user_dir.mkdir(parents=True, exist_ok=True)
-            path = user_dir / aid
             tmp = path.with_suffix(".part")
             tmp.write_bytes(body)
             os.replace(tmp, path)

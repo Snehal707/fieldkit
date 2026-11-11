@@ -276,7 +276,7 @@ def test_legacy_form_with_a_signature_stays_publishable_and_its_signatures_reada
     store.sync_record("alice", "k-sig", "dev", {"id": "rec_sig_000001", "workflow_id": "audit", "workflow_version": 1, "base_revision": 0,
                                                 "answers": {"site": "A1", "sign": {"attachment_id": "att_sig_00001", "signed_at": "2026-11-01T10:00:00Z"}},
                                                 "attachments": [{"id": "att_sig_00001", "field_id": "sign", "mime": "image/png", "size": len(png), "sha256": sha}]})
-    store.store_attachment("alice", "att_sig_00001", png, "image/png", tmp_path / "att")
+    store.store_attachment("alice", "att_sig_00001", png, "image/png", tmp_path / "attachments")
     d = call(ctx, "fieldkit_draft_workspace", workspace_id="audits", purpose="Site audits")     # unrelated edit
     assert d["valid"] and not [w for w in d["warnings"] if "signature" in w]
     call(ctx, "fieldkit_publish_workspace", workspace_id="audits", user_approved=True)
