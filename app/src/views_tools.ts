@@ -8,7 +8,7 @@ import {
 } from "./intel";
 import { fetchCatalog, installedWorkflows, removeWorkflow, storageInfo } from "./packs";
 import { getSyncState, refreshPending, runSync } from "./sync";
-import { applyBackup, BackupError, parseBackup } from "./backup";
+import { accountMismatch, applyBackup, BackupError, parseBackup } from "./backup";
 import { clear, fmtBytes, fmtTime, h, isOnline, toast } from "./util";
 import { icon } from "./icons";
 import { go, lang, signInBanner, whoAmI, type View } from "./views_core";
@@ -259,6 +259,7 @@ export const settingsView: View = async (main) => {
         if (!f) return;
         try {
           const n = await importData(f);
+          if (!n) { toast("Import cancelled. Nothing was changed.", "info"); return; }
           toast(`Restored ${n.records} record(s), ${n.drafts} draft(s), ${n.attachments} file(s)${n.queued ? `; ${n.queued} queued for upload` : ""}. Existing items were kept.`, "ok");
           go(`#/settings?r=${Date.now()}`);
         } catch (err) { toast(err instanceof BackupError ? err.message : `Couldn't import: ${(err as Error).message}. Nothing was changed.`, "error"); }
@@ -297,6 +298,8 @@ async function exportData() {
   const atts = await d.getAll("attachments");
   const data = {
     format: "fieldkit-backup", version: 1, exported_at: new Date().toISOString(), device_id: await deviceId(),
+    account: await (async () => { const a = await getSetting<{ user_id?: string; display_name?: string } | null>("last_account", null);
+      return a?.user_id ? { user_id: a.user_id, display_name: a.display_name ?? "" } : undefined; })(),
     records: await d.getAll("records"), drafts: await d.getAll("drafts"), reports: await d.getAll("reports"),
     attachments: await Promise.all(atts.map(async (a) => ({ ...a, blob: undefined, data_b64: await blobToB64(a.blob) }))),
   };
@@ -308,8 +311,11 @@ async function exportData() {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-async function importData(file: File): Promise<{ records: number; drafts: number; attachments: number; queued: number }> {
+async function importData(file: File): Promise<{ records: number; drafts: number; attachments: number; queued: number } | null> {
   const plan = await parseBackup(await file.text());     // checks everything first; a damaged file changes nothing
+  const here = await getSetting<{ user_id?: string; display_name?: string } | null>("last_account", null);
+  const question = accountMismatch(plan.account, here?.user_id ? { user_id: here.user_id, display_name: here.display_name } : null);
+  if (question && !confirm(question)) return null;
   const r = await applyBackup(plan);
   await refreshPending();
   if (r.queued) void runSync();

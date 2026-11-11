@@ -160,3 +160,58 @@ test("backup: exact round trip, no duplicates or overwrites, damaged files chang
   expect([c.records.length, c.drafts.length, c.attachments.length, c.outbox.length]).toEqual([3, 4, 3, 2]);   // only the good import
   for (const ctx of [A.ctx, B.ctx, C.ctx]) await ctx.close();
 });
+
+test("backup from another Hermes account: asks first; cancelling changes nothing", async () => {
+  test.setTimeout(120_000);
+  const A = await device();
+  await seedA(A.p);
+  await A.p.evaluate(async () => {
+    const db: IDBDatabase = await new Promise((res) => { const q = indexedDB.open("fieldkit"); q.onsuccess = () => res(q.result); });
+    await new Promise<void>((res) => { const t = db.transaction("settings", "readwrite"); t.objectStore("settings").put({ key: "last_account", value: { user_id: "alice", display_name: "Alice", provider: "basic", at: "" } }); t.oncomplete = () => res(); });
+  });
+  await A.p.reload();
+  const exp = await exportFrom(A.p, "fk-acct.json");
+  expect(exp.account).toEqual({ user_id: "alice", display_name: "Alice" });
+  const f = join(tmpdir(), "fk-acct.json");
+
+  const B = await device();
+  const signInAs = async (user: string) => {
+    await B.p.evaluate(async (u) => {
+      const db: IDBDatabase = await new Promise((res) => { const q = indexedDB.open("fieldkit"); q.onsuccess = () => res(q.result); });
+      await new Promise<void>((res) => { const t = db.transaction("settings", "readwrite"); t.objectStore("settings").put({ key: "last_account", value: { user_id: u, display_name: u, provider: "basic", at: "" } }); t.oncomplete = () => res(); });
+    }, user);
+    await B.p.reload();
+  };
+  await signInAs("bob");
+  const asked: string[] = [];
+  B.p.removeAllListeners("dialog");
+  B.p.on("dialog", (d) => { asked.push(d.message()); d.dismiss(); });
+  expect(await importInto(B.p, f)).toContain("Import cancelled. Nothing was changed.");
+  expect(asked[0]).toContain("Alice (alice)");
+  expect(asked[0]).toContain("“bob”");
+  const none = await dump(B.p);
+  expect([none.records.length, none.drafts.length, none.attachments.length, none.outbox.length]).toEqual([0, 0, 0, 0]);
+
+  B.p.removeAllListeners("dialog");
+  B.p.on("dialog", (d) => { asked.push(d.message()); d.accept(); });
+  expect(await importInto(B.p, f)).toContain("Restored 3 record(s)");
+  expect(asked).toHaveLength(2);
+
+  // Same account, or an older backup without an account: no question.
+  const C = await device();
+  C.p.removeAllListeners("dialog");
+  const askedC: string[] = [];
+  C.p.on("dialog", (d) => { askedC.push(d.message()); d.accept(); });
+  await C.p.evaluate(async () => {
+    const db: IDBDatabase = await new Promise((res) => { const q = indexedDB.open("fieldkit"); q.onsuccess = () => res(q.result); });
+    await new Promise<void>((res) => { const t = db.transaction("settings", "readwrite"); t.objectStore("settings").put({ key: "last_account", value: { user_id: "alice", display_name: "Alice", provider: "basic", at: "" } }); t.oncomplete = () => res(); });
+  });
+  await C.p.reload();
+  expect(await importInto(C.p, f)).toContain("Restored 3 record(s)");
+  const older = join(tmpdir(), "fk-older.json");
+  const { account: _gone, ...old } = exp;
+  writeFileSync(older, JSON.stringify({ ...old, records: [], drafts: [{ ...old.drafts[0], id: "rec_olderdraft01" }], reports: [], attachments: [] }));
+  expect(await importInto(C.p, older)).toContain("1 draft(s)");
+  expect(askedC).toEqual([]);
+  for (const ctx of [A.ctx, B.ctx, C.ctx]) await ctx.close();
+});

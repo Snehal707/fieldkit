@@ -4,8 +4,11 @@
 import { db, type Attachment, type Draft, type LocalRecord, type StoredReport } from "./db";
 import { sha256Hex, uuid, nowIso } from "./util";
 
+/** The Hermes account a backup was made under (since 0.3.1; older backups have none). */
+export interface BackupAccount { user_id: string; display_name?: string }
+
 export interface BackupFile {
-  format: "fieldkit-backup"; version: number; exported_at: string; device_id: string;
+  format: "fieldkit-backup"; version: number; exported_at: string; device_id: string; account?: BackupAccount;
   records: LocalRecord[]; drafts: Draft[]; reports: StoredReport[];
   attachments: (Omit<Attachment, "blob"> & { data_b64: string })[];
 }
@@ -22,6 +25,7 @@ function decodeB64(s: unknown): Uint8Array | null {
 
 /** The parts of a backup that will be written; everything checked. */
 export interface ImportPlan {
+  account: BackupAccount | null;
   records: LocalRecord[]; drafts: Draft[]; reports: StoredReport[];
   attachments: (Omit<Attachment, "blob"> & { bytes: Uint8Array })[];
 }
@@ -53,7 +57,19 @@ export async function parseBackup(text: string): Promise<ImportPlan> {
   if (problems.length) {
     throw new BackupError(`This backup is damaged (${problems.slice(0, 3).join(", ")}${problems.length > 3 ? `, and ${problems.length - 3} more` : ""}). Nothing was imported.`);
   }
-  return { records, drafts, reports, attachments: decoded };
+  const acct = isObj(data.account) && isId(data.account.user_id)
+    ? { user_id: data.account.user_id, display_name: typeof data.account.display_name === "string" ? data.account.display_name : "" } : null;
+  return { account: acct, records, drafts, reports, attachments: decoded };
+}
+
+/** When a backup was made under a different Hermes account than the one this phone is signed in to, the question
+ *  to ask before importing (its unsent records would upload to this phone's account). Null when there is nothing to
+ *  compare (an older backup without an account, or a phone not signed in yet) or the accounts match. */
+export function accountMismatch(backup: BackupAccount | null, current: BackupAccount | null): string | null {
+  if (!backup || !current || backup.user_id === current.user_id) return null;
+  const name = (a: BackupAccount) => (a.display_name && a.display_name !== a.user_id ? `${a.display_name} (${a.user_id})` : a.user_id);
+  return `This backup is from Hermes account “${name(backup)}”, but this phone is signed in as “${name(current)}”. `
+    + `Its records would be added to this phone, and any that were never uploaded would upload to “${name(current)}”. Import anyway?`;
 }
 
 /** Write a checked backup: items already on the device are kept as they are (never overwritten). Unsent records are

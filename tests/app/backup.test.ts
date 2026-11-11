@@ -2,7 +2,7 @@
 // already on the device, and queues unsent records for upload in the same step.
 import { beforeEach, describe, expect, it } from "vitest";
 import { _resetDbForTests, db } from "../../app/src/db";
-import { applyBackup, BackupError, parseBackup } from "../../app/src/backup";
+import { accountMismatch, applyBackup, BackupError, parseBackup } from "../../app/src/backup";
 import { sha256Hex } from "../../app/src/util";
 
 beforeEach(() => { indexedDB = new IDBFactory(); _resetDbForTests(); });
@@ -58,5 +58,21 @@ describe("restoring a backup", () => {
     expect(again).toEqual({ records: 0, drafts: 0, attachments: 0, queued: 0 });
     expect((await d.get("records", "rec_synced_01"))!.answers).toEqual({ kept: true });
     expect(await counts()).toEqual({ r: 3, d: 1, a: 1, o: 2 });
+  });
+});
+
+describe("which account a backup belongs to", () => {
+  it("is read from the backup (absent in older backups)", async () => {
+    expect((await parseBackup(await file({ account: { user_id: "demo", display_name: "Demo" } }))).account).toEqual({ user_id: "demo", display_name: "Demo" });
+    expect((await parseBackup(await file())).account).toBeNull();
+  });
+  it("asks only when the backup's account differs from the signed-in one", () => {
+    expect(accountMismatch({ user_id: "demo" }, { user_id: "demo" })).toBeNull();
+    expect(accountMismatch(null, { user_id: "demo" })).toBeNull();               // older backup: nothing to compare
+    expect(accountMismatch({ user_id: "demo" }, null)).toBeNull();               // phone not signed in yet
+    const q = accountMismatch({ user_id: "alice", display_name: "Alice" }, { user_id: "bob" })!;
+    expect(q).toContain("Alice (alice)");
+    expect(q).toContain("“bob”");
+    expect(q).toContain("Import anyway?");
   });
 });
