@@ -56,12 +56,12 @@ export function storageMessage(st: StorageState): StorageMessage {
   }
   if (st.kind === "unsupported") {
     return { label: "Standard storage", tone: "info", canRequest: false,
-      detail: "This browser doesn't offer storage protection. Your records stay on this device; sync when you can and use Export for an extra backup." };
+      detail: "This browser doesn't offer storage protection. Your records stay on this device; sync when you can and use Export data for an extra backup." };
   }
   return { label: "Standard storage (not protected)", tone: "info", canRequest: true,
     detail: "Your records stay on this device and are kept until they sync. The browser decides whether to protect site data — "
       + "on iPhone it often doesn't, and that's normal. It may only clear data from sites that haven't been used for a long "
-      + "time or when the phone is almost out of space. Open FieldKit and sync regularly, and use Export for an extra backup."
+      + "time or when the phone is almost out of space. Open FieldKit and sync regularly, and use Export data for an extra backup."
       + (st.standalone ? "" : " Opening FieldKit from the Home Screen makes protection more likely (not guaranteed).") };
 }
 

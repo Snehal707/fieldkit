@@ -83,13 +83,22 @@ VISITS = {"id": "home-visit", "title": {"en": "Home visit"}, "languages": ["en"]
 # ----------------------------------------------------------------------------- registration
 def test_manifest_matches_registration(ctx):
     manifest = yaml.safe_load((ROOT / "plugin.yaml").read_text(encoding="utf-8"))
-    assert manifest["name"] == "fieldkit" and manifest["version"] == "0.3.0"
+    assert manifest["name"] == "fieldkit" and manifest["version"] == "0.3.1"
     assert sorted(manifest["provides_tools"]) == sorted(ctx.tools) == sorted(tools.TOOL_NAMES)
     assert len(ctx.tools) == 12
     assert sorted(ctx.skills) == ["fieldkit", "fieldkit-workspace-builder"]
     assert "fieldkit.workspace" in ctx.prompt_sections
     assert ctx.hooks == [] and "provides_hooks" not in manifest           # nothing runs in the background
     assert manifest["config_keys"] == ["public_url"]
+
+
+def test_skills_and_session_note_name_only_registered_tools(ctx):
+    # Removed tools (fieldkit_save_workspace_brief, fieldkit_build_workspace, ...) must not be suggested to Hermes.
+    texts = {str(p.parent.name): p.read_text(encoding="utf-8") for p in ROOT.glob("skills/*/SKILL.md")}
+    texts["prompt_section"] = ws.prompt_section(db.get_store())
+    for name, text in texts.items():
+        named = set(re.findall(r"\bfieldkit_[a-z_]+\b", text))
+        assert named <= set(ctx.tools), (name, sorted(named - set(ctx.tools)))
 
 
 def test_fieldkit_never_calls_a_model_or_runs_background_work():

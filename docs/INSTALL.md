@@ -1,4 +1,4 @@
-# Installing FieldKit (0.3.0)
+# Installing FieldKit (0.3.1)
 
 Requires **Hermes Agent ≥ 0.23.0** with the web dashboard.
 
@@ -64,7 +64,8 @@ then remove the old icon. Records are not lost.
 have not been used for a long time, or when the device is almost full
 ([WebKit storage policy](https://webkit.org/?p=14403)). FieldKit asks for protection; Safari decides, and may say no even for
 Home Screen apps. **Settings → Storage on this device** shows what the browser allows. Entries stay on the phone until
-Hermes confirms them, so open FieldKit and sync regularly, and use **Export** for an extra backup.
+Hermes confirms them, so open FieldKit and sync regularly, and use **Export data** (Settings → Backup & recovery) for an
+extra backup.
 
 The app header shows the device network, Hermes reachability, entries awaiting confirmation and unsubmitted drafts. Tap
 the status pill to open **Connection diagnostics**, which runs a live connection test and shows what each request got back.

@@ -1,4 +1,4 @@
-# FieldKit architecture (0.3.0)
+# FieldKit architecture (0.3.1)
 
 FieldKit is an offline observation collection and synchronisation plugin for Hermes. One repository, three parts, one
 database. FieldKit never calls a model: it has no model client, runs no background worker, registers no hooks and
@@ -89,8 +89,8 @@ tools, the phone through the authenticated plugin API.
 5. Restore: if Hermes lacks a form version the phone has (for example after its data was reset), the phone sends it back
    with `POST workflows/restore`. The same id and version are never overwritten.
 
-**Synchronised never means processed.** Syncing only uploads. Saved Records lists the account's entries across devices,
-with the newest 500 per account.
+**Synchronised never means processed.** Syncing only uploads. Saved Records lists every entry of the account across
+devices, page by page.
 
 ## Workspaces and forms
 A workspace is a user's work turned into forms. Hermes sets it up in a chat, following the `fieldkit-workspace-builder`

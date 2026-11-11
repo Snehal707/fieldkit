@@ -246,7 +246,7 @@ export const settingsView: View = async (main) => {
       h("li", null, "Opens full-screen from its own icon, and starts offline from the Home Screen."),
       h("li", null, "On iPhone, the browser is more likely to protect its storage when it's used as a Home Screen app — but this isn't guaranteed."),
       h("li", null, "On iPhone the installed app keeps its own data, separate from Safari: sign in once inside it, and download your workspace there.")),
-    h("p", { class: "muted" }, "Installing doesn't make storage permanent. Records stay on the device until they sync, so sync regularly and use Export for an extra backup.")));
+    h("p", { class: "muted" }, "Installing doesn't make storage permanent. Records stay on the device until they sync, so sync regularly and use Export data for an extra backup.")));
 
   main.append(h("div", { class: "card" }, h("h2", null, "Backup & recovery"),
     h("p", { class: "muted" }, "Export everything on this device (records, media, reports, drafts) to a file you can keep or move to another device."),

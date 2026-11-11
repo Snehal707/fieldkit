@@ -16,3 +16,6 @@ CLAUDE.md
 .claude/
 
 tests/eval/.*.bundle.mjs
+
+# local design-tool settings (not part of the plugin)
+.impeccable/

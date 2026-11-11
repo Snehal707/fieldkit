@@ -46,11 +46,16 @@ signature field is added only when you ask for one (for example consent or sign-
 - Each entry keeps the form version it was made with.
 - Optional tools, installed from **Offline Packs**: **Scan text** (OCR in English or Hindi; also **Extract text** on a
   photo inside a form) and **Translate** (English ↔ Hindi).
+- **Backup & recovery** (Settings): **Export data** saves everything on the device (records, media, reports, drafts)
+  to a file. **Import backup** checks the whole file first (structure and every file's SHA-256), then writes
+  all-or-nothing. It remembers the Hermes account and asks before importing another account's backup.
 
 ### 3. Sync (upload only)
 Entries and files upload when the app is open and the phone is online. Each file is checked by SHA-256, and a resend
-never creates a duplicate. If an entry was changed on two devices, a conflict is shown for you to resolve. An expired
-sign-in pauses the queue without losing anything. **Syncing only uploads. Nothing is processed.**
+never creates a duplicate. If an entry was changed on two devices, a conflict is shown for you to resolve. The conflict
+shows which entry and which answers differ. You resolve conflicts one at a time, after you choose, on the dashboard or
+by asking Hermes. An expired sign-in pauses the queue without losing anything. **Syncing only uploads. Nothing is
+processed.**
 
 ### 4. Ask your Hermes agent
 Hermes reads what you synced through FieldKit's tools: entries (filtered by workspace, form, subject or date), one entry
@@ -75,7 +80,7 @@ Entries keep the questions and answers they were recorded with, including questi
 | **Hermes tools** | 12 tools (see [docs/API.md](docs/API.md)): set up, change, publish and undo workspaces; read entries, attachments, sync status and conflicts; the phone link. |
 | **Skills** | `fieldkit` (find and read entries; Hermes analyses them with its own tools) and `fieldkit-workspace-builder` (set up, change and undo workspaces). |
 | **Session note** | One short note in each new Hermes session that lists your workspaces. |
-| **Phone app (PWA)** | Installable, works offline. Bottom bar: Home, Workspace, Records, Sync, Settings. Served at `/dashboard-plugins/fieldkit/app_dist/index.html`. |
+| **Phone app (PWA)** | Installable, works offline, with a Back button on nested screens. Bottom bar: Home, Workspace, Records, Sync, Settings. Served at `/dashboard-plugins/fieldkit/app_dist/index.html`. |
 | **Dashboard tab** | Overview, Records (answers and attachments), Synchronization (devices and conflicts), Mobile Access (link and QR code). |
 | **Setting** | `public_url` only (optional). |
 
@@ -85,20 +90,32 @@ The plugin registers no hooks, runs no background worker and never calls a model
 
 Exact commands and results are in [docs/TESTING.md](docs/TESTING.md).
 
-**Local test only.** Hermes Agent v0.23.0 on a local machine, with real conversations (model `openai/gpt-5.4-mini` via
-Nous), 2026-11-10. This was **not** the hosted Hermes and **not** the owner's iPhone.
-- Unit tests: 90 Python and 100 TypeScript. Typecheck clean. `hermes plugins validate` passed. `hermes plugins doctor --ci`: 12 tools, 0 hooks.
-- Browser end-to-end tests (Playwright), final run on the release code: Chromium 27 passed, 2 skipped; WebKit 21 passed,
-  8 skipped, 0 failed. Offline OCR and translation passed in both browsers with the network off. Details: docs/TESTING.md.
-- Setup by chat, edit and undo by chat, and asking about a synced visit worked with the new tools; Hermes described a
+**Local test only.** Hermes Agent v0.23.1 on a local machine, with real conversations (model `openai/gpt-5.4-mini` via
+Nous), 2026-11-11. This was **not** the hosted Hermes and **not** the owner's iPhone.
+- Unit tests: 117 Python and 126 TypeScript. Typecheck clean. `hermes plugins validate` passed. `hermes plugins doctor --ci`:
+  12 tools, 0 hooks.
+- Browser end-to-end tests (Playwright), on commit 5d77969 and again on 0.3.1: Chromium 37 passed, 0 failed; WebKit 31 passed, 6 skipped,
+  0 failed. The 6 WebKit skips need Playwright `route()` to block service-worker traffic, which WebKit does not support.
+  Offline OCR and translation passed in both browsers with the network off. Details: docs/TESTING.md.
+- Final audit (2026-11-11): 40 real chat conversations built 39 workspaces across many professions. 1,272 synthetic
+  entries with 1,599 files synced from simulated phones. Every entry's answers and every file's SHA-256 on Hermes matched
+  what the phones sent (1,272/1,272 entries, 1,599/1,599 files).
+- Earlier local run (v0.23.0, 2026-11-10): setup by chat, edit and undo by chat, and asking about a synced visit worked with the new tools; Hermes described a
   synced photo with its own vision tool and transcribed a synced voice note word for word with its own speech-to-text.
 - Copies of two databases from earlier real-Hermes runs opened with 0.3: no row counts changed, and all old entries, reports
   and workspace versions stayed readable.
 
-**Owner's iPhone with the hosted Hermes, version 0.2.4 (2026-11-09, owner-reported):** offline recording, sync, media
-(photos, voice notes and signatures) and Saved Records worked. That collection code is unchanged in 0.3 apart from one
-fix (the form keeps the cursor in a field while another answer is saved), so this still largely applies. The 0.3 changes (workspaces by chat, the phone's new screens and the removed tools) have not yet been
-checked on the iPhone or the hosted Hermes.
+**Owner's iPhone with the hosted Hermes and the Hermes mobile app, version 0.2.4 (2026-11-09, owner-reported):** offline
+recording, sync, media (photos, voice notes and signatures) and Saved Records worked. That collection code is unchanged in
+0.3 apart from one fix (the form keeps the cursor in a field while another answer is saved).
+
+**Owner's iPhone, version 0.3.0 (2026-11-11, owner-reported):** the owner updated to commit 35f9ab8, tested on a real
+iPhone with the hosted Hermes and the Hermes mobile app, and reported everything working.
+
+**Hosted Hermes, commit 5d77969 (2026-11-11, owner-reported):** deployed to the hosted Hermes and checked there: all
+12 tools registered, workspace links open the workspace, and existing data stayed intact. The phone-app changes made
+after 35f9ab8 (the Back button and faster navigation, backup import and export checks, readable records from other
+devices, the workspace preview before download) have **not yet been checked on a real iPhone**.
 
 ## Known limitations
 - Close-ups on Pro iPhones: "Take photo" opens iOS's camera sheet, which does not switch to the macro lens like the
@@ -107,7 +124,6 @@ checked on the iPhone or the hosted Hermes.
 - After `hermes plugins update fieldkit`, restart the Hermes dashboard **and** any running Hermes gateway. A running gateway keeps the old plugin code loaded.
 - iOS Home Screen apps have storage separate from Safari: sign in once inside the app.
 - Uploads run only while the app is open. There is no background upload from a closed app.
-- Saved Records lists the newest 500 entries per account.
 - Photos and voice notes are analysed only by your Hermes agent, with its own vision and speech-to-text tools. Configure those tools in Hermes. With a text-only main model, configure a vision model (see [docs/INSTALL.md](docs/INSTALL.md)).
 - Approval before publishing relies on Hermes asking. FieldKit cannot see whether you replied in between.
 - OCR cannot read blurred, dark or handwritten text, and the app says so. The small translation model mistranslates some technical terms: check important wording.

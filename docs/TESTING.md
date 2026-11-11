@@ -4,7 +4,7 @@
 > **Current behaviour (0.3.0), in short.** FieldKit collects and syncs; it never calls a model. Workspaces are set up,
 > edited and undone by Hermes conversation, and Hermes publishes only after the user approves. Hermes has 12 tools and
 > reads entries, photos and voice notes with its own tools when asked. The sections below are a dated log, and later
-> sections replace earlier ones. The latest results are in "0.3.0 cleanup (2026-11-10)" at the end.
+> sections replace earlier ones. The latest results are in "Final audit and fixes (2026-11-11, commit 5d77969)" at the end.
 >
 > Sections before 0.3.0 describe removed features (assistant, decision guides, reports, questions, speech-to-text).
 
@@ -14,8 +14,8 @@ Node 22. Anything not listed as run here is marked **unverified**.
 ## 1. Unit and API tests
 ```bash
 uv venv .venv --python 3.11 && uv pip install --python .venv fastapi httpx pytest jsonschema pyyaml python-multipart
-.venv/Scripts/python -m pytest            # 114 passed
-npm ci --legacy-peer-deps && npm test     # 110 passed (vitest)
+.venv/Scripts/python -m pytest            # 117 passed
+npm ci --legacy-peer-deps && npm test     # 126 passed (vitest)
 npm run typecheck
 ```
 
@@ -477,6 +477,8 @@ local score was inconsistent with the evidence.
   because Saved Records loads at most **500 records per account** and lost-record detection pauses when the list is not
   complete (behaviour since 0.2.2). The full suite passed on a fresh test database (the old one was kept, renamed). This
   is a real limit for very large accounts and is listed in the README's known limitations.
+  *Historic: this limit was removed in commit 91be7e3. Saved Records now pages through the whole account (`GET records`
+  takes `offset`).*
 
 ### 0.2.6: workspace builder fix
 - **Part-by-part build:** `fieldkit_start_workspace_build`, `fieldkit_add_workspace_parts` (with `dry_run`),
@@ -730,3 +732,44 @@ a library photo is stored with `source: "photo_library"` and its file time as `t
 **Verified locally:** a library photo attached offline, synced, stored and marked `photo_library` (Chromium and WebKit);
 the camera path and offline OCR unchanged. **Not verified:** on the owner's iPhone (the camera sheet and Photos picker
 only exist on the device).
+
+## Final audit and fixes (2026-11-11, commit 5d77969)
+
+Run on a disposable local test Hermes v0.23.1 (Windows 11, model `openai/gpt-5.4-mini` via Nous), phone-sized browsers.
+This was not the hosted Hermes and not the owner's iPhone.
+
+| Check | Result |
+|---|---|
+| Unit tests | 117 Python (pytest, with the 0.3.1 skill check); 126 TypeScript (vitest, 15 files); typecheck clean |
+| `hermes plugins validate .` | Passed |
+| `hermes plugins doctor . --ci` | 12 tools, 0 hooks |
+| Browser E2E, Chromium | 37 passed, 0 failed |
+| Browser E2E, WebKit | 31 passed, 6 skipped, 0 failed. The 6 skipped tests need Playwright `route()` to block service-worker traffic, which WebKit does not support |
+
+**Audit (synthetic data).** 40 real chat conversations built 39 workspaces across many professions. 1,272 synthetic
+entries with 1,599 files were synced from simulated phones. Every entry's answers and every file's SHA-256 on Hermes
+matched what the phones sent: 1,272 of 1,272 entries and 1,599 of 1,599 files.
+
+**Retests after the fixes, in real Hermes conversations:**
+- The phone link opens the workspace.
+- A sync conflict is identified by form, subject, date and the answers that differ. Hermes resolves only the conflict the
+  user named, and asks which one next instead of resolving all.
+- A new checklist request without the word "FieldKit" starts the workspace interview.
+- Publishing a form whose identifying question is GPS is refused, and Hermes asks for a short identifier.
+
+**Phone.** The owner tested commit 35f9ab8 on a real iPhone with the hosted Hermes and the Hermes mobile app (2026-11-11)
+and reported everything working. Commits after 35f9ab8 (Back button and faster navigation, backup import and export
+checks, audit fixes) are verified only on the local test Hermes and in browsers. Android Chrome is not tested.
+
+**Hosted Hermes.** Commit 5d77969 (2026-11-11, owner-reported) was deployed to the hosted Hermes and checked there: all
+12 tools registered, workspace links open the workspace, and existing data stayed intact. The phone-app changes made
+after 35f9ab8 (the Back button and faster navigation, backup import and export checks, readable records from other
+devices, the workspace preview before download) have **not yet been checked on a real iPhone**.
+
+**Skills against the registered tools.** Both skill files and the session note name only the 12 registered tools; the removed `fieldkit_save_workspace_brief` and `fieldkit_build_workspace` appear only in the historic sections of this file. `test_skills_and_session_note_name_only_registered_tools` now fails if a skill names a tool that is not registered.
+
+**Saved Records.** The list pages through the whole account. `GET records` takes `offset` and returns `total` and
+`next_offset`. `fieldkit_list_records` reads every matching entry page by page.
+
+**NOT verified:** the phone-app changes after 35f9ab8 on a real iPhone, and Android Chrome. 0.3.1 (version bump,
+"Export data" wording, a test that skills name only registered tools) adds no new behaviour.

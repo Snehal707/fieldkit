@@ -1,4 +1,4 @@
-# Hackathon submission (0.3.0)
+# Hackathon submission (0.3.1)
 
 **Event:** Hermes Agent Plugin Hackathon. The deadline is reported as **Nov 11 2026, 5 PM ET**. Confirm it against the official Nous Research announcement before submitting.
 
@@ -20,10 +20,15 @@ FieldKit never calls a model. It is not an assistant, a research tool or a decis
 ## Demo script (3–4 minutes)
 Steps 1–7 are the core demo. Step 8 is optional.
 
-**What is verified.** On a local test Hermes v0.23.0 (2026-11-10), with real conversations: setting up a workspace,
-editing it and undoing an edit by chat, and asking about a synced visit with a photo. **Not verified** on the hosted Hermes
-or the owner's iPhone for 0.3.0. The owner verified 0.2.4 on a real iPhone with the hosted Hermes and the Hermes mobile
-app: offline recording, sync, media and Saved Records. That collection code is unchanged in 0.3.0.
+**What is verified.** On a local test Hermes v0.23.1 (2026-11-11, commit 5d77969): a final audit of 40 real chat
+conversations, which built 39 workspaces, and 1,272 synced entries with 1,599 files, all matching on Hermes. Earlier, on
+v0.23.0 (2026-11-10), with real conversations: setting up a workspace, editing it and undoing an edit by chat, and asking
+about a synced visit with a photo. **Owner-verified:** the owner tested 0.3.0 on a real iPhone with the hosted Hermes and
+the Hermes mobile app, after updating to commit 35f9ab8 (2026-11-11), and reported everything working. **Hosted Hermes, commit 5d77969
+(owner-reported):** deployed and checked: all 12 tools registered, workspace links open the workspace, existing data
+intact. The phone-app changes after 35f9ab8 (Back button, backup import checks, readable records from other devices,
+workspace preview) are **not yet checked on a real iPhone**. The owner verified 0.2.4 on a real iPhone with the hosted Hermes and
+the Hermes mobile app: offline recording, sync, media and Saved Records.
 
 1. **Set up for my work (Hermes Mobile or chat).** "Set up FieldKit for my work." Hermes asks what you record, shows a summary
    of the forms, and publishes after you approve. It returns a tappable app link.
@@ -46,7 +51,7 @@ Repository must be public; `sha` must be the full 40-character commit; `version`
 name: fieldkit
 repo: https://github.com/Snehal707/fieldkit
 sha: "<40-char commit sha>"
-version: "0.3.0"
+version: "0.3.1"
 requires_hermes: ">=0.23.0"
 description: "Offline observation forms set up by Hermes in a short chat (questions, choices, photos, voice notes, GPS, signatures; English and Hindi), with secure, idempotent sync; your Hermes agent reads the synced entries with its own tools when you ask."
 network_disclosure: "The phone app downloads pinned on-device model files (translation and OCR) from huggingface.co and cdn.jsdelivr.net only when the user installs one of those packs. The backend makes no third-party calls and no model calls."
@@ -69,18 +74,19 @@ Skills: `fieldkit` (find and read entries) and `fieldkit-workspace-builder` (set
 - Uploads run while the app is open. There is no background upload from a closed app.
 - Hermes OAuth sessions last 15 minutes. Sync pauses and asks you to sign in; nothing is lost.
 - Approval steps rely on Hermes asking before it publishes. FieldKit cannot see whether the user replied in between.
-- Saved Records lists the newest 500 entries per account.
 - Android Chrome is not yet tested.
 
 ## Checklist before submitting
 - [ ] Confirm the deadline (reported as Nov 11 2026, 5 PM ET) and the submission format (catalog PR, form, or both) against the official announcement.
 - [ ] Push to the public GitHub repo at https://github.com/Snehal707/fieldkit.
-- [ ] Run `hermes plugins validate .` and `hermes plugins doctor . --ci` on the final commit. Both passed on 0.3.0 on a local test Hermes (12 tools, 0 hooks). Re-run on the exact commit you submit.
+- [ ] Run `hermes plugins validate .` and `hermes plugins doctor . --ci` on the final commit. Both passed on 0.3.1 with Hermes v0.23.1 on a local test Hermes (12 tools, 0 hooks). Re-run on the exact commit you submit.
 - [ ] Run the Python, TypeScript and Playwright suites on the final commit (see [docs/TESTING.md](TESTING.md)).
 - [ ] Run `npm run build` and commit `dashboard/dist` and `dashboard/app_dist`.
 - [x] Real iPhone + hosted Hermes + Hermes mobile app: offline recording, sync, media and Saved Records (owner, 0.2.4).
-- [ ] Hosted dashboard tab on 0.3.0: all four tabs.
-- [ ] 0.3.0 on the owner's iPhone and the hosted Hermes: setup by chat, offline recording, sync, edit and undo by chat, asking about an entry with a photo.
+- [x] 0.3.0 on the hosted Hermes and the owner's iPhone: the owner reported everything working (commit 35f9ab8, 2026-11-11).
+- [x] Hosted Hermes on commit 5d77969: 12 tools, workspace links and existing data checked (owner, 2026-11-11).
+- [ ] Re-check on the owner's iPhone after the final commit (Back button, backup import, readable records from other
+  devices, workspace preview before download).
 - [ ] Optional: Android Chrome.
 - [ ] Record the demo video (3–4 minutes).
 - [ ] Open the catalog PR only with the owner's go-ahead.
