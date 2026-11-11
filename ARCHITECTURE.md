@@ -174,8 +174,6 @@ Rules:
 - A normal, safe or expected range goes into the question's help text, so any reading can still be saved. `min`/`max`
   are only for values that cannot occur.
 
-Approval before publishing relies on Hermes asking the user. FieldKit cannot see whether the user replied in between.
-
 ## Records and workspaces
 Each entry records the workspace it was made in. The server accepts the phone's value only when that workspace is
 published and contains the entry's form (in its published or earlier published versions). Otherwise it stores the only
@@ -184,15 +182,8 @@ rule are filled in only when exactly one published workspace contains their form
 `record.workspace_repaired`.
 
 ## Data from earlier versions
-All tables and migrations are kept, so no data is removed. The tables `jobs`, `reports`, `followups`, `learning_events`,
-`candidates`, `source_pages`, `photo_descriptions`, `workspace_builds`, `workspace_briefs` and `questions` keep the rows
-written before 0.3, and no code writes new rows to them. Old reports, questions and answers, and the on-phone findings
-stay readable: the phone shows them under "From an earlier FieldKit version", the dashboard shows them read-only, and
-`fieldkit_get_record` returns them under `from_earlier_fieldkit_versions`. Workspace versions with research parts
-(sources, evidence, guides, decision scales, knowledge, vocabulary, intents, gaps, traceability) stay readable and can
-be undone to; the next edit drops those parts from the new version, and the change summary lists them. On the phone,
-the offline assistant's vectors and its learning queue were removed from IndexedDB at version 5. Entries, files, drafts
-and answers were not touched.
+No data is ever removed. Entries, reports and questions saved by versions before 0.3 stay readable (read-only) on
+the phone, on the dashboard and through `fieldkit_get_record`.
 
 ## Security
 - Every API route sits behind Hermes' auth gate. The phone's shell is public and holds no data.
@@ -203,11 +194,3 @@ and answers were not touched.
 - Attachments: MIME allowlist, 15 MB cap, SHA-256 must match the declared value, and files are stored per user.
 - Forms are JSON data with `additionalProperties: false`. Unknown keys are rejected. Conditions are evaluated as data.
 - The phone uses a Content Security Policy. No credentials appear in frontend code; cookies are handled by Hermes.
-
-## Known limits
-- **iOS Safari:** an installed app has its own storage, separate from Safari, so the user signs in once inside the app.
-  There is no Background Sync; uploads run while the app is open.
-- **Hermes OAuth sessions** last 15 minutes with no refresh token. Expiry pauses the queue and never drops data; the user
-  taps **Sign in**.
-- **Photos and voice notes** are read only by the user's Hermes agent, with its own vision and speech-to-text tools.
-  FieldKit does not read them.

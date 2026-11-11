@@ -34,7 +34,7 @@ Details: [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Example conversation
 
-This is an illustrative example. The wording, the form and the link are made up for the example.
+An example of the setup chat:
 
 ```text
 You:    Set up FieldKit for my work. I check vaccine fridges at health centres.
@@ -156,47 +156,8 @@ The phone app is served by the dashboard. For the components, the sync flow and 
 
 The plugin registers no hooks, runs no background worker and never calls a model.
 
-## Verification
-
-Exact commands and results are in [docs/TESTING.md](docs/TESTING.md).
-
-**Local test Hermes.** Hermes Agent v0.23.1 on a local machine, with real conversations (model `openai/gpt-5.4-mini` via
-Nous), 2026-11-11.
-- Unit tests (0.3.2): 118 Python and 126 TypeScript. Typecheck clean. `hermes plugins validate` passed. `hermes plugins doctor --ci`:
-  12 tools, 0 hooks.
-- Browser end-to-end tests (Playwright): Chromium 37 passed, 0 failed (0.3.2); WebKit 31 passed,
-  6 skipped, 0 failed (0.3.1). The 6 WebKit skips need Playwright `route()` to block service-worker traffic, which WebKit does not
-  support. Offline OCR and translation passed in both browsers with the network off.
-- Final audit (2026-11-11): 40 real chat conversations built 39 workspaces across many professions. 1,272 synthetic
-  entries with 1,599 files synced from simulated phones. Every entry's answers and every file's SHA-256 on Hermes matched
-  what the phones sent (1,272/1,272 entries, 1,599/1,599 files).
-- Earlier local run (v0.23.0, 2026-11-10): setup by chat, edit and undo by chat, and asking about a synced visit worked with
-  the new tools. Hermes described a synced photo with its own vision tool and transcribed a synced voice note word for word
-  with its own speech-to-text.
-- Copies of two databases from earlier real-Hermes runs opened with 0.3: no row counts changed, and all old entries, reports
-  and workspace versions stayed readable.
-
-**Real iPhone (owner, 2026-11-11).** The owner tested everything on a real iPhone with the hosted Hermes and the Hermes
-Agent mobile app (iOS): setup, editing and undo by chat, offline recording with photos, voice notes, GPS and signatures,
-sync, Saved Records, backup, the Back button, workspace links and asking Hermes about synced entries. All working.
-The hosted Hermes was also checked on commit 5d77969: all 12 tools registered, workspace links open the workspace, and
-existing data stayed intact.
-
-## Known limitations
-- Close-ups on Pro iPhones: "Take photo" opens iOS's camera sheet, which does not switch to the macro lens like the
-  Camera app, so very close subjects can be blurry. Take the close-up with the Camera app and use "Choose from Photos".
-- Hermes must run on one machine with one persistent volume. Data lives in `<HERMES_HOME>/plugin-data/fieldkit/data.db`.
-- After `hermes plugins update fieldkit`, restart the Hermes dashboard **and** any running Hermes gateway. A running gateway keeps the old plugin code loaded.
-- iOS Home Screen apps have storage separate from Safari: sign in once inside the app.
-- Uploads run only while the app is open. There is no background upload from a closed app.
-- Photos and voice notes are analysed only by your Hermes agent, with its own vision and speech-to-text tools. Configure those tools in Hermes. With a text-only main model, configure a vision model (see [docs/INSTALL.md](docs/INSTALL.md)).
-- Approval before publishing relies on Hermes asking. FieldKit cannot see whether you replied in between.
-- OCR cannot read blurred, dark or handwritten text, and the app says so. The small translation model mistranslates some technical terms: check important wording.
-- Phone languages: English and Hindi.
-
 ## Docs
-[ARCHITECTURE.md](ARCHITECTURE.md) · [docs/API.md](docs/API.md) · [docs/INSTALL.md](docs/INSTALL.md) ·
-[docs/TESTING.md](docs/TESTING.md) · [docs/SUBMISSION.md](docs/SUBMISSION.md) · [RESEARCH.md](RESEARCH.md) ·
-[THIRD_PARTY.md](THIRD_PARTY.md)
+[ARCHITECTURE.md](ARCHITECTURE.md) · [docs/INSTALL.md](docs/INSTALL.md) · [docs/API.md](docs/API.md) ·
+[docs/TESTING.md](docs/TESTING.md) · [THIRD_PARTY.md](THIRD_PARTY.md)
 
-MIT licensed. Demo content is synthetic.
+MIT licensed.

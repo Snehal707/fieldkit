@@ -47,12 +47,11 @@ plugins:
 
 ## 3. Load it
 - **Install and enable** do not need a dashboard restart. A plugin enabled after the dashboard started is mounted on its
-  first request (verified with Hermes v0.23.0).
+  first request.
 - **Updates:** after `hermes plugins update fieldkit`, restart **both** the Hermes dashboard and any running Hermes
   gateway. A running gateway keeps the old plugin code loaded. The phone app files update on their own: an installed app
   shows **Update ready**.
 - **Tools and skills** load in the next Hermes session.
-- **Do not restart a shared or hosted instance** without its operator's agreement.
 
 ## 4. Phones
 1. The phone must reach the dashboard over **HTTPS**, because service workers need a secure context.
@@ -66,10 +65,6 @@ plugins:
    - iPhone Safari: Share → **Add to Home Screen**.
    - On iOS the installed app has its own storage, separate from Safari. Open it and sign in once from inside it.
 7. **Home** should say **Ready to work offline**. Tap it to see each check.
-
-**Installed from the old address?** If you added FieldKit to your Home Screen from `/api/plugins/fieldkit/app/`, the app
-asks you to re-add it. Open the new address in Safari → Share → **Add to Home Screen**, sign in once inside the new icon,
-then remove the old icon. Records are not lost.
 
 **Storage on iPhone.** Browsers keep FieldKit's data on the device, but by default they may clear the data of sites that
 have not been used for a long time, or when the device is almost full
@@ -91,10 +86,6 @@ In Hermes (Mobile, chat or dashboard), say: "Set up FieldKit for my work."
 To change the workspace later, ask in chat, for example "add a question about the door seal" or "remove the GPS field".
 Hermes shows the changes and asks before it publishes. To undo the last update, ask "Undo my last workspace update". The
 phone shows **Update available** for each new version.
-
-The synthetic example forms in `tests/fixtures/forms` (Equipment inspection, Classroom observation, Crop health survey)
-are for tests. `tests/fixtures/seed.py` publishes them as starter workspaces on a test Hermes. They are not part of the
-plugin.
 
 ## 6. Photos and voice notes
 Your Hermes agent reads photos and voice notes with its own tools, when you ask. FieldKit does not analyse them.

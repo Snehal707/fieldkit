@@ -1,7 +1,6 @@
 # Offline model evaluation (OCR and translation)
 
-These scripts measure how accurate FieldKit's optional on-device packs are: OCR and translation. They were
-written while fixing OCR and translation problems found on a real iPhone (see [docs/TESTING.md](../../docs/TESTING.md)).
+These scripts measure how accurate FieldKit's optional on-device packs are: OCR and translation.
 
 **Notes on these results**
 - All test material is **synthetic**: `sharp` makes the photos and the sentences were written by the maintainers. No
@@ -9,8 +8,7 @@ written while fixing OCR and translation problems found on a real iPhone (see [d
 - Each sentence has **one hand-written reference**. Scores are a guide, not a benchmark.
 - Results come from **desktop CPUs**. Translation was measured in Node with the same ONNX files the app
   downloads, not in a browser. OCR was run in Chromium and WebKit.
-- These scores were measured on desktop, not on the phone. OCR and translation themselves were checked on the owner's
-  iPhone.
+- These scores were measured on desktop CPUs.
 
 ## What each script does
 
@@ -44,17 +42,15 @@ node tests/eval/translation_eval.mjs <cacheDir> '[{"dir":"en-hi","mode":"plain"}
 
 ### OCR (character error rate, lower is better)
 
-| Case | Before (old code) | After (new code) |
-|---|---|---|
-| Large print | 0–1.3% | 0% (Chromium and WebKit) |
-| Ordinary small print (the iPhone symptom: old confidence 20–46%) | 78–89% | OCR screen: 2.3–2.7% English, 2.0–4.6% Hindi. Photo-field path: 3.8–4.6% English, 4.6–7.2% Hindi. Confidence about 90% |
-| Dim room with heavy shake | not measured | 72–94%. Still poor: the app reports the text as unreliable and asks for a retake. About 3–8 s on desktop |
-
-The browser breakdown for the small-print rows is not separated in these results.
+| Case | Character error rate |
+|---|---|
+| Large print | 0% (Chromium and WebKit) |
+| Ordinary small print | OCR screen: 2.3–2.7% English, 2.0–4.6% Hindi. Photo inside a form: 3.8–4.6% English, 4.6–7.2% Hindi |
+| Dim room with heavy shake | 72–94%. The app reports the text as unreliable and asks for a retake |
 
 ### Translation (chrF, higher is better)
 
-| Direction and set | Plain (before) | `fieldkit` (after) |
+| Direction and set | Plain model | FieldKit (`fieldkit` mode) |
 |---|---|---|
 | en→hi, general | 41.5 | 47.9 |
 | en→hi, dictionary-term sentences | 30.8 | 49.6 |
