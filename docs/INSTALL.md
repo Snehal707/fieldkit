@@ -51,7 +51,6 @@ plugins:
 5. Optional, in **Offline Packs**: English → Hindi and Hindi → English translation (about 110 MB each), and OCR for
    English (about 3 MB) and Hindi (about 1.4 MB).
 6. Install the app:
-   - Android Chrome: menu → **Install app**.
    - iPhone Safari: Share → **Add to Home Screen**.
    - On iOS the installed app has its own storage, separate from Safari. Open it and sign in once from inside it.
 7. Check **Home → Offline readiness**: the first three checks should be marked as ready.

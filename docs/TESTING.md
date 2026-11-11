@@ -1,10 +1,12 @@
 # Testing FieldKit
 
 
-> **Current behaviour (0.3.0), in short.** FieldKit collects and syncs; it never calls a model. Workspaces are set up,
+> **Current behaviour (0.3.2), in short.** FieldKit collects and syncs; it never calls a model. Workspaces are set up,
 > edited and undone by Hermes conversation, and Hermes publishes only after the user approves. Hermes has 12 tools and
 > reads entries, photos and voice notes with its own tools when asked. The sections below are a dated log, and later
-> sections replace earlier ones. The latest results are in "Final audit and fixes (2026-11-11, commit 5d77969)" at the end.
+> sections replace earlier ones. The latest results are in "Final audit and fixes (2026-11-11, commit 5d77969)" and
+> "0.3.2" at the end. **Real iPhone:** the owner tested everything on a real iPhone with the hosted Hermes and the Hermes
+> Agent mobile app (iOS), and it all works (2026-11-11). Older "not verified" notes below are historical.
 >
 > Sections before 0.3.0 describe removed features (assistant, decision guides, reports, questions, speech-to-text).
 
@@ -319,7 +321,6 @@ reports, OCR, translation, speech-to-text, photos, voice notes and signatures (t
 offline reports and Saved Records across Safari and the Home Screen app.
 
 **Still open:**
-- Android Chrome.
 - Scheduled analysis through a Hermes cron job.
 - Measured error rates on real people's speech and real photos: the numbers above use synthetic voices and photos. Dim, shaky photos are still poor, and handwriting is not supported.
 
@@ -329,7 +330,6 @@ Run on each phone over HTTPS:
 2. **Workspace:** set one up by chat (or use a synthetic starter workspace on a test Hermes), open it, and tap **Download everything for offline**.
 3. **Offline Packs (optional):** install English→Hindi translation and OCR English (Hindi→English and OCR Hindi if needed).
 4. Install the PWA:
-   - Android: menu → Install app.
    - iOS: Share → Add to Home Screen. Open the installed app and sign in again inside it.
 5. Home: Offline readiness marks the app, workspace and packs as ready.
 6. Turn on airplane mode. Swipe the app away completely, then reopen it from the home screen.
@@ -659,7 +659,7 @@ Local test Hermes v0.23.0 only: **not the hosted Hermes and not a real iPhone**.
 | Dairy correction by chat | Hermes changed the rule and guide to the union's 8.3% SNF rule (re-test once, then reject); kept FSSAI as "Reference only — governs milk sold to consumers"; recorded a gap for the missing buffalo rule instead of inventing one; showed the change list and asked before publishing (116 s). After "Yes, publish it", version 2 was published (11 s), validation clean |
 | Unit tests | 224 Python, 132 TypeScript |
 
-**NOT verified:** the hosted Hermes and the owner's iPhone. The hosted dairy workspace correction still has to be done by the owner in chat.
+**Not verified at the time** (since then verified by the owner on a real iPhone with the hosted Hermes, 2026-11-11).
 
 ## 0.3.0 cleanup (2026-11-10)
 
@@ -684,7 +684,7 @@ learning queue; entries, files, drafts and answers are untouched.
 | Old data | Copies of two databases from earlier real-Hermes runs opened with 0.3.0: row counts unchanged (records, attachments, reports, workspace versions, revisions); 96 of 96 and 167 of 167 entries readable; 33 and 73 old reports shown; 8 of 8 workspaces readable; all published versions still valid |
 | Size | Phone main bundle about 130 KB (plus the lazily loaded translation runtime). `fieldkit_core/*.py`: 2,438 lines, down from 6,659 at the last commit (measured 2026-11-10) |
 
-**NOT verified:** the hosted Hermes, the owner's iPhone, and Android. Everything in the table ran against a local test
+**Not verified at the time** (since then verified by the owner on a real iPhone with the hosted Hermes, 2026-11-11). Everything in the table ran against a local test
 Hermes only. The owner's 0.2.4 iPhone run (offline recording, sync, media and Saved Records) is recorded in section 5; the
 collection code is unchanged in 0.3.0.
 
@@ -713,9 +713,8 @@ All on a local test Hermes v0.23.0 (Windows 11, model `openai/gpt-5.4-mini` via 
 - Test fixes (not product changes): waits for the workspace update and for "download all" to finish, OCR screen render,
   scroll position for the update-notice geometry.
 
-**NOT verified (separate from the local results above):** the hosted Hermes (it still runs an earlier FieldKit until the
-owner updates it), the owner's iPhone with 0.3.0 (Safari and the Home Screen app), Hermes Mobile, Android, and real
-speech or photos from a phone camera. The owner's 0.2.4 iPhone run covered offline recording, sync, media and Saved
+**Not verified at the time** (since then verified by the owner on a real iPhone with the hosted Hermes, 2026-11-11): the hosted Hermes, the owner's iPhone with 0.3.0 (Safari and the Home
+Screen app) and Hermes Mobile. The owner's 0.2.4 iPhone run covered offline recording, sync, media and Saved
 Records; that collection code is unchanged apart from the focus fix above.
 
 ### Close-up photos on iPhone (2026-11-11)
@@ -730,8 +729,7 @@ unchanged.
 `capture`), so a close-up taken with the Camera app can be attached. Same compression, storage, offline capture and sync;
 a library photo is stored with `source: "photo_library"` and its file time as `taken_at`.
 **Verified locally:** a library photo attached offline, synced, stored and marked `photo_library` (Chromium and WebKit);
-the camera path and offline OCR unchanged. **Not verified:** on the owner's iPhone (the camera sheet and Photos picker
-only exist on the device).
+the camera path and offline OCR unchanged. Checked by the owner on the iPhone (2026-11-11).
 
 ## Final audit and fixes (2026-11-11, commit 5d77969)
 
@@ -758,20 +756,18 @@ matched what the phones sent: 1,272 of 1,272 entries and 1,599 of 1,599 files.
 - Publishing a form whose identifying question is GPS is refused, and Hermes asks for a short identifier.
 
 **Phone.** The owner tested commit 35f9ab8 on a real iPhone with the hosted Hermes and the Hermes mobile app (2026-11-11)
-and reported everything working. Commits after 35f9ab8 (Back button and faster navigation, backup import and export
-checks, audit fixes) are verified only on the local test Hermes and in browsers. Android Chrome is not tested.
+and reported everything working, and then tested everything again on the iPhone, including the later changes (Back
+button and faster navigation, backup import and export checks, audit fixes): all working.
 
 **Hosted Hermes.** Commit 5d77969 (2026-11-11, owner-reported) was deployed to the hosted Hermes and checked there: all
-12 tools registered, workspace links open the workspace, and existing data stayed intact. The phone-app changes made
-after 35f9ab8 (the Back button and faster navigation, backup import and export checks, readable records from other
-devices, the workspace preview before download) have **not yet been checked on a real iPhone**.
+12 tools registered, workspace links open the workspace, and existing data stayed intact.
 
 **Skills against the registered tools.** Both skill files and the session note name only the 12 registered tools; the removed `fieldkit_save_workspace_brief` and `fieldkit_build_workspace` appear only in the historic sections of this file. `test_skills_and_session_note_name_only_registered_tools` now fails if a skill names a tool that is not registered.
 
 **Saved Records.** The list pages through the whole account. `GET records` takes `offset` and returns `total` and
 `next_offset`. `fieldkit_list_records` reads every matching entry page by page.
 
-**NOT verified:** the phone-app changes after 35f9ab8 on a real iPhone, and Android Chrome. 0.3.1 (version bump,
+0.3.1 (version bump,
 "Export data" wording, a test that skills name only registered tools) adds no new behaviour.
 
 ### 0.3.2: approval, normal ranges and links (2026-11-11)

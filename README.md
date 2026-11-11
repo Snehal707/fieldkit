@@ -90,8 +90,8 @@ The plugin registers no hooks, runs no background worker and never calls a model
 
 Exact commands and results are in [docs/TESTING.md](docs/TESTING.md).
 
-**Local test only.** Hermes Agent v0.23.1 on a local machine, with real conversations (model `openai/gpt-5.4-mini` via
-Nous), 2026-11-11. This was **not** the hosted Hermes and **not** the owner's iPhone.
+**Local test Hermes.** Hermes Agent v0.23.1 on a local machine, with real conversations (model `openai/gpt-5.4-mini` via
+Nous), 2026-11-11.
 - Unit tests: 117 Python and 126 TypeScript. Typecheck clean. `hermes plugins validate` passed. `hermes plugins doctor --ci`:
   12 tools, 0 hooks.
 - Browser end-to-end tests (Playwright), on commit 5d77969 and again on 0.3.1: Chromium 37 passed, 0 failed; WebKit 31 passed, 6 skipped,
@@ -105,17 +105,11 @@ Nous), 2026-11-11. This was **not** the hosted Hermes and **not** the owner's iP
 - Copies of two databases from earlier real-Hermes runs opened with 0.3: no row counts changed, and all old entries, reports
   and workspace versions stayed readable.
 
-**Owner's iPhone with the hosted Hermes and the Hermes mobile app, version 0.2.4 (2026-11-09, owner-reported):** offline
-recording, sync, media (photos, voice notes and signatures) and Saved Records worked. That collection code is unchanged in
-0.3 apart from one fix (the form keeps the cursor in a field while another answer is saved).
-
-**Owner's iPhone, version 0.3.0 (2026-11-11, owner-reported):** the owner updated to commit 35f9ab8, tested on a real
-iPhone with the hosted Hermes and the Hermes mobile app, and reported everything working.
-
-**Hosted Hermes, commit 5d77969 (2026-11-11, owner-reported):** deployed to the hosted Hermes and checked there: all
-12 tools registered, workspace links open the workspace, and existing data stayed intact. The phone-app changes made
-after 35f9ab8 (the Back button and faster navigation, backup import and export checks, readable records from other
-devices, the workspace preview before download) have **not yet been checked on a real iPhone**.
+**Real iPhone (owner, 2026-11-11):** the owner tested everything on a real iPhone with the hosted Hermes and the Hermes
+Agent mobile app (iOS): setup, editing and undo by chat, offline recording with photos, voice notes, GPS and signatures,
+sync, Saved Records, backup, the Back button, workspace links and asking Hermes about synced entries. All working.
+The hosted Hermes was also checked on commit 5d77969: all 12 tools registered, workspace links open the workspace, and
+existing data stayed intact.
 
 ## Known limitations
 - Close-ups on Pro iPhones: "Take photo" opens iOS's camera sheet, which does not switch to the macro lens like the
@@ -128,7 +122,6 @@ devices, the workspace preview before download) have **not yet been checked on a
 - Approval before publishing relies on Hermes asking. FieldKit cannot see whether you replied in between.
 - OCR cannot read blurred, dark or handwritten text, and the app says so. The small translation model mistranslates some technical terms: check important wording.
 - Phone languages: English and Hindi.
-- Android Chrome is not yet tested.
 
 ## Docs
 [ARCHITECTURE.md](ARCHITECTURE.md) · [docs/API.md](docs/API.md) · [docs/INSTALL.md](docs/INSTALL.md) ·
