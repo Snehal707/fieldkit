@@ -180,6 +180,18 @@ The phone app is served by the dashboard. For the components, the sync flow and 
 
 The plugin registers no hooks, runs no background worker and never calls a model.
 
+## Network, storage and sign-in
+
+- **Network:** the plugin on Hermes makes no outside calls. The phone app talks only to your Hermes, except when you
+  install an optional translation or OCR pack: then it downloads files from `huggingface.co` (and its file hosts
+  `*.hf.co`) and `cdn.jsdelivr.net`, at exact pinned versions. Model files are checked against pinned SHA-256 hashes.
+  Details: [THIRD_PARTY.md](THIRD_PARTY.md).
+- **Storage:** forms, entries and files are kept in Hermes' plugin data folder (`<HERMES_HOME>/plugin-data/fieldkit/`).
+  On the phone they are kept in the browser's own storage until they sync.
+- **Sign-in:** the phone app uses your Hermes dashboard sign-in. FieldKit stores no passwords, tokens or keys. The app
+  page itself is public and holds no data; every data request needs sign-in.
+- **Nothing else runs:** no shell commands, no background processes, no telemetry.
+
 ## Docs
 [ARCHITECTURE.md](ARCHITECTURE.md) · [docs/INSTALL.md](docs/INSTALL.md) · [docs/API.md](docs/API.md) ·
 [docs/TESTING.md](docs/TESTING.md) · [THIRD_PARTY.md](THIRD_PARTY.md)
