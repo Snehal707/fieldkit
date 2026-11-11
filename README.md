@@ -9,6 +9,14 @@ and their files upload to Hermes, and you ask Hermes about them.
 FieldKit is not an assistant, a research tool or a decision system. It never calls a model. Hermes does any analysis,
 with its own tools, when you ask.
 
+## Demo video
+
+[Watch the demo on YouTube](https://youtube.com/shorts/yFwQ6QpygDU?feature=share)
+
+The demo shows FieldKit being used to document a village water pump identified as WP-007. An observation is recorded
+offline, including the pump's condition, a photograph and a voice note. Once connectivity returns, the observation
+synchronizes to Hermes, where the original field data and attachments can be retrieved.
+
 ## How it works
 
 ```mermaid
