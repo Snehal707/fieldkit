@@ -11,7 +11,7 @@ with its own tools, when you ask.
 
 ## Demo video
 
-[Watch the demo on YouTube](https://youtube.com/shorts/yFwQ6QpygDU?feature=share)
+<a href="https://youtube.com/shorts/yFwQ6QpygDU?feature=share"><img src="https://i.ytimg.com/vi/yFwQ6QpygDU/maxresdefault.jpg" alt="Watch the FieldKit demo on YouTube" width="480"></a>
 
 The demo shows FieldKit being used to document a village water pump identified as WP-007. An observation is recorded
 offline, including the pump's condition, a photograph and a voice note. Once connectivity returns, the observation
