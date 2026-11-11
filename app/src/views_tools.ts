@@ -7,7 +7,8 @@ import {
   capabilities, installedModels, installOcr, installTranslation, ocr, ocrLanguages, removeModel, translate, translationPairs,
 } from "./intel";
 import { fetchCatalog, installedWorkflows, removeWorkflow, storageInfo } from "./packs";
-import { enqueueRecord, getSyncState, runSync } from "./sync";
+import { getSyncState, refreshPending, runSync } from "./sync";
+import { applyBackup, BackupError, parseBackup } from "./backup";
 import { clear, fmtBytes, fmtTime, h, isOnline, toast } from "./util";
 import { icon } from "./icons";
 import { go, lang, signInBanner, whoAmI, type View } from "./views_core";
@@ -252,13 +253,15 @@ export const settingsView: View = async (main) => {
     h("div", { class: "row" },
       h("button", { onclick: async () => exportData() }, "Export data"),
       h("label", { class: "btn" }, "Import backup", h("input", { type: "file", accept: "application/json", style: "display:none", onchange: async (e: Event) => {
-        const f = (e.target as HTMLInputElement).files?.[0];
+        const input = e.target as HTMLInputElement;
+        const f = input.files?.[0];
+        input.value = "";                                   // choosing the same file again must run again
         if (!f) return;
         try {
           const n = await importData(f);
-          toast(`Restored ${n.records} record(s), ${n.attachments} file(s)${n.queued ? `; ${n.queued} queued for upload` : ""}. Existing items were kept.`, "ok");
+          toast(`Restored ${n.records} record(s), ${n.drafts} draft(s), ${n.attachments} file(s)${n.queued ? `; ${n.queued} queued for upload` : ""}. Existing items were kept.`, "ok");
           go(`#/settings?r=${Date.now()}`);
-        } catch (err) { toast(`Couldn't import: ${(err as Error).message}`, "error"); }
+        } catch (err) { toast(err instanceof BackupError ? err.message : `Couldn't import: ${(err as Error).message}. Nothing was changed.`, "error"); }
       } })))));
 
   const synced = (await d.getAll("records")).filter((r) => r.sync_status === "synced");
@@ -305,34 +308,12 @@ async function exportData() {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-async function importData(file: File): Promise<{ records: number; attachments: number; queued: number }> {
-  let data: any;
-  try { data = JSON.parse(await file.text()); } catch { throw new Error("this file isn't a FieldKit backup (not valid JSON)"); }
-  if (data?.format !== "fieldkit-backup") throw new Error("this file isn't a FieldKit backup");
-  const d = await db();
-  let records = 0, attachments = 0;
-  const toQueue: string[] = [];
-  for (const r of data.records ?? []) {
-    if (await d.get("records", r.id)) continue;
-    // A record that was still waiting (or mid-upload) on the old device must upload from this one.
-    // ("received" = Hermes has the record but not all its photos/audio: re-sending makes Hermes ask for the rest.)
-    const unsent = !["synced", "conflict", "error"].includes(r.sync_status);
-    await d.put("records", unsent ? { ...r, sync_status: "pending" } : r);
-    if (unsent) toQueue.push(r.id);
-    records++;
-  }
-  for (const r of data.drafts ?? []) if (!(await d.get("drafts", r.id))) await d.put("drafts", r);
-  for (const r of data.reports ?? []) if (!(await d.get("reports", r.record_id))) await d.put("reports", r);
-  for (const a of data.attachments ?? []) {
-    if (await d.get("attachments", a.id)) continue;
-    const bin = Uint8Array.from(atob(a.data_b64), (c) => c.charCodeAt(0));
-    const { data_b64: _drop, ...rest } = a;
-    await d.put("attachments", { ...rest, blob: new Blob([bin], { type: a.mime }) });
-    attachments++;
-  }
-  for (const id of toQueue) await enqueueRecord(id);   // after the media is in place
-  if (toQueue.length) void runSync();
-  return { records, attachments, queued: toQueue.length };
+async function importData(file: File): Promise<{ records: number; drafts: number; attachments: number; queued: number }> {
+  const plan = await parseBackup(await file.text());     // checks everything first; a damaged file changes nothing
+  const r = await applyBackup(plan);
+  await refreshPending();
+  if (r.queued) void runSync();
+  return r;
 }
 
 
