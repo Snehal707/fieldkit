@@ -4,7 +4,7 @@ import { api } from "./api";
 import { type InstalledPack } from "./db";
 import { text } from "./engine";
 import { installedPacks, installPack, installWorkflow } from "./packs";
-import { db } from "./db";
+import { db, getSetting, setSetting } from "./db";
 
 export interface WorkspaceManifest {
   kind: "workspace"; id: string; workspace_id: string; title: any; languages: string[];
@@ -67,4 +67,34 @@ export function summarizeLocal(workflowIds: string[], records: { workflow_id: st
     waiting: mine.filter((r) => !["synced", "received"].includes(r.sync_status)).length,
     latest: mine.map((r) => r.completed_at).sort().pop(),
   };
+}
+
+// ------------------------------------------------------------------ the current workspace (Home, the Workspace tab)
+/** The workspace Home shows and the Workspace tab opens: the one the user last opened, if it is still on this
+ *  phone; otherwise the newest own (non-example) workspace; otherwise the example. Null when none is installed. */
+export function pickCurrent<T extends { manifest: { workspace_id: string; starter?: boolean } }>(installed: T[], lastOpened: string): T | null {
+  return installed.find((w) => w.manifest.workspace_id === lastOpened) ?? installed.find((w) => !w.manifest.starter) ?? installed[0] ?? null;
+}
+
+export async function currentWorkspace(): Promise<{ pack: InstalledPack; manifest: WorkspaceManifest } | null> {
+  const all = (await installedWorkspaces()).sort((a, b) => String(b.pack.installed_at).localeCompare(String(a.pack.installed_at)));
+  return pickCurrent(all, await getSetting<string>("current_workspace", ""));
+}
+
+export async function setCurrentWorkspace(wid: string): Promise<void> { await setSetting("current_workspace", wid); }
+
+/** Recent activity on this phone: every unfinished entry first (they need finishing), then the newest saved
+ *  entries, up to `limit` items in all (never fewer than the unfinished ones). */
+export interface Activity { id: string; workflow_id: string; href: string; when: string; state: "draft" | "waiting" | "synced" }
+export function recentActivity(records: { id: string; workflow_id: string; completed_at: string; sync_status: string }[],
+  drafts: { id: string; workflow_id: string; updated_at?: string; started_at: string }[], limit = 5): Activity[] {
+  const items: Activity[] = [
+    ...drafts.map((d) => ({ id: d.id, workflow_id: d.workflow_id, href: `#/run/${d.id}`, when: d.updated_at || d.started_at, state: "draft" as const })),
+    ...records.map((r) => ({ id: r.id, workflow_id: r.workflow_id, href: `#/results/${r.id}`, when: r.completed_at,
+      state: (r.sync_status === "synced" || r.sync_status === "received" ? "synced" : "waiting") as Activity["state"] })),
+  ];
+  const newest = (x: Activity, y: Activity) => (Date.parse(y.when) || 0) - (Date.parse(x.when) || 0);
+  const open = items.filter((i) => i.state === "draft").sort(newest);
+  const done = items.filter((i) => i.state !== "draft").sort(newest);
+  return [...open, ...done].slice(0, Math.max(limit, open.length));
 }

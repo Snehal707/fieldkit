@@ -10,7 +10,7 @@ import { fetchCatalog, installedWorkflows, removeWorkflow, storageInfo } from ".
 import { enqueueRecord, getSyncState, runSync } from "./sync";
 import { clear, fmtBytes, fmtTime, h, isOnline, toast } from "./util";
 import { icon } from "./icons";
-import { go, lang, readiness, signInBanner, whoAmI, type View } from "./views_core";
+import { go, lang, signInBanner, whoAmI, type View } from "./views_core";
 import { currentDeviceLabel, describeLoadProblem, registerDevice } from "./device";
 import { languageLabel, requestOutcome, requestProtection, storageMessage, storageState } from "./storage";
 
@@ -155,15 +155,14 @@ function modelRow(m: any, have: InstalledModel | undefined) {
 
 // ------------------------------------------------------------------ settings
 export const settingsView: View = async (main) => {
-  const [l, dev, st, me, caps, checks] = await Promise.all([lang(), deviceId(), storageInfo(), isOnline() ? whoAmI() : Promise.resolve(null), capabilities(), readiness()]);
+  const [l, dev, st, me, caps] = await Promise.all([lang(), deviceId(), storageInfo(), isOnline() ? whoAmI() : Promise.resolve(null), capabilities()]);
   const d = await db();
-  main.append(h("div", { class: "card" }, h("h2", null, "Settings"),
+  main.append(h("div", { class: "card" }, h("h2", null, "App"),
     h("label", { class: "q" }, "Form language"),
     h("select", { onchange: async (e: Event) => { await setSetting("lang", (e.target as HTMLSelectElement).value); toast("Saved"); } },
       ...[["en", "English"], ["hi", "हिंदी"]].map(([v, n]) => h("option", { value: v, selected: v === l }, n))),
     h("dl", { class: "kv", style: "margin-top:.8rem" },
-      h("dt", null, "App version"), h("dd", null, APP_VERSION),
-      h("dt", null, "Offline ready"), h("dd", null, checks.slice(0, 3).every((c) => c.ok !== false) ? "yes" : "no")),
+      h("dt", null, "App version"), h("dd", null, APP_VERSION)),
     h("div", { class: "row", style: "margin-top:.8rem" },
       h("a", { class: "btn", href: "#/diagnostics" }, "Connection diagnostics"))));
 
@@ -185,7 +184,6 @@ export const settingsView: View = async (main) => {
     acct ? null : h("button", { class: "primary", onclick: () => signIn("#/settings") }, "Sign in to Hermes")));
   main.append(h("div", { class: "card", id: "device-card" }, h("h2", null, "This device"),
     h("dl", { class: "kv" }, h("dt", null, "Name"), h("dd", { "data-device-name": devName }, devName)),
-    h("p", { class: "muted" }, "Saved Records shows every record in your Hermes account, from all your devices. On iPhone, Safari and the Home Screen app keep separate offline storage."),
     h("label", { class: "q" }, "Rename this device"),
     h("div", { class: "row" }, h("div", { class: "grow" }, nameInput), h("button", { onclick: async () => {
       await setSetting("device_name", nameInput.value.trim().slice(0, 80));

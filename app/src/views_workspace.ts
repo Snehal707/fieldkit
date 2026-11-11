@@ -3,19 +3,27 @@ import { api, HttpError } from "./api";
 import { db } from "./db";
 import { text } from "./engine";
 import { installedWorkflows } from "./packs";
-import { fmtTime, h, isOnline, toast } from "./util";
+import { h, isOnline, toast } from "./util";
 import { go, lang, type View } from "./views_core";
-import { availableWorkspaces, installedWorkspace, installedWorkspaces, installWorkspace, summarizeLocal, wsTitle } from "./workspace";
+import { availableWorkspaces, currentWorkspace, installedWorkspace, installedWorkspaces, installWorkspace, setCurrentWorkspace, summarizeLocal, wsTitle } from "./workspace";
 
 export const workspacesView: View = async (main) => {
   const l = await lang();
-  const mine = await installedWorkspaces();
-  const card = h("div", { class: "card", id: "workspaces" }, h("h2", null, "Workspaces"),
-    h("p", { class: "muted" }, "A workspace holds the forms you fill in, set up with Hermes for your work and kept offline on this phone."));
+  const cur = (await currentWorkspace())?.manifest.workspace_id ?? "";
+  const mine = (await installedWorkspaces()).sort((a, b) => Number(b.manifest.workspace_id === cur) - Number(a.manifest.workspace_id === cur));
+  const card = h("div", { class: "card", id: "workspaces" },
+    h("p", { class: "muted" }, mine.length > 1
+      ? "Choose the workspace to work in. Home and the Workspace tab open the one you choose."
+      : "A workspace holds the forms you fill in, set up with Hermes for your work and kept offline on this phone."));
   if (mine.length) {
-    card.append(h("h3", null, "On this device"), h("ul", { class: "clean" }, ...mine.map(({ manifest: m, pack }) =>
-      h("li", { class: "row", "data-ws": m.workspace_id }, h("a", { class: "grow", href: `#/workspace/${m.workspace_id}` }, h("strong", null, wsTitle(m, l)),
-        h("div", { class: "muted" }, `${m.starter ? "Example · " : ""}version ${m.version_of_workspace ?? pack.version} · downloaded ${fmtTime(pack.installed_at)}`))))));
+    card.append(h("h3", null, "On this device"), h("ul", { class: "ws-list" }, ...mine.map(({ manifest: m, pack }) => {
+      const isCur = m.workspace_id === cur;
+      return h("li", { "data-ws": m.workspace_id, "data-current": isCur ? "true" : null },
+        h("a", { href: `#/workspace/${m.workspace_id}`, "aria-current": isCur ? "true" : null },
+          h("span", { class: "grow" }, h("strong", null, wsTitle(m, l)),
+            h("span", { class: "muted" }, `${m.starter ? "Example, " : ""}${(m.workflows ?? []).length} form(s), version ${m.version_of_workspace ?? pack.version}`)),
+          isCur ? h("span", { class: "tag on" }, "Current") : h("span", { class: "open-link" }, "Open")));
+    })));
   }
   const avail = h("div");
   card.append(avail);
@@ -23,9 +31,18 @@ export const workspacesView: View = async (main) => {
   if (!isOnline()) { avail.append(h("p", { class: "muted" }, "Offline: connect to see workspaces available on Hermes.")); return; }
   try {
     const list = (await availableWorkspaces()).filter((w) => !mine.some((x) => x.manifest.workspace_id === w.id));
-    if (list.length) avail.append(h("h3", null, "Available on Hermes"), h("ul", { class: "clean" }, ...list.map((w) =>
-      h("li", { class: "row" }, h("a", { class: "grow", href: `#/workspace/${w.id}` }, h("strong", null, w.title),
-        h("div", { class: "muted" }, w.starter ? "Example (synthetic)" : `Version ${w.published_version}`))))));
+    if (list.length) {
+      // Long lists stay scannable: the first few, then everything on request.
+      const SHOW = 8;
+      const items = list.map((w) => h("li", null, h("a", { href: `#/workspace/${w.id}` },
+        h("span", { class: "grow" }, h("strong", null, w.title), h("span", { class: "muted" }, w.starter ? "Example (synthetic)" : `Version ${w.published_version}`)),
+        h("span", { class: "open-link" }, "Download"))));
+      items.slice(SHOW).forEach((li) => { li.hidden = true; });
+      const ul = h("ul", { class: "ws-list", id: "ws-available" }, ...items);
+      const more = list.length > SHOW ? h("button", { class: "small", onclick: () => { items.forEach((li) => { li.hidden = false; }); more!.remove(); } },
+        `Show all ${list.length}`) : null;
+      avail.append(h("h3", null, "Available on Hermes"), ul, more ?? "");
+    }
     else if (!mine.length) avail.append(h("p", { class: "muted" }, "No workspace yet. Ask Hermes: “Set up FieldKit for my work.”"));
   } catch (e) { avail.append(h("p", { class: "muted" }, `Couldn't load workspaces from Hermes: ${(e as Error).message}`)); }
 };
@@ -54,7 +71,11 @@ export const workspaceView: View = async (main, p) => {
       isOnline() ? btn : null, status));
     return;
   }
-  const home = h("div", { class: "card", id: "ws-home", "data-ws": wid }, h("h2", null, wsTitle(m, l)),
+  await setCurrentWorkspace(wid);
+  const count = (await installedWorkspaces()).length;
+  const home = h("div", { class: "card", id: "ws-home", "data-ws": wid },
+    h("div", { class: "ws-head" }, h("h2", null, wsTitle(m, l)),
+      h("a", { class: "btn small", href: "#/workspaces" }, count > 1 ? "Switch workspace" : "All workspaces")),
     m.starter ? h("div", { class: "banner warn" }, "Example with synthetic content. Ask Hermes to set up a workspace for your own work.") : null,
     m.profile?.purpose ? h("p", null, String(m.profile.purpose)) : null,
     h("dl", { class: "kv" },
@@ -85,6 +106,5 @@ export const workspaceView: View = async (main, p) => {
       h("dt", null, "Entries"), h("dd", null, `${sm.total} saved (${sm.today} today)`),
       h("dt", null, "Unfinished"), h("dd", null, String(sm.unfinished)),
       h("dt", null, "Waiting to sync"), h("dd", null, String(sm.waiting)))
-      : h("p", { class: "muted" }, "No entries yet. Start one under “New entry”."),
-    h("p", { class: "muted" }, "Counted on this phone from your saved entries. Works offline.")));
+      : h("p", { class: "muted" }, "No entries yet. Start one under “New entry”.")));
 };

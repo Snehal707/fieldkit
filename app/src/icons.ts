@@ -11,6 +11,7 @@ const PATHS: Record<string, string> = {
   mic: '<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M6 11.5a6 6 0 0 0 12 0M12 17.5V20.5"/>',
   stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor"/>',
   pin: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+  chevron: '<path d="m9.5 6 6 6-6 6"/>',
   close: '<path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/>',
 };
 

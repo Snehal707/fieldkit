@@ -119,6 +119,53 @@ ul.clean li .row button { min-height: 36px; padding: .3rem .7rem; font-size: .85
 .thumbs img { width: 88px; height: 88px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
 canvas.sig { width: 100%; height: 160px; border: 1px dashed color-mix(in srgb, var(--ink) 30%, transparent); border-radius: 8px; touch-action: none; background: #fff; }
 
+/* ---------------------------------------------------------------- Home: current workspace, status, activity */
+.ws-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; }
+.card > h3:first-child { margin-top: 0; }
+.ws-head h2 { flex: 1 1 auto; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.ws-current .ws-head h2 { font-size: 1.375rem; letter-spacing: -.015em; }
+.ws-purpose { color: var(--muted); margin: .35rem 0 .5rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ws-purpose[hidden] { display: none; }
+.meta { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .875rem; color: var(--muted); margin: .2rem 0 .8rem; }
+.meta .wait { color: var(--warn); font-weight: 600; }
+.ws-current .row .btn { flex: 1 1 9rem; }
+.tag { flex: none; font-size: .75rem; font-weight: 650; padding: .1rem .5rem; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.tag.on { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); background: var(--brand-soft); }
+.btn.small, button.small { min-height: 36px; padding: .3rem .75rem; font-size: .85rem; flex: none; }
+
+.dot { flex: none; width: .65rem; height: .65rem; border-radius: 50%; margin-top: .4rem; background: var(--muted); }
+.dot.ok { background: var(--ok); } .dot.wait { background: var(--warn); } .dot.bad { background: var(--bad); }
+.status-card { padding: .25rem 1rem; }
+.status-row, .status-details > summary { display: flex; align-items: flex-start; gap: .75rem; padding: .8rem 0; min-height: var(--tap);
+  color: var(--ink); text-decoration: none; }
+.status-row + .status-row, .status-details + .status-row { border-top: 1px solid var(--line-soft); }
+.status-row strong, .status-details > summary strong { display: block; font-size: 1rem; }
+.status-row .muted, .status-details > summary .muted { display: block; margin-top: .1rem; }
+.status-row .ico { color: var(--muted); margin-top: .2rem; }
+.status-details > summary { list-style: none; cursor: pointer; }
+.status-details > summary::-webkit-details-marker { display: none; }
+.status-details > summary::after { content: ""; flex: none; width: .5rem; height: .5rem; margin: .45rem .2rem 0 0;
+  border-right: 1.7px solid var(--muted); border-bottom: 1.7px solid var(--muted); transform: rotate(45deg); }
+.status-details[open] > summary::after { transform: rotate(-135deg); margin-top: .7rem; }
+.status-details .checks { padding: 0 0 .8rem 1.4rem; }
+
+ul.activity, ul.ws-list { list-style: none; padding: 0; margin: .2rem 0 0; }
+ul.activity li + li, ul.ws-list li + li { border-top: 1px solid var(--line-soft); }
+ul.activity a, ul.ws-list a { display: flex; align-items: center; gap: .75rem; min-height: var(--tap); padding: .6rem 0; color: var(--ink); text-decoration: none; }
+ul.activity .grow { min-width: 0; }
+ul.activity strong { font-size: .95rem; }
+ul.activity strong { display: block; }
+ul.activity .sub-line { display: flex; flex-wrap: wrap; gap: 0 .6rem; font-size: .82rem; }
+ul.activity .subject { color: var(--ink); font-weight: 600; white-space: nowrap; }
+ul.activity .state { flex: none; font-size: .78rem; font-weight: 650; display: inline-flex; align-items: center; gap: .3rem; }
+ul.activity .state::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+.state.draft { color: var(--warn); } .state.waiting { color: var(--info); } .state.synced { color: var(--ok); }
+ul.activity li.more a { color: var(--brand); font-weight: 600; font-size: .9rem; min-height: 40px; }
+ul.ws-list strong { display: block; }
+ul.ws-list .muted { display: block; font-size: .85rem; }
+ul.ws-list .open-link { flex: none; color: var(--brand); font-weight: 650; font-size: .9rem; }
+ul.ws-list li[data-current] a { font-weight: 500; }
+
 /* ---------------------------------------------------------------- bottom navigation */
 nav.bottom { position: fixed; bottom: 0; left: 0; right: 0; z-index: 5; background: var(--card); border-top: 1px solid var(--line);
   display: grid; grid-template-columns: repeat(5, 1fr); padding-bottom: env(safe-area-inset-bottom); }

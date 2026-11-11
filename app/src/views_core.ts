@@ -9,7 +9,7 @@ import { attachmentUrl, captureGps, compressPhoto, getAttachment, hermesMediaUrl
 import { installedPacks, installedWorkflows, installWorkflow, shellCached, storageInfo } from "./packs";
 import { completeDraft } from "./results";
 import { downloadEarlierReport, getSyncState, refreshPending, resendRecords, resolveConflict, retryRecords, runSync } from "./sync";
-import { availableWorkspaces, installWorkspace, workspaceForEntry } from "./workspace";
+import { availableWorkspaces, currentWorkspace, installedWorkspaces, installWorkspace, recentActivity, summarizeLocal, workspaceForEntry, wsTitle, type Activity } from "./workspace";
 import { clear, fmtBytes, fmtTime, h, isOnline, nowIso, toast, uuid } from "./util";
 import { icon } from "./icons";
 
@@ -101,47 +101,107 @@ function checkRow(c: Check) {
 }
 
 // ------------------------------------------------------------------ home
+// A compact overview: the current workspace (forms and their Start buttons live only on the Workspace page),
+// offline readiness, synchronisation, saved records and recent activity on this phone.
+const ACTIVITY_TEXT: Record<Activity["state"], string> = { draft: "Unfinished", waiting: "Waiting to sync", synced: "Synced" };
+
+/** A short label for an entry: the form's subject field, else its first short text answer (an asset id, a name). */
+function subjectOf(def: Workflow | undefined, answers: Record<string, unknown> | undefined): string {
+  if (!def || !answers) return "";
+  const pick = (v: unknown) => (typeof v === "string" && v.trim().length > 0 && v.trim().length <= 40 ? v.trim() : "");
+  const named = def.metadata?.subject_field ? pick(answers[def.metadata.subject_field]) : "";
+  if (named) return named;
+  for (const f of def.fields ?? []) { if (f.type === "text") { const v = pick(answers[f.id]); if (v) return v; } }
+  return "";
+}
+
+/** "Today 2:05 PM", otherwise date and time. */
+function shortWhen(iso: string): string {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "";
+  return t.toDateString() === new Date().toDateString()
+    ? `Today ${t.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : fmtTime(iso);
+}
+
+function statusRow(opts: { id?: string; href?: string; state: "ok" | "wait" | "bad"; title: string; sub: string }): HTMLElement {
+  const inner = [h("span", { class: `dot ${opts.state}`, "aria-hidden": "true" }),
+    h("span", { class: "grow" }, h("strong", null, opts.title), h("span", { class: "muted" }, opts.sub))];
+  return opts.href ? h("a", { class: "status-row", href: opts.href, id: opts.id }, ...inner, icon("chevron", 16))
+    : h("div", { class: "status-row", id: opts.id }, ...inner);
+}
+
 export const homeView: View = async (main) => {
   const d = await db();
-  const [checks, records, drafts] = await Promise.all([readiness(), d.getAll("records"), d.getAll("drafts")]);
+  const [checks, records, drafts, wfs, workspaces, cur, l] = await Promise.all([readiness(), d.getAll("records"), d.getAll("drafts"),
+    installedWorkflows(), installedWorkspaces(), currentWorkspace(), lang()]);
   const essential = checks.slice(0, 3);
   const ready = essential.every((c) => c.ok !== false);
   // Same rule as the header ("N awaiting confirmation"): anything Hermes hasn't fully confirmed, media included.
   const pending = records.filter((r) => r.sync_status !== "synced").length;
   const sync = getSyncState();
   const acct = await accountRecordsSummary(!sync.auth_required);
-  const wfTitles = new Map((await installedWorkflows()).map((w) => [w.id, text(w.definition.title, "en")]));
-  if (!(await installedWorkflows()).length) main.append(getStartedCard(sync.auth_required));
-  // Workspaces built by Hermes for this user's job (0.2.5).
-  const wsPacks = (await installedPacks()).filter((p) => (p.kind as string) === "workspace");
-  const own = wsPacks.filter((p) => !p.content?.starter);
-  main.append(h("div", { class: "card", id: "home-workspaces" }, h("h2", null, "Your workspace"),
-    own.length ? h("ul", { class: "clean" }, ...own.map((p) => h("li", null, h("a", { href: `#/workspace/${p.content.workspace_id}` },
-      h("strong", null, text(p.content.title, "en")), h("div", { class: "muted" }, String(p.content.profile?.purpose ?? ""))))))
-      : h("p", { class: "muted" }, "Ask Hermes: “Set up FieldKit for my work.” It asks what you record and builds your forms in a few minutes."),
-    own.length ? h("div", { class: "row" }, ...own.flatMap((p) => (p.content.workflows ?? []).slice(0, 3).map((w: any) =>
-      h("a", { class: "btn primary", href: `#/workflow/${encodeURIComponent(w.id)}?ws=${encodeURIComponent(p.content.workspace_id)}` }, `Record: ${wfTitles.get(w.id) ?? w.id}`)))) : null,
-    h("a", { class: "btn", href: "#/workspaces" }, own.length ? "All workspaces" : "Browse workspaces")));
-  main.append(
-    h("div", { class: `banner ${ready ? "hermes" : "warn"}` },
-      h("strong", null, ready ? "Ready to work offline" : "Not ready for offline use yet"),
-      h("div", { class: "muted" }, ready ? "Your forms and the app itself are stored on this device." : "Connect once, sign in, and download your workspace.")),
-    h(ready ? "details" : "div", { class: "card", id: "home-readiness" },
-      ready ? h("summary", null, h("strong", null, "Offline readiness"), h("span", { class: "muted" }, " · all set")) : h("h2", null, "Offline readiness"),
-      ...checks.map(checkRow),
-      h("div", { class: "row", style: "margin-top:.5rem" }, h("a", { class: "btn", href: "#/packs" }, "Offline Packs"))),
-    h("div", { class: "grid" },
-      recordsTile(acct),
-      tile("#/sync", "Pending Sync", pending ? `${pending} awaiting confirmation` : "All confirmed")),
-    h("details", { class: "card", id: "home-tools" }, h("summary", null, h("strong", null, "Tools"),
-      h("span", { class: "muted" }, " · translate, scan text (optional offline packs)")),
-      h("div", { class: "grid" },
-        tile("#/translate", "Translate", "Sentence translation"),
-        tile("#/ocr", "Scan text (OCR)", "From camera or photo"))));
-  if (drafts.length) {
-    main.append(h("div", { class: "card" }, h("h2", null, "Unfinished drafts"),
-      h("ul", { class: "clean" }, ...drafts.map((dr) => h("li", null, h("a", { href: `#/run/${dr.id}` }, `${wfTitles.get(dr.workflow_id) ?? dr.workflow_id} — started ${fmtTime(dr.started_at)}`))))));
+  const defs = new Map(wfs.map((w) => [w.id, w.definition]));
+  if (!wfs.length) main.append(getStartedCard(sync.auth_required));
+
+  // The current workspace, with a way to open it or switch. Its forms and Start buttons are on the Workspace page.
+  const wsCard = h("section", { class: "card ws-current", id: "home-workspaces" });
+  if (cur) {
+    const m = cur.manifest;
+    const ids = (m.workflows ?? []).map((w) => w.id);
+    const sm = summarizeLocal(ids, records, drafts);
+    wsCard.append(
+      h("div", { class: "ws-head" }, h("h2", null, wsTitle(m, l)), m.starter ? h("span", { class: "tag" }, "Example") : null),
+      h("p", { class: "ws-purpose", hidden: !m.profile?.purpose }, String(m.profile?.purpose ?? "")),
+      h("div", { class: "meta" }, h("span", null, `${ids.length} ${ids.length === 1 ? "form" : "forms"}`),
+        h("span", null, `${sm.today} ${sm.today === 1 ? "entry" : "entries"} today`),
+        sm.unfinished ? h("span", { class: "wait" }, `${sm.unfinished} unfinished`) : null),
+      h("div", { class: "row" },
+        h("a", { class: "btn primary", href: `#/workspace/${encodeURIComponent(m.workspace_id)}` }, "Open workspace"),
+        h("a", { class: "btn", href: "#/workspaces" }, workspaces.length > 1 ? "Switch workspace" : "All workspaces")));
+  } else {
+    wsCard.append(h("h2", null, "Your workspace"),
+      h("p", { class: "muted" }, "Ask Hermes: “Set up FieldKit for my work.” It asks what you record and builds your forms in a few minutes."),
+      h("div", { class: "row" }, h("a", { class: "btn", href: "#/workspaces" }, "Browse workspaces")));
   }
+  main.append(wsCard);
+
+  // Status: offline readiness (expands to the checks), synchronisation, saved records.
+  const readinessEl = h("details", { class: "status-details", id: "home-readiness", open: !ready },
+    h("summary", null, h("span", { class: `dot ${ready ? "ok" : "wait"}`, "aria-hidden": "true" }),
+      h("span", { class: "grow" }, h("strong", null, ready ? "Ready to work offline" : "Not ready for offline use yet"),
+        h("span", { class: "muted" }, ready ? "Your forms and the app itself are stored on this device." : "Connect once, sign in, and download your workspace."))),
+    h("div", { class: "checks" }, ...checks.map(checkRow),
+      h("div", { class: "row" }, h("a", { class: "btn", href: "#/packs" }, "Offline Packs"))));
+  const recordsRow = statusRow({ id: "tile-records", href: "#/records", state: "ok", title: "Saved Records", sub: recordsSub(acct) });
+  recordsRow.setAttribute("data-total", acct.known ? String(acct.total) : "");
+  recordsRow.setAttribute("data-offline", String(acct.offline));
+  main.append(h("section", { class: "card status-card", id: "home-status" }, readinessEl,
+    statusRow({ href: "#/sync", state: sync.auth_required ? "bad" : pending ? "wait" : "ok", title: "Pending Sync",
+      sub: sync.auth_required ? "Sign in to Hermes to sync" : pending ? `${pending} awaiting confirmation` : "All confirmed" }),
+    recordsRow));
+
+  // Recent activity on this phone (works offline).
+  const recent = recentActivity(records, drafts);
+  const answersById = new Map<string, Record<string, unknown>>([
+    ...records.map((r) => [r.id, r.answers as Record<string, unknown>] as [string, Record<string, unknown>]),
+    ...drafts.map((x) => [x.id, x.answers as Record<string, unknown>] as [string, Record<string, unknown>])]);
+  const titleOf = (wid: string) => (defs.has(wid) ? text(defs.get(wid)!.title, l)
+    : records.find((r) => r.workflow_id === wid)?.workflow_title ?? wid);
+  main.append(h("section", { class: "card", id: "home-recent" }, h("h2", null, "Recent activity"),
+    recent.length ? h("ul", { class: "activity" }, ...recent.map((a) => {
+      const subject = subjectOf(defs.get(a.workflow_id), answersById.get(a.id));
+      return h("li", { "data-state": a.state }, h("a", { href: a.href },
+        h("span", { class: "grow" }, h("strong", null, titleOf(a.workflow_id)),
+          h("span", { class: "sub-line" }, subject ? h("span", { class: "subject" }, subject) : null, h("span", { class: "muted" }, shortWhen(a.when)))),
+        h("span", { class: `state ${a.state}` }, ACTIVITY_TEXT[a.state])));
+    }), records.length + drafts.length > recent.length ? h("li", { class: "more" }, h("a", { href: "#/records" }, "All saved records")) : null)
+      : h("p", { class: "muted" }, cur ? "No entries on this phone yet. Open your workspace to start one." : "Entries you record on this phone appear here.")));
+
+  main.append(h("details", { class: "card", id: "home-tools" }, h("summary", null, h("strong", null, "Tools"),
+    h("span", { class: "muted" }, " Translate and scan text (optional offline packs)")),
+    h("div", { class: "grid" },
+      tile("#/translate", "Translate", "Sentence translation"),
+      tile("#/ocr", "Scan text (OCR)", "From camera or photo"))));
 };
 
 /** First run: nothing downloaded yet. Workflows are never pulled silently (they can carry large packs), so
@@ -222,15 +282,10 @@ async function accountRecordsSummary(tryLive: boolean): Promise<AccountSummary> 
     onDevice: local.length, signedOut, at: index?.at };
 }
 
-function recordsTile(a: AccountSummary) {
-  const sub = a.known
+function recordsSub(a: AccountSummary): string {
+  return a.known
     ? `${a.total} in your account · ${a.offline} available offline`
     : `${a.offline} available offline · ${a.signedOut ? "sign in to see your account" : "connect to see your whole account"}`;
-  const t = tile("#/records", "Saved Records", sub);
-  t.id = "tile-records";
-  t.setAttribute("data-total", a.known ? String(a.total) : "");
-  t.setAttribute("data-offline", String(a.offline));
-  return t;
 }
 
 function tile(href: string, title: string, sub: string) {
@@ -866,7 +921,7 @@ export const recordsView: View = async (main) => {
   const serverIds = new Set(recRes.status === "fulfilled" ? recRes.value.records.map((r) => r.id) : []);
   const onlineOnly = list.filter((r) => r.availability === "needs-internet");
 
-  const card = h("div", { class: "card", id: "saved-records" }, h("h2", null, "Saved Records"),
+  const card = h("div", { class: "card", id: "saved-records" },
     h("p", { class: "muted" }, "Every record in your Hermes account, from all your devices. Records marked “Available offline” open without internet."));
   if (problem) {
     card.append(h("div", { class: `banner ${problem.kind === "offline" ? "local" : "warn"}`, id: "records-note", "data-problem": problem.kind },
@@ -1035,7 +1090,7 @@ export const syncView: View = async (main) => {
   const ops = await d.getAll("outbox");
   const st = getSyncState();
   const waiting = recs.filter((r) => !["synced", "received"].includes(r.sync_status));
-  main.append(h("div", { class: "card" }, h("h2", null, "Pending Sync"),
+  main.append(h("div", { class: "card" }, h("h2", null, "Status"),
     h("dl", { class: "kv" },
       h("dt", null, "Device network"), h("dd", null, isOnline() ? "Connected (as reported by the browser)" : "Offline"),
       h("dt", null, "Hermes"), h("dd", null, st.reachable === true ? `Reachable — last contact ${fmtTime(st.last_contact)}`

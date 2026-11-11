@@ -6,6 +6,7 @@ import { isStandalone } from "./storage";
 import { refreshPending, onSyncState, restoreAuthFlag, startAutoSync, registerBackgroundSync, clearAuthRequired, getSyncState } from "./sync";
 import { clear, h, isOnline, toast } from "./util";
 import { icon } from "./icons";
+import { currentWorkspace } from "./workspace";
 import { freeRetiredModels } from "./intel";
 import {
   authBanner, homeView, recordsView, remoteView, resultsView, runView, syncView, workflowLinkView, whoAmI, type View,
@@ -36,7 +37,8 @@ const net = h("a", { class: "pill", href: "#/diagnostics", style: "color:inherit
 const queue = h("span", { class: "pill" });
 const main = h("main");
 const navItems: [string, string, string][] = [["#/", "home", "Home"], ["#/workspaces", "ws", "Workspace"], ["#/records", "rec", "Records"], ["#/sync", "sync", "Sync"], ["#/settings", "set", "Settings"]];
-const nav = h("nav", { class: "bottom" }, ...navItems.map(([href, ico, label]) => h("a", { href }, icon(ico, 22), label)));
+const nav = h("nav", { class: "bottom" }, ...navItems.map(([href, ico, label]) => h("a", { href, "data-tab": ico }, icon(ico, 22), label)));
+const wsTab = nav.querySelector('a[data-tab="ws"]') as HTMLAnchorElement;
 const authSlot = h("div", { style: "max-width:720px;margin:0 auto;padding:0 1rem" });
 // Update notice: one compact, opaque line directly under the header, IN the page flow. Not position:fixed —
 // fixed bars overlapped the bottom navigation (hard-coded offset ignored the iPhone safe area), let content
@@ -107,7 +109,12 @@ async function route() {
     const m = hash.match(re);
     if (m) {
       title.textContent = name === "Home" ? "FieldKit" : name;
-      for (const a of nav.querySelectorAll("a")) a.classList.toggle("on", a.getAttribute("href") === (hash.split("?")[0] || "#/"));
+      const path = hash.split("?")[0] || "#/";
+      for (const a of nav.querySelectorAll("a")) {
+        const ws = a.dataset.tab === "ws";
+        a.classList.toggle("on", ws ? path.startsWith("#/workspace") : a.getAttribute("href") === path);
+      }
+      void currentWorkspace().then((c) => { wsTab.setAttribute("href", c ? `#/workspace/${encodeURIComponent(c.manifest.workspace_id)}` : "#/workspaces"); }, () => undefined);
       const target = h("div");
       try { await view(target, (m.groups ?? {}) as Record<string, string>); }
       catch (e) { target.append(h("div", { class: "banner bad" }, `Something went wrong: ${(e as Error).message}`)); console.error(e); }
